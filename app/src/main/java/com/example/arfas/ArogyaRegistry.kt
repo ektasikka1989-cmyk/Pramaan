@@ -23,10 +23,10 @@ import org.json.JSONObject
  * Dates are reminders for the ASHA; she and her ANM decide.
  */
 
-enum class BenCategory(val title: String) { ELIGIBLE_COUPLE("Eligible couple"), PREGNANT("Pregnant woman"), MOTHER("Mother (postnatal)"), CHILD("Child 0–6 years"), OTHER("Other") }
-enum class DiaryKind(val title: String) { HOME_VISIT("Home visit"), VHND("VHND / immunization session"), VHSNC_MEETING("VHSNC / MAS meeting"), PHC_MEETING("Monthly meeting at PHC"), ESCORT("Escort to facility"), SURVEY("Household survey / line listing"), OTHER("Other") }
-enum class VitalKind(val title: String) { BIRTH("Birth"), STILLBIRTH("Stillbirth"), MATERNAL_DEATH("Maternal death"), INFANT_DEATH("Infant death (<1 y)"), CHILD_DEATH("Child death (1–5 y)"), OTHER_DEATH("Other death"),
-    FEVER("Fever case"), DIARRHOEA("Diarrhoea case"), TB_SUSPECT("TB suspect"), AEFI("AEFI (after immunization)"), OTHER("Other surveillance") }
+enum class BenCategory(val title: String, val titleHi: String = title) { ELIGIBLE_COUPLE("Eligible couple", "योग्य दंपति"), PREGNANT("Pregnant woman", "गर्भवती महिला"), MOTHER("Mother (postnatal)", "माँ (प्रसव बाद)"), CHILD("Child 0–6 years", "बच्चा 0–6 साल"), OTHER("Other", "अन्य") }
+enum class DiaryKind(val title: String, val titleHi: String = title) { HOME_VISIT("Home visit", "घर विज़िट"), VHND("VHND / immunization session", "VHND / टीकाकरण सत्र"), VHSNC_MEETING("VHSNC / MAS meeting", "VHSNC / MAS बैठक"), PHC_MEETING("Monthly meeting at PHC", "PHC पर मासिक बैठक"), ESCORT("Escort to facility", "अस्पताल साथ जाना"), SURVEY("Household survey / line listing", "घर सर्वे / सूची"), OTHER("Other", "अन्य") }
+enum class VitalKind(val title: String, val titleHi: String = title) { BIRTH("Birth", "जन्म"), STILLBIRTH("Stillbirth", "मृत जन्म"), MATERNAL_DEATH("Maternal death", "मातृ मृत्यु"), INFANT_DEATH("Infant death (<1 y)", "शिशु मृत्यु (<1 साल)"), CHILD_DEATH("Child death (1–5 y)", "बाल मृत्यु (1–5 साल)"), OTHER_DEATH("Other death", "अन्य मृत्यु"),
+    FEVER("Fever case", "बुखार"), DIARRHOEA("Diarrhoea case", "दस्त"), TB_SUSPECT("TB suspect", "TB संदिग्ध"), AEFI("AEFI (after immunization)", "AEFI (टीके के बाद)"), OTHER("Other surveillance", "अन्य निगरानी") }
 
 data class WeightEntry(val date: String, val kg: Double)
 /** The MCP card fields the ASHA tracks. Vaccine codes: see [ArogyaSchedule.VACCINE_CONTACTS]. ANC: 1..4 → date. */

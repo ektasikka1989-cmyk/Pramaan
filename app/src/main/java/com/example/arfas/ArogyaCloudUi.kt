@@ -106,14 +106,14 @@ object ArogyaCloud {
     }
 
     /** Muse Voice Transcribe (online, Meta key); null → use Whisper on the phone. The Settings order decides when it is tried. */
-    suspend fun transcribe(c: Context, samples: FloatArray): String? = withContext(Dispatchers.IO) {
+    suspend fun transcribe(c: Context, samples: FloatArray, languages: List<String> = listOf("Hindi", "English")): String? = withContext(Dispatchers.IO) {
         if (samples.size < 8_000 || !MetaOnline.ready(c)) return@withContext null
         val t = System.currentTimeMillis()
         val wav = java.io.File(c.cacheDir, "arogya_note_${System.currentTimeMillis()}.wav")
         try {
             MetaOnline.writeWav(samples, samples.size, 16_000, wav)
-            val text = withDeadline(30_000) { kotlinx.coroutines.runBlocking { MetaOnline.api(c).transcribe("arogya_voice_note", wav, diarize = false).text } }
-            Log.i(TAG, "AROGYA_VOICE_CLOUD model=muse-voice-transcribe ms=${System.currentTimeMillis() - t} sec=${samples.size / 16000} chars=${text?.length ?: -1}")
+            val text = withDeadline(30_000) { kotlinx.coroutines.runBlocking { MetaOnline.api(c).transcribe("arogya_voice_note", wav, languages = languages, diarize = false).text } }
+            Log.i(TAG, "AROGYA_VOICE_CLOUD model=muse-voice-transcribe ms=${System.currentTimeMillis() - t} sec=${samples.size / 16000} chars=${text?.length ?: -1} lang=${languages.joinToString("+")}")
             text?.ifBlank { null }
         } finally { wav.delete() }
     }
@@ -133,7 +133,8 @@ object ArogyaCloud {
 
 /** One place to switch on Meta cloud models and save keys; includes a live connection test. */
 @Composable
-fun ArogyaCloudSettingsDialog(onDismiss: () -> Unit) {
+fun ArogyaCloudSettingsDialog(hindi: Boolean = false, onDismiss: () -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val p = remember { ArogyaCloud.prefs(context) }
@@ -150,49 +151,51 @@ fun ArogyaCloudSettingsDialog(onDismiss: () -> Unit) {
         if (togetherKey.isNotBlank()) runCatching { ArogyaKeyVault(context.applicationContext, "together").save(togetherKey) }
         togetherKey = ""
     }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("☁ Cloud or phone AI") }, text = {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("☁ Cloud or phone AI", "☁ क्लाउड या फ़ोन AI")) }, text = {
         Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("One setting for every AI action — answers, voice, forms, card reading, messages. Cloud first: Meta's cloud models, and the phone takes over automatically with no signal, a slow network or an error. Local first: the phone, and the cloud only if the phone cannot do it. The Meta key is in the app's Settings.",
+            Text(tr("One setting for every AI action — answers, voice, forms, card reading, messages. Cloud first: Meta's cloud models, and the phone takes over automatically with no signal, a slow network or an error. Local first: the phone, and the cloud only if the phone cannot do it. The Meta key is in the app's Settings.",
+                "हर AI काम के लिए एक सेटिंग — जवाब, आवाज़, फ़ॉर्म, कार्ड पढ़ना, संदेश। क्लाउड पहले: Meta के क्लाउड मॉडल, और बिना सिग्नल, धीमे नेटवर्क या गलती पर फ़ोन अपने आप ले लेता है। फ़ोन पहले: फ़ोन, और क्लाउड तभी जब फ़ोन न कर पाए। Meta key ऐप की Settings में है।"),
                 style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = cloudFirst, onClick = { cloudFirst = true }, label = { Text("☁ Cloud first") })
-                FilterChip(selected = !cloudFirst, onClick = { cloudFirst = false }, label = { Text("📱 Local first") })
+                FilterChip(selected = cloudFirst, onClick = { cloudFirst = true }, label = { Text(tr("☁ Cloud first", "☁ क्लाउड पहले")) })
+                FilterChip(selected = !cloudFirst, onClick = { cloudFirst = false }, label = { Text(tr("📱 Local first", "📱 फ़ोन पहले")) })
             }
             if (saved.isNotBlank()) Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Text(saved, Modifier.padding(8.dp), style = MaterialTheme.typography.bodySmall) }
-            Text("Cloud model for forms, messages and card reading", fontWeight = FontWeight.Bold)
+            Text(tr("Cloud model for forms, messages and card reading", "फ़ॉर्म, संदेश और कार्ड पढ़ने के लिए क्लाउड मॉडल"), fontWeight = FontWeight.Bold)
             ArogyaModelEndpoints.all.map { it.id to it.label }.forEach { (id, label) ->
                 Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(choice == id, { choice = id }); Text(label, style = MaterialTheme.typography.bodyMedium) }
             }
-            Text("Together AI key — Muse Glimmer 30B", fontWeight = FontWeight.Bold)
-            OutlinedTextField(togetherKey, { togetherKey = it.trim() }, label = { Text("Paste key (blank = keep saved)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            Text(tr("Together AI key — Muse Glimmer 30B", "Together AI key — Muse Glimmer 30B"), fontWeight = FontWeight.Bold)
+            OutlinedTextField(togetherKey, { togetherKey = it.trim() }, label = { Text(tr("Paste key (blank = keep saved)", "key चिपकाएँ (खाली = पुरानी रहेगी)")) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
             OutlinedButton(onClick = {
                 persist(); testing = true; test = ""
                 scope.launch {
                     test = withContext(Dispatchers.IO) {
-                        val ep = ArogyaModelEndpoints.byId(choice) ?: return@withContext "Choose a cloud model first."
-                        if (!ArogyaCloud.online(context)) return@withContext "No internet right now."
-                        val key = ArogyaCloud.keyFor(context, ep); if (key.isBlank()) return@withContext "No key saved for ${ep.label}."
+                        val ep = ArogyaModelEndpoints.byId(choice) ?: return@withContext tr("Choose a cloud model first.", "पहले क्लाउड मॉडल चुनें।")
+                        if (!ArogyaCloud.online(context)) return@withContext tr("No internet right now.", "अभी इंटरनेट नहीं है।")
+                        val key = ArogyaCloud.keyFor(context, ep); if (key.isBlank()) return@withContext tr("No key saved for ${ep.label}.", "${ep.label} के लिए key नहीं है।")
                         val t = System.currentTimeMillis()
                         try {
                             val r = OpenAiCompatibleClient(ep, { key }, 30_000).complete("You are a health assistant.", "Name one ORS ingredient in one sentence.", 900)
                             Log.i("ArogyaDemo", "AROGYA_CLOUD_TEST ok model=${ep.model} ms=${System.currentTimeMillis() - t} reply=${r.take(20)}")
-                            "✓ ${ep.label} answered in ${System.currentTimeMillis() - t} ms: \"${r.take(20)}\""
+                            "✓ ${ep.label} " + tr("answered in ", "ने जवाब दिया ") + "${System.currentTimeMillis() - t} ms: \"${r.take(20)}\""
                         } catch (e: CancellationException) { throw e } catch (e: Exception) {
                             Log.w("ArogyaDemo", "AROGYA_CLOUD_TEST failed model=${ep.model} ${e.message?.take(200)}"); "✗ ${e.message?.take(160)}"
                         }
                     }
                     saved = withContext(Dispatchers.IO) { ArogyaCloud.status(context) }; testing = false
                 }
-            }, enabled = !testing) { Text(if (testing) "Testing…" else "Save and test connection") }
+            }, enabled = !testing) { Text(if (testing) tr("Testing…", "जाँच…") else tr("Save and test connection", "सहेजें और कनेक्शन जाँचें")) }
             if (test.isNotBlank()) Text(test, style = MaterialTheme.typography.bodySmall, color = if (test.startsWith("✓")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
         }
-    }, confirmButton = { TextButton(onClick = { persist(); onDismiss() }) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+    }, confirmButton = { TextButton(onClick = { persist(); onDismiss() }) { Text(tr("Save", "सहेजें")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "रद्द करें")) } })
 }
 
 /** Count drug-kit items in a photo with SAM 3.1; the ASHA confirms the number before it goes in the register. */
 @Composable
-fun SamCountDialog(balances: Map<String, Int>, onRecord: (item: String, counted: Int, note: String) -> Unit, onDismiss: () -> Unit) {
+fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, onRecord: (item: String, counted: Int, note: String) -> Unit, onDismiss: () -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var item by remember { mutableStateOf(ArogyaRegistryLogic.DRUG_KIT.first()) }
@@ -219,14 +222,14 @@ fun SamCountDialog(balances: Map<String, Int>, onRecord: (item: String, counted:
                     b to ByteArrayOutputStream().also { b.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
                 }
                 bitmap = bmp
-                if (!withContext(Dispatchers.IO) { MetaOnline.ready(context) }) { msg = "SAM 3.1 needs internet and the Meta key (Settings). You can still type the count."; return@launch }
+                if (!withContext(Dispatchers.IO) { MetaOnline.ready(context) }) { msg = tr("SAM 3.1 needs internet and the Meta key (Settings). You can still type the count.", "SAM 3.1 को इंटरनेट और Meta key (Settings) चाहिए। गिनती खुद लिख सकती हैं।"); return@launch }
                 val t = System.currentTimeMillis()
                 val found = MetaOnline.api(context).sam("arogya_kit_count", jpeg, phrase.ifBlank { "packet" })
                 boxes = found; val n = ArogyaSamCount.count(found.map { it.confidence }); counted = (n * (per.toIntOrNull() ?: 1)).toString()
-                msg = "SAM 3.1 found $n \"$phrase\" in ${(System.currentTimeMillis() - t) / 1000}s" + (if ((per.toIntOrNull() ?: 1) > 1) " × $per per item" else "") + ". Check the boxes and correct the number if needed."
+                msg = "SAM 3.1 " + tr("found $n \"$phrase\" in ${(System.currentTimeMillis() - t) / 1000}s", "\"$phrase\" $n मिला ${(System.currentTimeMillis() - t) / 1000} सेकंड में") + (if ((per.toIntOrNull() ?: 1) > 1) " × $per " + tr("per item", "प्रति नग") else "") + ". " + tr("Check the boxes and correct the number if needed.", "डिब्बे देखकर संख्या सुधारें।")
                 Log.i("ArogyaDemo", "AROGYA_SAM_COUNT item=\"$item\" phrase=\"$phrase\" found=${found.size} counted=$n ms=${System.currentTimeMillis() - t}")
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
-                msg = "Could not count: ${e.message?.take(140)}. Type the count yourself."; Log.w("ArogyaDemo", "AROGYA_SAM_FAILED ${e.message?.take(200)}")
+                msg = tr("Could not count", "गिन नहीं पाए") + ": ${e.message?.take(140)}. " + tr("Type the count yourself.", "गिनती खुद लिखें।"); Log.w("ArogyaDemo", "AROGYA_SAM_FAILED ${e.message?.take(200)}")
             } finally { busy = false; if (temp) runCatching { context.contentResolver.delete(uri, null, null) } }
         }
     }
@@ -237,21 +240,21 @@ fun SamCountDialog(balances: Map<String, Int>, onRecord: (item: String, counted:
             if (u != null) { shotUri = u; runCatching { shoot.launch(u) } } }
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u -> if (u != null) run(u, false) }
-    AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Row(verticalAlignment = Alignment.CenterVertically) { Text("📷 Count stock from a photo", Modifier.weight(1f)); AiBadge("Count drug kit") } }, text = {
+    AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Row(verticalAlignment = Alignment.CenterVertically) { Text(tr("📷 Count stock from a photo", "📷 फ़ोटो से स्टॉक गिनें"), Modifier.weight(1f)); AiBadge("Count drug kit") } }, text = {
         Column(Modifier.heightIn(max = 600.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Lay the items out on a plain cloth, not overlapping, and take one photo.", style = MaterialTheme.typography.bodySmall)
+            Text(tr("Lay the items out on a plain cloth, not overlapping, and take one photo.", "सामान सादे कपड़े पर अलग-अलग रखें और एक फ़ोटो लें।"), style = MaterialTheme.typography.bodySmall)
             ArogyaRegistryLogic.DRUG_KIT.take(11).forEach { i -> Row(verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(item == i, { item = i; phrase = ArogyaKitPhrases.phrase(i); per = ArogyaKitPhrases.perItem(i).toString() }); Text("$i  (register: ${balances[i] ?: 0})", style = MaterialTheme.typography.bodyMedium) } }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedTextField(phrase, { phrase = it.take(40) }, label = { Text("What to look for (English)") }, singleLine = true, modifier = Modifier.weight(2f))
-                OutlinedTextField(per, { per = it.filter { c -> c.isDigit() }.take(3) }, label = { Text("Units each") }, singleLine = true, modifier = Modifier.weight(1f),
+                OutlinedTextField(phrase, { phrase = it.take(40) }, label = { Text(tr("What to look for (English)", "क्या ढूँढें (English में)")) }, singleLine = true, modifier = Modifier.weight(2f))
+                OutlinedTextField(per, { per = it.filter { c -> c.isDigit() }.take(3) }, label = { Text(tr("Units each", "प्रति नग")) }, singleLine = true, modifier = Modifier.weight(1f),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { camPerm.launch(android.Manifest.permission.CAMERA) }, enabled = !busy) { Text("📷 Take photo") }
-                OutlinedButton(onClick = { pick.launch(arrayOf("image/*")) }, enabled = !busy) { Text("Choose photo") }
+                Button(onClick = { camPerm.launch(android.Manifest.permission.CAMERA) }, enabled = !busy) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
+                OutlinedButton(onClick = { pick.launch(arrayOf("image/*")) }, enabled = !busy) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
             }
-            if (busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("SAM 3.1 is finding each item…", style = MaterialTheme.typography.bodySmall) }
+            if (busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(tr("SAM 3.1 is finding each item…", "SAM 3.1 हर सामान ढूँढ रहा है…"), style = MaterialTheme.typography.bodySmall) }
             bitmap?.let { bmp -> Box(Modifier.fillMaxWidth().aspectRatio(bmp.width.toFloat() / bmp.height)) {
                 Image(bmp.asImageBitmap(), contentDescription = "Photo of drug kit items", modifier = Modifier.fillMaxSize())
                 Canvas(Modifier.fillMaxSize()) { boxes.forEach { bx ->
@@ -260,12 +263,12 @@ fun SamCountDialog(balances: Map<String, Int>, onRecord: (item: String, counted:
                 } }
             } }
             if (msg.isNotBlank()) Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            OutlinedTextField(counted, { counted = it.filter { c -> c.isDigit() }.take(4) }, label = { Text("Count you confirm") }, singleLine = true,
+            OutlinedTextField(counted, { counted = it.filter { c -> c.isDigit() }.take(4) }, label = { Text(tr("Count you confirm", "पक्की गिनती")) }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             counted.toIntOrNull()?.let { n -> val diff = n - (balances[item] ?: 0)
-                Text(if (diff == 0) "Matches the register ✓" else "Register says ${balances[item] ?: 0}; difference ${if (diff > 0) "+" else ""}$diff will be recorded as a stock check.",
+                Text(if (diff == 0) tr("Matches the register ✓", "रजिस्टर से मिला ✓") else tr("Register says ${balances[item] ?: 0}; difference ${if (diff > 0) "+" else ""}$diff will be recorded as a stock check.", "रजिस्टर में ${balances[item] ?: 0}; अंतर ${if (diff > 0) "+" else ""}$diff स्टॉक जाँच में दर्ज होगा।"),
                     color = if (diff == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         }
     }, confirmButton = { Button(onClick = { counted.toIntOrNull()?.let { onRecord(item, it, if (boxes.isNotEmpty()) "Stock check by photo (SAM 3.1 found ${ArogyaSamCount.count(boxes.map { it.confidence })})" else "Stock check (counted by hand)") } },
-        enabled = !busy && counted.toIntOrNull() != null) { Text("Save count") } }, dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } })
+        enabled = !busy && counted.toIntOrNull() != null) { Text(tr("Save count", "गिनती सहेजें")) } }, dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(tr("Cancel", "रद्द करें")) } })
 }

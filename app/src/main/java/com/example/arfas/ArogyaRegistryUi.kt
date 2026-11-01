@@ -30,7 +30,9 @@ import kotlinx.coroutines.launch
 
 /** Small "✨ AI" badge wherever AI is used; tap shows which model powers it (exactly as implemented). */
 @Composable
-fun AiBadge(feature: String, modifier: Modifier = Modifier) {
+fun AiBadge(feature: String, modifier: Modifier = Modifier, hindi: Boolean? = null) {
+    val h = hindi ?: ArogyaLang.uiHindi(LocalContext.current)
+    fun tr(en: String, hi: String) = if (h) hi else en
     var open by remember { mutableStateOf(false) }
     val items = ArogyaAiCatalog.features.filter { it.feature.startsWith(feature) }
     AssistChip(onClick = { open = true }, label = { Text("✨ AI", style = MaterialTheme.typography.labelSmall) }, modifier = modifier.height(28.dp))
@@ -43,25 +45,26 @@ fun AiBadge(feature: String, modifier: Modifier = Modifier) {
                     Text(f.whatAiDoes, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Text("You check and approve everything the AI suggests.", style = MaterialTheme.typography.bodySmall)
+            Text(tr("You check and approve everything the AI suggests.", "AI जो सुझाए, आप देखकर पक्का करती हैं।"), style = MaterialTheme.typography.bodySmall)
         }
-    }, confirmButton = { TextButton(onClick = { open = false }) { Text("OK") } })
+    }, confirmButton = { TextButton(onClick = { open = false }) { Text(tr("OK", "ठीक")) } })
 }
 
 /** Every AI feature in the app, the model behind it, and the live state of the phone's model. */
 @Composable
-fun ArogyaAiPage(modelStatus: String, onlineStatus: String, onDismiss: () -> Unit, ai: ArogyaVisitAi? = null) {
+fun ArogyaAiPage(hindi: Boolean, modelStatus: String, onlineStatus: String, onDismiss: () -> Unit, ai: ArogyaVisitAi? = null) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     var cloudOpen by rememberSaveable { mutableStateOf(false) }
-    if (cloudOpen) ArogyaCloudSettingsDialog { cloudOpen = false }
+    if (cloudOpen) ArogyaCloudSettingsDialog(hindi) { cloudOpen = false }
     val benchScope = rememberCoroutineScope()
     var benchLog by remember { mutableStateOf("") }
     var benchBusy by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("✨ AI in ArogyaDoot") }, text = {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("✨ AI in ArogyaDoot", "✨ ArogyaDoot में AI")) }, text = {
         Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(10.dp)) {
-                Text("On this phone now", fontWeight = FontWeight.Bold); Text(modelStatus, style = MaterialTheme.typography.bodySmall); Text(onlineStatus, style = MaterialTheme.typography.bodySmall)
+                Text(tr("On this phone now", "इस फ़ोन पर अभी"), fontWeight = FontWeight.Bold); Text(modelStatus, style = MaterialTheme.typography.bodySmall); Text(onlineStatus, style = MaterialTheme.typography.bodySmall)
             } }
-            Button(onClick = { cloudOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("☁ Cloud AI (Meta) — keys and models") }
+            Button(onClick = { cloudOpen = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("☁ Cloud AI (Meta) — keys and models", "☁ क्लाउड AI (Meta) — key और मॉडल")) }
             if (ai != null && (LocalContext.current.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                 OutlinedButton(onClick = {
                     if (benchBusy) { ai.cancel(); return@OutlinedButton }
@@ -73,7 +76,7 @@ fun ArogyaAiPage(modelStatus: String, onlineStatus: String, onDismiss: () -> Uni
                         } catch (e: CancellationException) { benchLog += "\nCancelled" }
                         finally { benchBusy = false }
                     }
-                }, modifier = Modifier.fillMaxWidth()) { Text(if (benchBusy) "Stop benchmark" else "Run M1 benchmark (19 questions, test aid)") }
+                }, modifier = Modifier.fillMaxWidth()) { Text(if (benchBusy) tr("Stop benchmark", "बेंचमार्क रोकें") else tr("Run M1 benchmark (19 questions, test aid)", "M1 बेंचमार्क चलाएँ (19 सवाल)")) }
                 if (benchLog.isNotBlank()) Text(benchLog.trim(), style = MaterialTheme.typography.bodySmall)
             }
             ArogyaAiCatalog.features.forEach { f ->
@@ -83,9 +86,9 @@ fun ArogyaAiPage(modelStatus: String, onlineStatus: String, onDismiss: () -> Uni
                     Text(f.whatAiDoes + " · " + f.where, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Text("Ⓜ = Meta model.", style = MaterialTheme.typography.bodySmall)
+            Text(tr("Ⓜ = Meta model.", "Ⓜ = Meta मॉडल।"), style = MaterialTheme.typography.bodySmall)
         }
-    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } })
+    }, confirmButton = { TextButton(onClick = onDismiss) { Text(tr("Close", "बंद करें")) } })
 }
 
 /** Home: what is due today, in one card. */
@@ -144,7 +147,8 @@ private fun DateBox(label: String, value: String, modifier: Modifier = Modifier,
 
 /** Full-screen hub: Due list · Patients · Registers · Backup. */
 @Composable
-fun ArogyaRegistryHub(initial: String, visits: List<ArogyaVisit>, queue: ArogyaVisitQueue, onClose: () -> Unit, ai: ArogyaVisitAi? = null, onStartVisit: (Beneficiary) -> Unit) {
+fun ArogyaRegistryHub(hindi: Boolean, initial: String, visits: List<ArogyaVisit>, queue: ArogyaVisitQueue, onClose: () -> Unit, ai: ArogyaVisitAi? = null, onStartVisit: (Beneficiary) -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
     val store = remember { ArogyaRegistryStore.get(context) }
     val data by store.state.collectAsState()
@@ -160,41 +164,42 @@ fun ArogyaRegistryHub(initial: String, visits: List<ArogyaVisit>, queue: ArogyaV
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onClose) { Text("‹ Home") }
-                    Text(when (tab) { "due" -> "Today's visits"; "patients" -> "People"; "registers" -> "Registers"; else -> "Backup" },
+                    TextButton(onClick = onClose) { Text(tr("‹ Home", "‹ होम")) }
+                    Text(when (tab) { "due" -> tr("Today's visits", "आज की विज़िट"); "patients" -> tr("People", "लोग"); "registers" -> tr("Registers", "रजिस्टर"); else -> tr("Backup", "बैकअप") },
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 }
                 if (!store.loaded) { LinearProgressIndicator(Modifier.fillMaxWidth()); if (store.error.isNotBlank()) Text(store.error, color = MaterialTheme.colorScheme.error) }
                 Box(Modifier.weight(1f)) {
                     when (tab) {
-                        "due" -> DueTab(data, visits, today, onVisit = { id -> data.beneficiaries.firstOrNull { it.id == id }?.let(onStartVisit) }) { openPatient = it }
-                        "patients" -> PatientsTab(data, visits, today, onOpen = { openPatient = it }, onAdd = { editPatient = Beneficiary() })
-                        "registers" -> RegistersTab(data, visits, store, today) { c -> save(c) }
-                        else -> BackupTab(store, queue)
+                        "due" -> DueTab(hindi, data, visits, today, onVisit = { id -> data.beneficiaries.firstOrNull { it.id == id }?.let(onStartVisit) }) { openPatient = it }
+                        "patients" -> PatientsTab(hindi, data, visits, today, onOpen = { openPatient = it }, onAdd = { editPatient = Beneficiary() })
+                        "registers" -> RegistersTab(hindi, data, visits, store, today) { c -> save(c) }
+                        else -> BackupTab(hindi, store, queue)
                     }
                 }
             }
         }
     }
     openPatient?.let { id -> data.beneficiaries.firstOrNull { it.id == id }?.let { b ->
-        McpCardDialog(b, data, visits, today, ai, onClose = { openPatient = null }, onEdit = { editPatient = b },
+        McpCardDialog(hindi, b, data, visits, today, ai, onClose = { openPatient = null }, onEdit = { editPatient = b },
             onStartVisit = { openPatient = null; onStartVisit(b) }, save = { c -> save(c) })
     } }
-    editPatient?.let { b -> PatientForm(b, onDismiss = { editPatient = null }) { updated ->
+    editPatient?.let { b -> PatientForm(hindi, b, onDismiss = { editPatient = null }) { updated ->
         if (save { r -> if (r.beneficiaries.any { it.id == updated.id }) r.copy(beneficiaries = r.beneficiaries.map { if (it.id == updated.id) updated.copy(updatedAt = System.currentTimeMillis()) else it })
                 else r.copy(beneficiaries = r.beneficiaries + updated) }) { editPatient = null; openPatient = updated.id }
     } }
 }
 
 @Composable
-private fun DueTab(data: RegistryData, visits: List<ArogyaVisit>, today: LocalDate, onVisit: (String) -> Unit, onOpen: (String) -> Unit) {
+private fun DueTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaVisit>, today: LocalDate, onVisit: (String) -> Unit, onOpen: (String) -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     var days by remember { mutableStateOf(7L) }
     val due = remember(data, visits, days) { ArogyaSchedule.dueList(data.beneficiaries, visits, today, days) }
     Column {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(0L to "Today", 7L to "This week", 30L to "This month").forEach { (d, l) -> FilterChip(selected = days == d, onClick = { days = d }, label = { Text(l) }) }
+            listOf(0L to tr("Today", "आज"), 7L to tr("This week", "इस हफ़्ते"), 30L to tr("This month", "इस महीने")).forEach { (d, l) -> FilterChip(selected = days == d, onClick = { days = d }, label = { Text(l) }) }
         }
-        if (due.isEmpty()) Text("Nothing due. Add patients with dates of birth or LMP to build the schedule.", Modifier.padding(8.dp))
+        if (due.isEmpty()) Text(tr("Nothing due. Add patients with dates of birth or LMP to build the schedule.", "कुछ बाकी नहीं। जन्मतिथि या LMP के साथ लोग जोड़ें ताकि सूची बने।"), Modifier.padding(8.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(due, key = { it.beneficiaryId + it.label }) { item ->
                 Card(Modifier.fillMaxWidth().clickable { onOpen(item.beneficiaryId) },
@@ -203,8 +208,8 @@ private fun DueTab(data: RegistryData, visits: List<ArogyaVisit>, today: LocalDa
                         Text("${item.name} · ${item.village}", fontWeight = FontWeight.Bold)
                         Text(item.label)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text((if (item.overdue(today)) "OVERDUE — window ended ${item.windowEnd}" else if (item.due <= today) "Due now (until ${item.windowEnd})" else "Due ${item.due}"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                            Button(onClick = { onVisit(item.beneficiaryId) }) { Text("Start visit") }
+                            Text((if (item.overdue(today)) tr("OVERDUE — window ended ", "समय निकल गया — अवधि ख़त्म ") + item.windowEnd else if (item.due <= today) tr("Due now (until ", "अभी बाकी (") + item.windowEnd + ")" else tr("Due ", "तारीख़ ") + item.due), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            Button(onClick = { onVisit(item.beneficiaryId) }) { Text(tr("Start visit", "विज़िट शुरू करें")) }
                         }
                     }
                 }
@@ -214,11 +219,13 @@ private fun DueTab(data: RegistryData, visits: List<ArogyaVisit>, today: LocalDa
 }
 
 @Composable
-private fun PatientsTab(data: RegistryData, visits: List<ArogyaVisit>, today: LocalDate, onOpen: (String) -> Unit, onAdd: () -> Unit) {
+private fun PatientsTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaVisit>, today: LocalDate, onOpen: (String) -> Unit, onAdd: () -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     var query by remember { mutableStateOf("") }
     var group by remember { mutableStateOf("All") }
     var byHouse by remember { mutableStateOf(true) }
-    val groups = listOf("All", "Pregnant women", "Infants (0–1 year)", "Children (1–6 years)", "Eligible couples", "High risk")
+    val groups = listOf("All" to tr("All", "सभी"), "Pregnant women" to tr("Pregnant women", "गर्भवती महिलाएँ"), "Infants (0–1 year)" to tr("Infants (0–1 year)", "शिशु (0–1 साल)"), "Children (1–6 years)" to tr("Children (1–6 years)", "बच्चे (1–6 साल)"), "Eligible couples" to tr("Eligible couples", "योग्य दंपति"), "High risk" to tr("High risk", "जोखिम वाले"))
+    fun trGroup(b: Beneficiary): String { val g = ArogyaRegistryLogic.rchGroup(b, today); return groups.firstOrNull { it.first == g }?.second ?: g }
     val shown = remember(data, query, group) {
         data.beneficiaries.filter { it.active }.filter { b -> query.isBlank() || listOf(b.name, b.relativeName, b.household, b.village, b.rchId, b.phone).any { it.contains(query, true) } }
             .filter { b -> group == "All" || (group == "High risk" && ArogyaRegistryLogic.isHighRisk(b)) || ArogyaRegistryLogic.rchGroup(b, today) == group }
@@ -226,25 +233,25 @@ private fun PatientsTab(data: RegistryData, visits: List<ArogyaVisit>, today: Lo
     }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(query, { query = it }, placeholder = { Text("Search") }, singleLine = true, modifier = Modifier.weight(1f))
-            Button(onClick = onAdd, modifier = Modifier.padding(start = 6.dp)) { Text("+ Add") }
+            OutlinedTextField(query, { query = it }, placeholder = { Text(tr("Search", "खोजें")) }, singleLine = true, modifier = Modifier.weight(1f))
+            Button(onClick = onAdd, modifier = Modifier.padding(start = 6.dp)) { Text(tr("+ Add", "+ जोड़ें")) }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            groups.forEach { g -> FilterChip(selected = group == g, onClick = { group = g }, label = { Text(g) }) }
+            groups.forEach { (k, l) -> FilterChip(selected = group == k, onClick = { group = k }, label = { Text(l) }) }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${shown.size} of ${data.beneficiaries.count { it.active }} people", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-            TextButton(onClick = { byHouse = !byHouse }) { Text(if (byHouse) "Show as list" else "Show by household") }
+            Text("${shown.size} / ${data.beneficiaries.count { it.active }} " + tr("people", "लोग"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            TextButton(onClick = { byHouse = !byHouse }) { Text(if (byHouse) tr("Show as list", "सूची में देखें") else tr("Show by household", "परिवार से देखें")) }
         }
-        if (data.beneficiaries.isEmpty()) Text("No people yet. Tap + Add for each family member from your household survey — or go back to Home and tap “Load sample village (50 people)” to try the app with fictional data.", Modifier.padding(8.dp))
+        if (data.beneficiaries.isEmpty()) Text(tr("No people yet. Tap + Add for each family member from your household survey — or go back to Home and tap “Load sample village (50 people)” to try the app with fictional data.", "अभी कोई नहीं। घर-सर्वे के हर सदस्य के लिए + जोड़ें दबाएँ — या होम जाकर “नमूना गाँव लोड करें (50 लोग)” से काल्पनिक डेटा पर आज़माएँ।"), Modifier.padding(8.dp))
         val rows: List<Pair<String?, Beneficiary>> = if (!byHouse) shown.map { null to it } else ArogyaRegistryLogic.byHousehold(shown).entries.sortedBy { it.key }.flatMap { (h, l) -> l.mapIndexed { i, b -> (if (i == 0) h else null) to b } }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(rows, key = { it.second.id }) { (header, b) ->
                 if (header != null) Text("🏠 $header", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
                 Card(Modifier.fillMaxWidth().clickable { onOpen(b.id) }) {
                     Column(Modifier.padding(10.dp)) {
-                        Text((if (b.demo) "[DEMO] " else "") + b.name + if (ArogyaRegistryLogic.isHighRisk(b)) "  ⚠ high risk" else "", fontWeight = FontWeight.Bold)
-                        Text("${ArogyaRegistryLogic.rchGroup(b, today)} · " + (if (b.household.isNotBlank()) "${b.household} · " else "") + b.village + (ArogyaRegistryLogic.edd(b)?.let { " · EDD $it" } ?: "") + (if (b.dob.isNotBlank()) " · DOB ${b.dob}" else ""),
+                        Text((if (b.demo) "[DEMO] " else "") + b.name + if (ArogyaRegistryLogic.isHighRisk(b)) tr("  ⚠ high risk", "  ⚠ जोखिम") else "", fontWeight = FontWeight.Bold)
+                        Text(trGroup(b) + " · " + (if (b.household.isNotBlank()) "${b.household} · " else "") + b.village + (ArogyaRegistryLogic.edd(b)?.let { " · " + tr("EDD ", "प्रसव तिथि ") + it } ?: "") + (if (b.dob.isNotBlank()) " · " + tr("DOB ", "जन्म ") + b.dob else ""),
                             style = MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -254,50 +261,52 @@ private fun PatientsTab(data: RegistryData, visits: List<ArogyaVisit>, today: Lo
 }
 
 @Composable
-private fun PatientForm(initial: Beneficiary, onDismiss: () -> Unit, onSave: (Beneficiary) -> Unit) {
+private fun PatientForm(hindi: Boolean, initial: Beneficiary, onDismiss: () -> Unit, onSave: (Beneficiary) -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     var b by remember { mutableStateOf(initial) }
     var weight by remember { mutableStateOf(initial.birthWeightKg?.toString().orEmpty()) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (initial.name.isBlank()) "Add patient" else "Edit patient") }, text = {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (initial.name.isBlank()) tr("Add patient", "रोगी जोड़ें") else tr("Edit patient", "रोगी सुधारें")) }, text = {
         Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Use fictional names in demos.", style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(b.name, { b = b.copy(name = it.take(80)) }, label = { Text("Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.relativeName, { b = b.copy(relativeName = it.take(80)) }, label = { Text("Husband / mother / father") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.household, { b = b.copy(household = it.take(60)) }, label = { Text("Household (house no. / family head) — from line listing") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.village, { b = b.copy(village = it.take(80)) }, label = { Text("Village / hamlet") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            if (b.category != BenCategory.CHILD) OutlinedTextField(b.age, { b = b.copy(age = it.filter { c -> c.isDigit() }.take(3)) }, label = { Text("Age (years)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.phone, { b = b.copy(phone = it.filter { c -> c.isDigit() || c == '+' }.take(15)) }, label = { Text("Phone") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.rchId, { b = b.copy(rchId = it.take(30)) }, label = { Text("RCH ID (if any)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Text("Register as")
+            Text(tr("Use fictional names in demos.", "डेमो में काल्पनिक नाम लिखें।"), style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(b.name, { b = b.copy(name = it.take(80)) }, label = { Text(tr("Name *", "नाम *")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(b.relativeName, { b = b.copy(relativeName = it.take(80)) }, label = { Text(tr("Husband / mother / father", "पति / माँ / पिता")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(b.household, { b = b.copy(household = it.take(60)) }, label = { Text(tr("Household (house no. / family head) — from line listing", "परिवार (मकान नं. / मुखिया) — सूची से")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(b.village, { b = b.copy(village = it.take(80)) }, label = { Text(tr("Village / hamlet", "गाँव / टोला")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            if (b.category != BenCategory.CHILD) OutlinedTextField(b.age, { b = b.copy(age = it.filter { c -> c.isDigit() }.take(3)) }, label = { Text(tr("Age (years)", "उम्र (साल)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(b.phone, { b = b.copy(phone = it.filter { c -> c.isDigit() || c == '+' }.take(15)) }, label = { Text(tr("Phone", "फ़ोन")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(b.rchId, { b = b.copy(rchId = it.take(30)) }, label = { Text(tr("RCH ID (if any)", "RCH ID (हो तो)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Text(tr("Register as", "दर्ज करें"))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                BenCategory.values().forEach { c -> FilterChip(selected = b.category == c, onClick = { b = b.copy(category = c, sex = if (c == BenCategory.CHILD) b.sex else "F") }, label = { Text(c.title) }) }
+                BenCategory.values().forEach { c -> FilterChip(selected = b.category == c, onClick = { b = b.copy(category = c, sex = if (c == BenCategory.CHILD) b.sex else "F") }, label = { Text(if (hindi) c.titleHi else c.title) }) }
             }
             if (b.category == BenCategory.CHILD) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("F" to "Girl", "M" to "Boy").forEach { (s, l) -> FilterChip(selected = b.sex == s, onClick = { b = b.copy(sex = s) }, label = { Text(l) }) } }
-                DateBox("Date of birth *", b.dob, Modifier.fillMaxWidth()) { b = b.copy(dob = it) }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("INSTITUTION" to "Hospital birth", "HOME" to "Home birth").forEach { (p, l) -> FilterChip(selected = b.deliveryPlace == p, onClick = { b = b.copy(deliveryPlace = p) }, label = { Text(l) }) } }
-                OutlinedTextField(weight, { weight = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text("Birth weight (kg)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(b.preterm, { b = b.copy(preterm = it) }); Text("Born preterm") }
-                DateBox("SNCU/NBSU discharge (if admitted)", b.sncuDischarge, Modifier.fillMaxWidth()) { b = b.copy(sncuDischarge = it) }
-                if (b.sncuDischarge.isNotBlank()) TextButton(onClick = { b = b.copy(sncuDischarge = "") }) { Text("Clear discharge date") }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("F" to tr("Girl", "लड़की"), "M" to tr("Boy", "लड़का")).forEach { (s, l) -> FilterChip(selected = b.sex == s, onClick = { b = b.copy(sex = s) }, label = { Text(l) }) } }
+                DateBox(tr("Date of birth *", "जन्मतिथि *"), b.dob, Modifier.fillMaxWidth()) { b = b.copy(dob = it) }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("INSTITUTION" to tr("Hospital birth", "अस्पताल में जन्म"), "HOME" to tr("Home birth", "घर पर जन्म")).forEach { (p, l) -> FilterChip(selected = b.deliveryPlace == p, onClick = { b = b.copy(deliveryPlace = p) }, label = { Text(l) }) } }
+                OutlinedTextField(weight, { weight = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text(tr("Birth weight (kg)", "जन्म वज़न (किलो)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(b.preterm, { b = b.copy(preterm = it) }); Text(tr("Born preterm", "समय से पहले जन्म")) }
+                DateBox(tr("SNCU/NBSU discharge (if admitted)", "SNCU/NBSU छुट्टी (भर्ती हुए तो)"), b.sncuDischarge, Modifier.fillMaxWidth()) { b = b.copy(sncuDischarge = it) }
+                if (b.sncuDischarge.isNotBlank()) TextButton(onClick = { b = b.copy(sncuDischarge = "") }) { Text(tr("Clear discharge date", "छुट्टी तारीख़ हटाएँ")) }
             }
             if (b.category == BenCategory.PREGNANT) {
-                DateBox("LMP *", b.lmp, Modifier.fillMaxWidth()) { b = b.copy(lmp = it) }
-                ArogyaRegistryLogic.edd(b)?.let { Text("EDD: $it") }
-                DateBox("Delivery date (after birth)", b.deliveryDate, Modifier.fillMaxWidth()) { b = b.copy(deliveryDate = it) }
+                DateBox(tr("LMP *", "अंतिम माहवारी *"), b.lmp, Modifier.fillMaxWidth()) { b = b.copy(lmp = it) }
+                ArogyaRegistryLogic.edd(b)?.let { Text(tr("EDD: ", "प्रसव तिथि: ") + it) }
+                DateBox(tr("Delivery date (after birth)", "प्रसव तारीख़ (जन्म के बाद)"), b.deliveryDate, Modifier.fillMaxWidth()) { b = b.copy(deliveryDate = it) }
             }
             if (b.category == BenCategory.ELIGIBLE_COUPLE || b.category == BenCategory.MOTHER)
-                OutlinedTextField(b.familyPlanning, { b = b.copy(familyPlanning = it.take(60)) }, label = { Text("Family planning method") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.notes, { b = b.copy(notes = it.take(1000)) }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(b.familyPlanning, { b = b.copy(familyPlanning = it.take(60)) }, label = { Text(tr("Family planning method", "परिवार नियोजन साधन")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(b.notes, { b = b.copy(notes = it.take(1000)) }, label = { Text(tr("Notes", "नोट")) }, modifier = Modifier.fillMaxWidth())
         }
     }, confirmButton = {
         val ok = b.name.isNotBlank() && (b.category != BenCategory.CHILD || b.dob.isNotBlank()) && (b.category != BenCategory.PREGNANT || b.lmp.isNotBlank())
-        Button(onClick = { onSave(b.copy(birthWeightKg = weight.toDoubleOrNull()?.takeIf { it in 0.3..8.0 })) }, enabled = ok) { Text("Save") }
-    }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+        Button(onClick = { onSave(b.copy(birthWeightKg = weight.toDoubleOrNull()?.takeIf { it in 0.3..8.0 })) }, enabled = ok) { Text(tr("Save", "सहेजें")) }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "रद्द करें")) } })
 }
 
 @Composable
-private fun McpCardDialog(b: Beneficiary, data: RegistryData, visits: List<ArogyaVisit>, today: LocalDate, ai: ArogyaVisitAi?, onClose: () -> Unit, onEdit: () -> Unit,
+private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, visits: List<ArogyaVisit>, today: LocalDate, ai: ArogyaVisitAi?, onClose: () -> Unit, onEdit: () -> Unit,
                           onStartVisit: () -> Unit, save: ((RegistryData) -> RegistryData) -> Boolean) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     fun updateBen(f: (Beneficiary) -> Beneficiary) = save { r -> r.copy(beneficiaries = r.beneficiaries.map { if (it.id == b.id) f(it).copy(updatedAt = System.currentTimeMillis()) else it }) }
     var giveOpen by remember { mutableStateOf(false) }
     var eventOpen by remember { mutableStateOf(false) }
@@ -332,66 +341,66 @@ private fun McpCardDialog(b: Beneficiary, data: RegistryData, visits: List<Arogy
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().padding(8.dp), shape = MaterialTheme.shapes.large) {
             Column(Modifier.padding(14.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("MCP card · " + b.name, style = MaterialTheme.typography.titleLarge)
+                Text(tr("MCP card · ", "MCP कार्ड · ") + b.name, style = MaterialTheme.typography.titleLarge)
                 Text(listOf(ArogyaRegistryLogic.rchGroup(b, today), b.village, b.relativeName.takeIf { it.isNotBlank() }?.let { "c/o $it" }, b.rchId.takeIf { it.isNotBlank() }?.let { "RCH $it" })
                     .filterNotNull().filter { it.isNotBlank() }.joinToString(" · "))
-                if (ArogyaRegistryLogic.isHighRisk(b)) Text("⚠ High risk (LBW / preterm / SNCU) — extra follow-up visits", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                if (b.dob.isNotBlank()) Text("DOB ${b.dob}" + (b.birthWeightKg?.let { " · birth weight $it kg" } ?: "") + (if (b.deliveryPlace.isNotBlank()) " · ${b.deliveryPlace.lowercase()} birth" else ""))
-                ArogyaRegistryLogic.edd(b)?.let { Text("LMP ${b.lmp} · EDD $it", fontWeight = FontWeight.Bold) }
+                if (ArogyaRegistryLogic.isHighRisk(b)) Text(tr("⚠ High risk (LBW / preterm / SNCU) — extra follow-up visits", "⚠ जोखिम (कम वज़न / समयपूर्व / SNCU) — ज़्यादा फ़ॉलो-अप"), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                if (b.dob.isNotBlank()) Text(tr("DOB ", "जन्म ") + b.dob + (b.birthWeightKg?.let { " · " + tr("birth weight ", "जन्म वज़न ") + "$it kg" } ?: "") + (if (b.deliveryPlace.isNotBlank()) " · ${b.deliveryPlace.lowercase()} " + tr("birth", "जन्म") else ""))
+                ArogyaRegistryLogic.edd(b)?.let { Text(tr("LMP ", "अंतिम माहवारी ") + b.lmp + " · " + tr("EDD ", "प्रसव तिथि ") + it, fontWeight = FontWeight.Bold) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onStartVisit, modifier = Modifier.weight(1f)) { Text("Start visit") }
-                    OutlinedButton(onClick = onEdit) { Text("Edit") }
+                    Button(onClick = onStartVisit, modifier = Modifier.weight(1f)) { Text(tr("Start visit", "विज़िट शुरू करें")) }
+                    OutlinedButton(onClick = onEdit) { Text(tr("Edit", "सुधारें")) }
                 }
                 if (ai != null) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) { Text("📷 Read the paper MCP card", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); AiBadge("Read MCP card photo") }
-                        Text("Photograph the family's card; dates, vaccines and weights are filled here after you tick them.", style = MaterialTheme.typography.bodySmall)
+                        Row(verticalAlignment = Alignment.CenterVertically) { Text(tr("📷 Read the paper MCP card", "📷 कागज़ का MCP कार्ड पढ़ें"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); AiBadge("Read MCP card photo") }
+                        Text(tr("Photograph the family's card; dates, vaccines and weights are filled here after you tick them.", "परिवार के कार्ड की फ़ोटो लें; तारीख़, टीके और वज़न निशान के बाद यहाँ भरेंगे।"), style = MaterialTheme.typography.bodySmall)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { camPerm.launch(android.Manifest.permission.CAMERA) }, enabled = !readBusy) { Text("Take photo") }
-                            OutlinedButton(onClick = { pickCard.launch(arrayOf("image/*", "application/pdf")) }, enabled = !readBusy) { Text("Choose file") }
+                            Button(onClick = { camPerm.launch(android.Manifest.permission.CAMERA) }, enabled = !readBusy) { Text(tr("Take photo", "फ़ोटो लें")) }
+                            OutlinedButton(onClick = { pickCard.launch(arrayOf("image/*", "application/pdf")) }, enabled = !readBusy) { Text(tr("Choose file", "फ़ाइल चुनें")) }
                         }
-                        if (readBusy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Reading the card on this phone…", style = MaterialTheme.typography.bodySmall) }
+                        if (readBusy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(tr("Reading the card on this phone…", "इसी फ़ोन पर कार्ड पढ़ रहे हैं…"), style = MaterialTheme.typography.bodySmall) }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = !updateMode, onClick = { updateMode = false }, label = { Text("MCP card") })
-                    FilterChip(selected = updateMode, onClick = { updateMode = true }, label = { Text("Update (tick what was done)") })
+                    FilterChip(selected = !updateMode, onClick = { updateMode = false }, label = { Text(tr("MCP card", "MCP कार्ड")) })
+                    FilterChip(selected = updateMode, onClick = { updateMode = true }, label = { Text(tr("Update (tick what was done)", "अपडेट (जो किया निशान लगाएँ)")) })
                 }
                 if (!updateMode) {
-                    Text("Layout of the official Mother and Child Protection Card (MoHFW/MWCD 2018). Values are this register's data.", style = MaterialTheme.typography.bodySmall)
+                    Text(tr("Layout of the official Mother and Child Protection Card (MoHFW/MWCD 2018). Values are this register's data.", "आधिकारिक MCP कार्ड का खाका (MoHFW/MWCD 2018)। मान इस रजिस्टर के हैं।"), style = MaterialTheme.typography.bodySmall)
                     official.forEach { (title, lines) ->
                         Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp)) {
                             Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
                             lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = if (it.contains("missed") || it.endsWith("YES")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) }
                         } }
                     }
-                    OutlinedButton(onClick = { if (!ArogyaRegistryStore.get(context).shareCardPdf(b.name, official)) Toast.makeText(context, "Could not create the PDF", Toast.LENGTH_LONG).show() }) { Text("Share MCP card (PDF)") }
+                    OutlinedButton(onClick = { if (!ArogyaRegistryStore.get(context).shareCardPdf(b.name, official)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show() }) { Text(tr("Share MCP card (PDF)", "MCP कार्ड भेजें (PDF)")) }
                     val filled = ArogyaOfficialForms.ALL.filter { sp -> data.forms.any { it.beneficiaryId == b.id && it.formId == sp.id } }
                     filled.forEach { sp ->
-                        Text("Visit form — filled over visits", fontWeight = FontWeight.Bold)
+                        Text(tr("Visit form — filled over visits", "विज़िट फ़ॉर्म — विज़िटों में भरा"), fontWeight = FontWeight.Bold)
                         val t = ArogyaOfficialForms.table(sp, b, data.forms)
-                        OfficialFormGrid(t, null)
-                        OutlinedButton(onClick = { if (!ArogyaRegistryStore.get(context).shareFormPdf(t)) Toast.makeText(context, "Could not create the PDF", Toast.LENGTH_LONG).show() }) { Text("Share this form (PDF)") }
+                        OfficialFormGrid(t, null, hindi = hindi)
+                        OutlinedButton(onClick = { if (!ArogyaRegistryStore.get(context).shareFormPdf(t)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show() }) { Text(tr("Share this form (PDF)", "यह फ़ॉर्म भेजें (PDF)")) }
                     }
-                    if (filled.none { it.id == "annex9" } && b.category == BenCategory.CHILD && b.dob.isNotBlank()) OutlinedButton(onClick = { ArogyaRegistryStore.get(context).shareFormPdf(ArogyaForms.homeVisitForm(b, visits)) }) { Text("Share Home Visit Form (Annexure 9, PDF)") }
+                    if (filled.none { it.id == "annex9" } && b.category == BenCategory.CHILD && b.dob.isNotBlank()) OutlinedButton(onClick = { ArogyaRegistryStore.get(context).shareFormPdf(ArogyaForms.homeVisitForm(b, visits)) }) { Text(tr("Share Home Visit Form (Annexure 9, PDF)", "होम विज़िट फ़ॉर्म भेजें (Annexure 9, PDF)")) }
                 }
                 if (updateMode) {
-                Text("Schedule", fontWeight = FontWeight.Bold)
-                if (schedule.isEmpty()) Text("Add date of birth (child) or LMP (pregnant woman) to see the schedule.", style = MaterialTheme.typography.bodySmall)
+                Text(tr("Schedule", "सूची"), fontWeight = FontWeight.Bold)
+                if (schedule.isEmpty()) Text(tr("Add date of birth (child) or LMP (pregnant woman) to see the schedule.", "सूची के लिए जन्मतिथि (बच्चा) या LMP (गर्भवती) जोड़ें।"), style = MaterialTheme.typography.bodySmall)
                 schedule.filter { it.kind != "VACCINE" }.forEach { s ->
-                    Text((if (s.done) "✓ " else if (s.overdue(today)) "✗ " else "○ ") + "${s.label} — ${s.due}" + (if (s.done) " (done ${s.doneDate})" else if (s.overdue(today)) " MISSED" else ""),
+                    Text((if (s.done) "✓ " else if (s.overdue(today)) "✗ " else "○ ") + "${s.label} — ${s.due}" + (if (s.done) " (" + tr("done ", "हो गया ") + s.doneDate + ")" else if (s.overdue(today)) tr(" MISSED", " छूटा") else ""),
                         color = if (s.overdue(today)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
                 }
                 if (b.category == BenCategory.PREGNANT) {
-                    Text("ANC check-ups (tick when done today)", fontWeight = FontWeight.Bold)
+                    Text(tr("ANC check-ups (tick when done today)", "ANC जाँच (आज की तो निशान लगाएँ)"), fontWeight = FontWeight.Bold)
                     (1..4).forEach { n -> Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(b.mcp.anc[n] != null, { c -> if (updateBen { x -> x.copy(mcp = x.mcp.copy(anc = if (c) x.mcp.anc + (n to today.toString()) else x.mcp.anc - n)) } && c) ancEdit = n })
-                        Text("ANC $n" + (b.mcp.anc[n]?.let { " — $it" } ?: "") + (b.mcp.ancDetails[n]?.let { " · ${it.weightKg} kg · BP ${it.bp} · Hb ${it.hb}" } ?: ""), modifier = Modifier.weight(1f))
-                        if (b.mcp.anc[n] != null) TextButton(onClick = { ancEdit = n }) { Text("Details") }
+                        Text("ANC $n" + (b.mcp.anc[n]?.let { " — $it" } ?: "") + (b.mcp.ancDetails[n]?.let { " · ${it.weightKg} kg · " + tr("BP ", "रक्तचाप ") + it.bp + " · Hb " + it.hb } ?: ""), modifier = Modifier.weight(1f))
+                        if (b.mcp.anc[n] != null) TextButton(onClick = { ancEdit = n }) { Text(tr("Details", "विवरण")) }
                     } }
                 }
                 if (b.category == BenCategory.CHILD) {
-                    Text("Vaccines (tick when given today)", fontWeight = FontWeight.Bold)
+                    Text(tr("Vaccines (tick when given today)", "टीके (आज लगाए तो निशान लगाएँ)"), fontWeight = FontWeight.Bold)
                     ArogyaSchedule.VACCINE_CONTACTS.forEach { c ->
                         val dob = runCatching { LocalDate.parse(b.dob) }.getOrNull()
                         Text(c.label.substringBefore(" (") + (dob?.let { " · due ${c.due(it)}" } ?: ""), style = MaterialTheme.typography.labelLarge)
@@ -403,87 +412,90 @@ private fun McpCardDialog(b: Beneficiary, data: RegistryData, visits: List<Arogy
                             }
                         }
                     }
-                    Text("Weight", fontWeight = FontWeight.Bold)
+                    Text(tr("Weight", "वज़न"), fontWeight = FontWeight.Bold)
                     b.mcp.weights.sortedBy { it.date }.forEach { Text("${it.date}: ${it.kg} kg", style = MaterialTheme.typography.bodySmall) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(kg, { kg = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text("kg today") }, singleLine = true, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { kg.toDoubleOrNull()?.takeIf { it in 0.3..40.0 }?.let { w -> if (updateBen { x -> x.copy(mcp = x.mcp.copy(weights = x.mcp.weights + WeightEntry(today.toString(), w))) }) kg = "" } }) { Text("Add") }
+                        OutlinedTextField(kg, { kg = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text(tr("kg today", "आज किलो")) }, singleLine = true, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { kg.toDoubleOrNull()?.takeIf { it in 0.3..40.0 }?.let { w -> if (updateBen { x -> x.copy(mcp = x.mcp.copy(weights = x.mcp.weights + WeightEntry(today.toString(), w))) }) kg = "" } }) { Text(tr("Add", "जोड़ें")) }
                     }
                 }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { giveOpen = true }) { Text("Give from drug kit") }
-                    OutlinedButton(onClick = { eventOpen = true }) { Text("Record event") }
+                    OutlinedButton(onClick = { giveOpen = true }) { Text(tr("Give from drug kit", "दवा किट से दें")) }
+                    OutlinedButton(onClick = { eventOpen = true }) { Text(tr("Record event", "घटना दर्ज करें")) }
                 }
                 val myVisits = visits.filter { it.personId == b.id }.sortedByDescending { it.date }
-                if (myVisits.isNotEmpty()) { Text("Visits", fontWeight = FontWeight.Bold); myVisits.take(10).forEach { Text("${it.date} · ${it.kind.title} · ${if (it.completed) "completed" else "draft"}", style = MaterialTheme.typography.bodySmall) } }
-                TextButton(onClick = { if (updateBen { it.copy(active = false) }) onClose() }) { Text("Remove from active list") }
-                TextButton(onClick = onClose) { Text("Close") }
+                if (myVisits.isNotEmpty()) { Text(tr("Visits", "विज़िट"), fontWeight = FontWeight.Bold); myVisits.take(10).forEach { Text("${it.date} · ${it.kind.title} · ${if (it.completed) tr("completed", "पूरी") else tr("draft", "अधूरी")}", style = MaterialTheme.typography.bodySmall) } }
+                TextButton(onClick = { if (updateBen { it.copy(active = false) }) onClose() }) { Text(tr("Remove from active list", "सक्रिय सूची से हटाएँ")) }
+                TextButton(onClick = onClose) { Text(tr("Close", "बंद करें")) }
             }
         }
     }
-    reading?.let { r -> AlertDialog(onDismissRequest = { reading = null }, title = { Row(verticalAlignment = Alignment.CenterVertically) { Text("Found on the card", modifier = Modifier.weight(1f)); AiBadge("Read MCP card photo") } }, text = {
+    reading?.let { r -> AlertDialog(onDismissRequest = { reading = null }, title = { Row(verticalAlignment = Alignment.CenterVertically) { Text(tr("Found on the card", "कार्ड पर मिला"), modifier = Modifier.weight(1f)); AiBadge("Read MCP card photo") } }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (r.fields.isEmpty()) Text("Nothing could be confirmed from this photo. Take a closer, brighter photo with the card flat.")
-            else Text("Untick anything that does not match the card.", style = MaterialTheme.typography.bodySmall)
+            if (r.fields.isEmpty()) Text(tr("Nothing could be confirmed from this photo. Take a closer, brighter photo with the card flat.", "इस फ़ोटो से कुछ पक्का नहीं हुआ। कार्ड सीधा रखकर पास से, रोशनी में फ़ोटो लें।"))
+            else Text(tr("Untick anything that does not match the card.", "जो कार्ड से न मिले उसका निशान हटाएँ।"), style = MaterialTheme.typography.bodySmall)
             r.fields.forEachIndexed { i, f -> Row(verticalAlignment = Alignment.Top) {
                 Checkbox(i in picked, { c -> picked = if (c) picked + i else picked - i })
-                Column(Modifier.weight(1f)) { Text("${f.label}: ${f.value}", fontWeight = FontWeight.Bold); Text("On card: " + f.evidence.take(100), style = MaterialTheme.typography.bodySmall) }
+                Column(Modifier.weight(1f)) { Text("${f.label}: ${f.value}", fontWeight = FontWeight.Bold); Text(tr("On card: ", "कार्ड पर: ") + f.evidence.take(100), style = MaterialTheme.typography.bodySmall) }
             } }
         }
     }, confirmButton = { if (r.fields.isNotEmpty()) Button(onClick = {
         val chosen = r.fields.filterIndexed { i, _ -> i in picked }
-        if (updateBen { x -> ArogyaCardApply.apply(x, chosen) }) { Toast.makeText(context, "Added ${chosen.size} details to the MCP card", Toast.LENGTH_SHORT).show(); reading = null }
-    }, enabled = picked.isNotEmpty()) { Text("Add to MCP card") } }, dismissButton = { TextButton(onClick = { reading = null }) { Text("Close") } }) }
+        if (updateBen { x -> ArogyaCardApply.apply(x, chosen) }) { Toast.makeText(context, tr("Added ", "") + "${chosen.size} " + tr("details to the MCP card", "विवरण MCP कार्ड में जोड़े"), Toast.LENGTH_SHORT).show(); reading = null }
+    }, enabled = picked.isNotEmpty()) { Text(tr("Add to MCP card", "MCP कार्ड में जोड़ें")) } }, dismissButton = { TextButton(onClick = { reading = null }) { Text(tr("Close", "बंद करें")) } }) }
     ancEdit?.let { n ->
         val cur = b.mcp.ancDetails[n] ?: AncDetail()
         var w by remember(n) { mutableStateOf(cur.weightKg) }; var bp by remember(n) { mutableStateOf(cur.bp) }; var hb by remember(n) { mutableStateOf(cur.hb) }
-        AlertDialog(onDismissRequest = { ancEdit = null }, title = { Text("ANC $n — as on the MCP card") }, text = { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedTextField(w, { w = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text("Weight (kg)") }, singleLine = true)
-            OutlinedTextField(bp, { bp = it.filter { c -> c.isDigit() || c == '/' }.take(7) }, label = { Text("Blood pressure (e.g. 110/70)") }, singleLine = true)
-            OutlinedTextField(hb, { hb = it.filter { c -> c.isDigit() || c == '.' }.take(4) }, label = { Text("Haemoglobin (g/dl)") }, singleLine = true)
-            Text("Copy from the ANM's entry on the card.", style = MaterialTheme.typography.bodySmall)
-        } }, confirmButton = { Button(onClick = { if (updateBen { x -> x.copy(mcp = x.mcp.copy(ancDetails = x.mcp.ancDetails + (n to AncDetail(w, bp, hb)))) }) ancEdit = null }) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { ancEdit = null }) { Text("Cancel") } })
+        AlertDialog(onDismissRequest = { ancEdit = null }, title = { Text("ANC $n — " + tr("as on the MCP card", "जैसा MCP कार्ड पर")) }, text = { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedTextField(w, { w = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text(tr("Weight (kg)", "वज़न (किलो)")) }, singleLine = true)
+            OutlinedTextField(bp, { bp = it.filter { c -> c.isDigit() || c == '/' }.take(7) }, label = { Text(tr("Blood pressure (e.g. 110/70)", "रक्तचाप (जैसे 110/70)")) }, singleLine = true)
+            OutlinedTextField(hb, { hb = it.filter { c -> c.isDigit() || c == '.' }.take(4) }, label = { Text(tr("Haemoglobin (g/dl)", "हीमोग्लोबिन (g/dl)")) }, singleLine = true)
+            Text(tr("Copy from the ANM's entry on the card.", "कार्ड पर ANM की लिखावट से उतारें।"), style = MaterialTheme.typography.bodySmall)
+        } }, confirmButton = { Button(onClick = { if (updateBen { x -> x.copy(mcp = x.mcp.copy(ancDetails = x.mcp.ancDetails + (n to AncDetail(w, bp, hb)))) }) ancEdit = null }) { Text(tr("Save", "सहेजें")) } },
+            dismissButton = { TextButton(onClick = { ancEdit = null }) { Text(tr("Cancel", "रद्द करें")) } })
     }
-    if (giveOpen) StockDialog(title = "Give to ${b.name}", give = true, onDismiss = { giveOpen = false }) { item, qty, note ->
+    if (giveOpen) StockDialog(hindi, title = tr("Give to ", "दें: ") + b.name, give = true, onDismiss = { giveOpen = false }) { item, qty, note ->
         if (save { r -> r.copy(stock = r.stock + StockTxn(item = item, qty = -qty, beneficiaryId = b.id, note = note)) }) giveOpen = false }
-    if (eventOpen) EventDialog(onDismiss = { eventOpen = false }) { kind, place, note ->
+    if (eventOpen) EventDialog(hindi, onDismiss = { eventOpen = false }) { kind, place, note ->
         if (save { r -> r.copy(vitals = r.vitals + VitalEvent(kind = kind, beneficiaryId = b.id, place = place, note = note)) }) eventOpen = false }
 }
 
 @Composable
-private fun StockDialog(title: String, give: Boolean, onDismiss: () -> Unit, onSave: (String, Int, String) -> Unit) {
+private fun StockDialog(hindi: Boolean, title: String, give: Boolean, onDismiss: () -> Unit, onSave: (String, Int, String) -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     var item by remember { mutableStateOf(ArogyaRegistryLogic.DRUG_KIT.first()) }
     var qty by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ArogyaRegistryLogic.DRUG_KIT.forEach { i -> Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(item == i, { item = i }); Text(i) } }
-            OutlinedTextField(qty, { qty = it.filter { c -> c.isDigit() }.take(5) }, label = { Text(if (give) "Quantity given" else "Quantity received") }, singleLine = true)
-            OutlinedTextField(note, { note = it.take(200) }, label = { Text("Note") }, singleLine = true)
+            OutlinedTextField(qty, { qty = it.filter { c -> c.isDigit() }.take(5) }, label = { Text(if (give) tr("Quantity given", "कितनी दी") else tr("Quantity received", "कितनी मिली")) }, singleLine = true)
+            OutlinedTextField(note, { note = it.take(200) }, label = { Text(tr("Note", "नोट")) }, singleLine = true)
         }
-    }, confirmButton = { Button(onClick = { qty.toIntOrNull()?.takeIf { it > 0 }?.let { onSave(item, it, note) } }, enabled = (qty.toIntOrNull() ?: 0) > 0) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+    }, confirmButton = { Button(onClick = { qty.toIntOrNull()?.takeIf { it > 0 }?.let { onSave(item, it, note) } }, enabled = (qty.toIntOrNull() ?: 0) > 0) { Text(tr("Save", "सहेजें")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "रद्द करें")) } })
 }
 
 @Composable
-private fun EventDialog(onDismiss: () -> Unit, onSave: (VitalKind, String, String) -> Unit) {
+private fun EventDialog(hindi: Boolean, onDismiss: () -> Unit, onSave: (VitalKind, String, String) -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     var kind by remember { mutableStateOf(VitalKind.BIRTH) }
     var place by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Vital event / surveillance") }, text = {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("Vital event / surveillance", "महत्वपूर्ण घटना / निगरानी")) }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            VitalKind.values().forEach { k -> Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(kind == k, { kind = k }); Text(k.title) } }
-            OutlinedTextField(place, { place = it.take(80) }, label = { Text("Place") }, singleLine = true)
-            OutlinedTextField(note, { note = it.take(300) }, label = { Text("Note") })
-            Text("Deaths and AEFI must also be reported to your ANM / MO immediately.", style = MaterialTheme.typography.bodySmall)
+            VitalKind.values().forEach { k -> Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(kind == k, { kind = k }); Text(if (hindi) k.titleHi else k.title) } }
+            OutlinedTextField(place, { place = it.take(80) }, label = { Text(tr("Place", "जगह")) }, singleLine = true)
+            OutlinedTextField(note, { note = it.take(300) }, label = { Text(tr("Note", "नोट")) })
+            Text(tr("Deaths and AEFI must also be reported to your ANM / MO immediately.", "मृत्यु और AEFI की सूचना ANM/MO को तुरंत भी दें।"), style = MaterialTheme.typography.bodySmall)
         }
-    }, confirmButton = { Button(onClick = { onSave(kind, place, note) }) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+    }, confirmButton = { Button(onClick = { onSave(kind, place, note) }) { Text(tr("Save", "सहेजें")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "रद्द करें")) } })
 }
 
 @Composable
-private fun RegistersTab(data: RegistryData, visits: List<ArogyaVisit>, store: ArogyaRegistryStore, today: LocalDate, save: ((RegistryData) -> RegistryData) -> Boolean) {
+private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaVisit>, store: ArogyaRegistryStore, today: LocalDate, save: ((RegistryData) -> RegistryData) -> Boolean) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
     var sub by remember { mutableStateOf("") }
     var month by remember { mutableStateOf(YearMonth.now()) }
@@ -492,34 +504,34 @@ private fun RegistersTab(data: RegistryData, visits: List<ArogyaVisit>, store: A
     var samOpen by rememberSaveable { mutableStateOf(false) }
     var eventOpen by remember { mutableStateOf(false) }
     val names = remember(data) { data.beneficiaries.associate { it.id to it.name } }
-    fun share(name: String, text: String) { if (!store.shareFile(name, "text/csv", text.toByteArray())) Toast.makeText(context, "Could not save the file.", Toast.LENGTH_LONG).show() }
+    fun share(name: String, text: String) { if (!store.shareFile(name, "text/csv", text.toByteArray())) Toast.makeText(context, tr("Could not save the file.", "फ़ाइल नहीं बनी।"), Toast.LENGTH_LONG).show() }
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val pages = listOf("forms" to ("📄 Official forms (print / share)" to "RI Form 3 & 4, Home Visit Form, Drug Kit Stock Card"),
-            "report" to ("💰 Monthly report & claim" to "What to submit this month"), "lists" to ("📋 Monthly lists" to "Immunization due · ANC · eligible couples"),
-            "diary" to ("📓 Activity diary" to "Visits are added automatically"), "drugs" to ("💊 Drug kit" to "Stock and what you gave"),
-            "vitals" to ("📍 Births, deaths & cases" to "Vital events and surveillance"), "vhr" to ("🏘 Village health register" to "Households and people"),
-            "rch" to ("📤 RCH register export" to "For your ANM / RCH portal"))
+        val pages = listOf("forms" to (tr("📄 Official forms (print / share)", "📄 आधिकारिक फ़ॉर्म (छापें / भेजें)") to "RI Form 3 & 4, Home Visit Form, Drug Kit Stock Card"),
+            "report" to (tr("💰 Monthly report & claim", "💰 मासिक रिपोर्ट और दावा") to tr("What to submit this month", "इस महीने क्या जमा करें")), "lists" to (tr("📋 Monthly lists", "📋 मासिक सूचियाँ") to tr("Immunization due · ANC · eligible couples", "टीकाकरण बाकी · ANC · योग्य दंपति")),
+            "diary" to (tr("📓 Activity diary", "📓 कार्य डायरी") to tr("Visits are added automatically", "विज़िट अपने आप जुड़ती हैं")), "drugs" to (tr("💊 Drug kit", "💊 दवा किट") to tr("Stock and what you gave", "स्टॉक और जो दिया")),
+            "vitals" to (tr("📍 Births, deaths & cases", "📍 जन्म, मृत्यु और मामले") to tr("Vital events and surveillance", "घटनाएँ और निगरानी")), "vhr" to (tr("🏘 Village health register", "🏘 गाँव स्वास्थ्य रजिस्टर") to tr("Households and people", "परिवार और लोग")),
+            "rch" to (tr("📤 RCH register export", "📤 RCH रजिस्टर निर्यात") to tr("For your ANM / RCH portal", "ANM / RCH पोर्टल के लिए")))
         if (sub.isBlank()) pages.forEach { (id, t) ->
             Card(Modifier.fillMaxWidth().clickable { sub = id }) { Column(Modifier.padding(14.dp)) { Text(t.first, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text(t.second, style = MaterialTheme.typography.bodySmall) } }
-        } else TextButton(onClick = { sub = "" }) { Text("‹ All registers") }
+        } else TextButton(onClick = { sub = "" }) { Text(tr("‹ All registers", "‹ सभी रजिस्टर")) }
         when (sub) {
             "" -> {}
             "forms" -> {
                 var form by remember { mutableStateOf<FormTable?>(null) }
                 val babies = data.beneficiaries.filter { it.active && it.category == BenCategory.CHILD && (ArogyaRegistryLogic.ageDays(it, today) ?: 999) <= 60 }
-                Text("Official formats filled with this register's data. Share as PDF to print or send to your ANM.", style = MaterialTheme.typography.bodySmall)
-                listOf("House to House Survey — RI Form 3" to { ArogyaForms.riForm3(data.beneficiaries, today) }, "Pregnant Women Listing — RI Form 4" to { ArogyaForms.riForm4(data.beneficiaries, today) },
-                    "Drug Kit Stock Card — Annexure 5" to { ArogyaForms.drugKitCard(data.stock) }).forEach { (label, make) ->
+                Text(tr("Official formats filled with this register's data. Share as PDF to print or send to your ANM.", "आधिकारिक खाके इस रजिस्टर के डेटा से भरे। छापने या ANM को भेजने के लिए PDF भेजें।"), style = MaterialTheme.typography.bodySmall)
+                listOf(tr("House to House Survey — RI Form 3", "घर-घर सर्वे — RI फ़ॉर्म 3") to { ArogyaForms.riForm3(data.beneficiaries, today) }, tr("Pregnant Women Listing — RI Form 4", "गर्भवती सूची — RI फ़ॉर्म 4") to { ArogyaForms.riForm4(data.beneficiaries, today) },
+                    tr("Drug Kit Stock Card — Annexure 5", "दवा किट स्टॉक कार्ड — Annexure 5") to { ArogyaForms.drugKitCard(data.stock) }).forEach { (label, make) ->
                     OutlinedButton(onClick = { form = make() }, modifier = Modifier.fillMaxWidth()) { Text(label) }
                 }
-                babies.filter { nb -> data.forms.none { it.beneficiaryId == nb.id && it.formId == "annex9" } }.forEach { nb -> OutlinedButton(onClick = { form = if (data.forms.any { it.beneficiaryId == nb.id && it.formId == "annex9" }) ArogyaOfficialForms.table(ArogyaOfficialForms.ANNEX9, nb, data.forms) else ArogyaForms.homeVisitForm(nb, visits) }, modifier = Modifier.fillMaxWidth()) { Text("Home Visit Form (Annexure 9) — ${nb.name}") } }
+                babies.filter { nb -> data.forms.none { it.beneficiaryId == nb.id && it.formId == "annex9" } }.forEach { nb -> OutlinedButton(onClick = { form = if (data.forms.any { it.beneficiaryId == nb.id && it.formId == "annex9" }) ArogyaOfficialForms.table(ArogyaOfficialForms.ANNEX9, nb, data.forms) else ArogyaForms.homeVisitForm(nb, visits) }, modifier = Modifier.fillMaxWidth()) { Text(tr("Home Visit Form (Annexure 9) — ", "होम विज़िट फ़ॉर्म (Annexure 9) — ") + nb.name) } }
                 val filledForms = data.forms.groupBy { it.beneficiaryId to it.formId }.entries.mapNotNull { (k, es) -> val b = data.beneficiaries.firstOrNull { it.id == k.first }; val sp = ArogyaOfficialForms.byId(k.second); if (b == null || sp == null) null else Triple(b, sp, es.size) }
                     .sortedWith(compareBy({ ArogyaOfficialForms.ALL.indexOf(it.second) }, { it.first.name }))
-                if (filledForms.isNotEmpty()) Text("Visit forms filled from home visits (${filledForms.size})", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+                if (filledForms.isNotEmpty()) Text(tr("Visit forms filled from home visits (", "घर विज़िट से भरे फ़ॉर्म (") + filledForms.size + ")", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
                 filledForms.forEach { (b, sp, n) -> OutlinedButton(onClick = { form = ArogyaOfficialForms.table(sp, b, data.forms) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("${sp.title.substringBefore(" —").substringBefore(" (")} — ${b.name} · $n visit${if (n == 1) "" else "s"}", maxLines = 2) } }
+                    Text("${sp.title.substringBefore(" —").substringBefore(" (")} — ${b.name} · $n " + tr("visit", "विज़िट") + (if (n == 1 || hindi) "" else "s"), maxLines = 2) } }
                 form?.let { f ->
-                    Text(f.title, fontWeight = FontWeight.Bold); Text("Format: ${f.source}", style = MaterialTheme.typography.bodySmall)
+                    Text(f.title, fontWeight = FontWeight.Bold); Text(tr("Format: ", "खाका: ") + f.source, style = MaterialTheme.typography.bodySmall)
                     Column(Modifier.horizontalScroll(rememberScrollState())) {
                         val w = f.headers.mapIndexed { i, hd -> if (i == 0 || hd.contains("Name") || hd.contains("Ask")) 170.dp else 84.dp }
                         Row { f.headers.forEachIndexed { i, hd -> Text(hd, Modifier.width(w[i]).padding(2.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall) } }
@@ -527,73 +539,73 @@ private fun RegistersTab(data: RegistryData, visits: List<ArogyaVisit>, store: A
                         f.rows.take(80).forEach { r -> Row { r.forEachIndexed { i, c -> Text(c, Modifier.width(w.getOrElse(i) { 84.dp }).padding(2.dp), style = MaterialTheme.typography.bodySmall, maxLines = 2) } }; HorizontalDivider() }
                     }
                     if (f.note.isNotBlank()) Text(f.note, style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { if (!store.shareFormPdf(f)) Toast.makeText(context, "Could not create the PDF", Toast.LENGTH_LONG).show() }) { Text("Share as PDF") }
+                    Button(onClick = { if (!store.shareFormPdf(f)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show() }) { Text(tr("Share as PDF", "PDF भेजें")) }
                 }
             }
             "vhr" -> {
                 val v = remember(data) { ArogyaRegistryLogic.villageRegister(data.beneficiaries, today) }
-                Text("Village Health Register", fontWeight = FontWeight.Bold)
-                Text("From your household line listing (do it at the start of the year, update every 6 months; births and deaths every month).", style = MaterialTheme.typography.bodySmall)
-                Text("Households: ${v.households}   ·   People listed: ${v.people}   ·   High risk: ${v.highRisk}")
+                Text(tr("Village Health Register", "गाँव स्वास्थ्य रजिस्टर"), fontWeight = FontWeight.Bold)
+                Text(tr("From your household line listing (do it at the start of the year, update every 6 months; births and deaths every month).", "आपकी घर-सूची से (साल शुरू में करें, हर 6 महीने अपडेट; जन्म-मृत्यु हर महीने)।"), style = MaterialTheme.typography.bodySmall)
+                Text(tr("Households: ", "परिवार: ") + v.households + "   ·   " + tr("People listed: ", "लोग: ") + v.people + "   ·   " + tr("High risk: ", "जोखिम: ") + v.highRisk)
                 v.byGroup.entries.sortedBy { it.key }.forEach { Text("${it.key}: ${it.value}") }
                 val lastSurvey = data.diary.filter { it.kind == DiaryKind.SURVEY }.maxOfOrNull { it.date }
-                Text("Last line listing recorded: " + (lastSurvey ?: "none — add it in the Activity diary"), color = if (lastSurvey == null || LocalDate.parse(lastSurvey).isBefore(today.minusMonths(6))) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                Text(tr("Last line listing recorded: ", "आखिरी सूची: ") + (lastSurvey ?: tr("none — add it in the Activity diary", "नहीं — कार्य डायरी में जोड़ें")), color = if (lastSurvey == null || LocalDate.parse(lastSurvey).isBefore(today.minusMonths(6))) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                 val births = data.vitals.count { it.kind == VitalKind.BIRTH && it.date.startsWith(YearMonth.from(today).toString()) }
                 val deaths = data.vitals.count { it.kind.name.endsWith("DEATH") && it.date.startsWith(YearMonth.from(today).toString()) }
-                Text("This month: births $births · deaths $deaths (record in Vital events)")
+                Text(tr("This month: ", "इस महीने: ") + tr("births ", "जन्म ") + births + " · " + tr("deaths ", "मृत्यु ") + deaths + tr(" (record in Vital events)", " (घटना में दर्ज करें)"))
             }
             "lists" -> {
                 val next = YearMonth.from(today).plusMonths(1)
                 val imm = remember(data, next) { ArogyaRegistryLogic.immunizationDueList(data.beneficiaries, next, today) }
                 val anc = remember(data) { ArogyaRegistryLogic.ancList(data.beneficiaries, today) }
                 val ecs = remember(data) { ArogyaRegistryLogic.eligibleCouples(data.beneficiaries) }
-                Text("Due list of children to be immunized — $next (${imm.size})", fontWeight = FontWeight.Bold)
-                imm.take(60).forEach { Text("${it.name} (${it.village}) — ${it.label.removePrefix("Vaccines — ")} · due ${it.due}" + if (it.overdue(today)) " · PENDING" else "", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = { share("Immunization-due-list-$next.csv", "name,village,vaccines,due,pending\n" + imm.joinToString("\n") { "\"${it.name}\",\"${it.village}\",\"${it.label.removePrefix("Vaccines — ")}\",${it.due},${if (it.overdue(today)) "yes" else ""}" }) }) { Text("Share immunization due list") }
-                Text("ANC beneficiaries (${anc.size})", fontWeight = FontWeight.Bold)
+                Text(tr("Due list of children to be immunized — ", "टीकाकरण बाकी बच्चों की सूची — ") + "$next (${imm.size})", fontWeight = FontWeight.Bold)
+                imm.take(60).forEach { Text("${it.name} (${it.village}) — ${it.label.removePrefix("Vaccines — ")} · " + tr("due ", "तारीख़ ") + it.due + if (it.overdue(today)) tr(" · PENDING", " · बाकी") else "", style = MaterialTheme.typography.bodySmall) }
+                OutlinedButton(onClick = { share("Immunization-due-list-$next.csv", "name,village,vaccines,due,pending\n" + imm.joinToString("\n") { "\"${it.name}\",\"${it.village}\",\"${it.label.removePrefix("Vaccines — ")}\",${it.due},${if (it.overdue(today)) "yes" else ""}" }) }) { Text(tr("Share immunization due list", "टीकाकरण सूची भेजें")) }
+                Text(tr("ANC beneficiaries (", "ANC लाभार्थी (") + anc.size + ")", fontWeight = FontWeight.Bold)
                 anc.forEach { (b, info) -> Text("${b.name} (${b.village}) — $info", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = { share("ANC-list-$today.csv", "name,village,status\n" + anc.joinToString("\n") { "\"${it.first.name}\",\"${it.first.village}\",\"${it.second}\"" }) }) { Text("Share ANC list") }
-                Text("Eligible couples (${ecs.size})", fontWeight = FontWeight.Bold)
-                ecs.take(60).forEach { Text("${it.name} (${it.village}) — method: ${it.familyPlanning.ifBlank { "not recorded" }}", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = { share("Eligible-couples-$today.csv", "name,village,method\n" + ecs.joinToString("\n") { "\"${it.name}\",\"${it.village}\",\"${it.familyPlanning}\"" }) }) { Text("Share eligible couple list") }
-                Text("Share these with your ANM at the monthly meeting.", style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = { share("ANC-list-$today.csv", "name,village,status\n" + anc.joinToString("\n") { "\"${it.first.name}\",\"${it.first.village}\",\"${it.second}\"" }) }) { Text(tr("Share ANC list", "ANC सूची भेजें")) }
+                Text(tr("Eligible couples (", "योग्य दंपति (") + ecs.size + ")", fontWeight = FontWeight.Bold)
+                ecs.take(60).forEach { Text("${it.name} (${it.village}) — " + tr("method: ", "साधन: ") + it.familyPlanning.ifBlank { tr("not recorded", "दर्ज नहीं") }, style = MaterialTheme.typography.bodySmall) }
+                OutlinedButton(onClick = { share("Eligible-couples-$today.csv", "name,village,method\n" + ecs.joinToString("\n") { "\"${it.name}\",\"${it.village}\",\"${it.familyPlanning}\"" }) }) { Text(tr("Share eligible couple list", "दंपति सूची भेजें")) }
+                Text(tr("Share these with your ANM at the monthly meeting.", "मासिक बैठक में ANM को ये भेजें।"), style = MaterialTheme.typography.bodySmall)
             }
             "rch" -> {
                 val groups = data.beneficiaries.filter { it.active }.groupBy { ArogyaRegistryLogic.rchGroup(it, today) }
-                Text("RCH register", fontWeight = FontWeight.Bold)
-                groups.entries.sortedBy { it.key }.forEach { (g, l) -> Text("$g: ${l.size}" + (l.count { ArogyaRegistryLogic.isHighRisk(it) }.takeIf { it > 0 }?.let { " ($it high risk)" } ?: "")) }
-                Button(onClick = { share("RCH-register-$today.csv", ArogyaRegistryLogic.rchCsv(data.beneficiaries.filter { it.active }, today)) }) { Text("Export RCH register (CSV)") }
-                OutlinedButton(onClick = { share("Visits-$today.csv", ArogyaRegistryLogic.visitsCsv(visits)) }) { Text("Export visits (CSV)") }
-                Text("For entry into the RCH portal / U-WIN by your ANM or data operator.", style = MaterialTheme.typography.bodySmall)
+                Text(tr("RCH register", "RCH रजिस्टर"), fontWeight = FontWeight.Bold)
+                groups.entries.sortedBy { it.key }.forEach { (g, l) -> Text("$g: ${l.size}" + (l.count { ArogyaRegistryLogic.isHighRisk(it) }.takeIf { it > 0 }?.let { " ($it " + tr("high risk", "जोखिम") + ")" } ?: "")) }
+                Button(onClick = { share("RCH-register-$today.csv", ArogyaRegistryLogic.rchCsv(data.beneficiaries.filter { it.active }, today)) }) { Text(tr("Export RCH register (CSV)", "RCH रजिस्टर भेजें (CSV)")) }
+                OutlinedButton(onClick = { share("Visits-$today.csv", ArogyaRegistryLogic.visitsCsv(visits)) }) { Text(tr("Export visits (CSV)", "विज़िट भेजें (CSV)")) }
+                Text(tr("For entry into the RCH portal / U-WIN by your ANM or data operator.", "ANM या ऑपरेटर RCH पोर्टल / U-WIN में भरें।"), style = MaterialTheme.typography.bodySmall)
             }
             "diary" -> {
-                Text("Activity diary — visits are added automatically from completed visits", fontWeight = FontWeight.Bold)
-                Button(onClick = { diaryOpen = true }) { Text("+ Add activity (VHND, meeting, escort…)") }
-                val auto = visits.filter { it.completed }.map { Triple(it.date, "Home visit (${it.kind.title})", it.name) }
-                val manual = data.diary.map { Triple(it.date, it.kind.title, names[it.beneficiaryId].orEmpty() + if (it.note.isNotBlank()) " — ${it.note}" else "") }
+                Text(tr("Activity diary — visits are added automatically from completed visits", "कार्य डायरी — पूरी विज़िट अपने आप जुड़ती हैं"), fontWeight = FontWeight.Bold)
+                Button(onClick = { diaryOpen = true }) { Text(tr("+ Add activity (VHND, meeting, escort…)", "+ काम जोड़ें (VHND, बैठक…)")) }
+                val auto = visits.filter { it.completed }.map { Triple(it.date, tr("Home visit (", "घर विज़िट (") + it.kind.title + ")", it.name) }
+                val manual = data.diary.map { Triple(it.date, if (hindi) it.kind.titleHi else it.kind.title, names[it.beneficiaryId].orEmpty() + if (it.note.isNotBlank()) " — ${it.note}" else "") }
                 (auto + manual).sortedByDescending { it.first }.take(200).forEach { (d, k, n) -> Text("$d · $k · $n", style = MaterialTheme.typography.bodySmall) }
                 OutlinedButton(onClick = {
                     val visitRows = visits.filter { it.completed }.map { DiaryEntry(id = it.id, date = it.date, kind = DiaryKind.HOME_VISIT, beneficiaryId = it.personId, note = it.kind.title) }
                     share("Activity-diary-$today.csv", ArogyaRegistryLogic.diaryCsv(data.diary + visitRows, names + visits.associate { it.personId to it.name }))
-                }) { Text("Export diary (CSV)") }
+                }) { Text(tr("Export diary (CSV)", "डायरी भेजें (CSV)")) }
             }
             "drugs" -> {
-                Text("Drug kit — current stock", fontWeight = FontWeight.Bold)
+                Text(tr("Drug kit — current stock", "दवा किट — अभी का स्टॉक"), fontWeight = FontWeight.Bold)
                 val bal = ArogyaRegistryLogic.stockBalance(data.stock)
                 ArogyaRegistryLogic.DRUG_KIT.forEach { i -> Text("$i: ${bal[i] ?: 0}", color = if ((bal[i] ?: 0) <= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { receiveOpen = true }) { Text("+ Stock received") }
-                    OutlinedButton(onClick = { samOpen = true }) { Text("📷 Count from photo") }
+                    Button(onClick = { receiveOpen = true }) { Text(tr("+ Stock received", "+ स्टॉक मिला")) }
+                    OutlinedButton(onClick = { samOpen = true }) { Text(tr("📷 Count from photo", "📷 फ़ोटो से गिनें")) }
                 }
-                Text("Give to a person from their MCP card.", style = MaterialTheme.typography.bodySmall)
-                data.stock.sortedByDescending { it.date }.take(100).forEach { t -> Text("${t.date} · ${t.item} · ${if (t.qty > 0) "+${t.qty} received" else "${-t.qty} given"} ${names[t.beneficiaryId]?.let { "to $it" } ?: ""}", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = { share("Drug-register-$today.csv", ArogyaRegistryLogic.stockCsv(data.stock, names)) }) { Text("Export drug register (CSV)") }
+                Text(tr("Give to a person from their MCP card.", "किसी को उनके MCP कार्ड से दें।"), style = MaterialTheme.typography.bodySmall)
+                data.stock.sortedByDescending { it.date }.take(100).forEach { t -> Text("${t.date} · ${t.item} · ${if (t.qty > 0) "+${t.qty} " + tr("received", "मिला") else "${-t.qty} " + tr("given", "दिया")} ${names[t.beneficiaryId]?.let { tr("to ", "को ") + it } ?: ""}", style = MaterialTheme.typography.bodySmall) }
+                OutlinedButton(onClick = { share("Drug-register-$today.csv", ArogyaRegistryLogic.stockCsv(data.stock, names)) }) { Text(tr("Export drug register (CSV)", "दवा रजिस्टर भेजें (CSV)")) }
             }
             "vitals" -> {
-                Text("Vital events & surveillance", fontWeight = FontWeight.Bold)
-                Button(onClick = { eventOpen = true }) { Text("+ Record event") }
-                data.vitals.sortedByDescending { it.date }.take(200).forEach { v -> Text("${v.date} · ${v.kind.title} · ${names[v.beneficiaryId].orEmpty()} ${v.place} ${v.note}", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = { share("Vital-events-$today.csv", ArogyaRegistryLogic.vitalsCsv(data.vitals, names)) }) { Text("Export (CSV)") }
+                Text(tr("Vital events & surveillance", "घटनाएँ और निगरानी"), fontWeight = FontWeight.Bold)
+                Button(onClick = { eventOpen = true }) { Text(tr("+ Record event", "+ घटना दर्ज करें")) }
+                data.vitals.sortedByDescending { it.date }.take(200).forEach { v -> Text("${v.date} · " + (if (hindi) v.kind.titleHi else v.kind.title) + " · ${names[v.beneficiaryId].orEmpty()} ${v.place} ${v.note}", style = MaterialTheme.typography.bodySmall) }
+                OutlinedButton(onClick = { share("Vital-events-$today.csv", ArogyaRegistryLogic.vitalsCsv(data.vitals, names)) }) { Text(tr("Export (CSV)", "भेजें (CSV)")) }
             }
             "report" -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -606,8 +618,8 @@ private fun RegistersTab(data: RegistryData, visits: List<ArogyaVisit>, store: A
                 val claim = rep.text + "\n\nINCENTIVE ESTIMATE (national list in your guide; state rates may differ — verify with ANM):\n" +
                     inc.lines.filter { it.count > 0 }.joinToString("\n") { "${it.item}: ${it.count} × Rs ${it.rate} = Rs ${it.amount}" } + "\nEstimated total: Rs ${inc.total}"
                 Card(Modifier.fillMaxWidth()) { Text(claim, Modifier.padding(12.dp)) }
-                Button(onClick = { ArogyaShare.shareText(context, "ASHA monthly summary $month", claim) }) { Text("Share summary & claim") }
-                Text("Use it to fill the monthly claim / RCH portal entry with your ANM. Check against your paper records.", style = MaterialTheme.typography.bodySmall)
+                Button(onClick = { ArogyaShare.shareText(context, "ASHA monthly summary $month", claim) }) { Text(tr("Share summary & claim", "सारांश और दावा भेजें")) }
+                Text(tr("Use it to fill the monthly claim / RCH portal entry with your ANM. Check against your paper records.", "ANM के साथ मासिक दावा / RCH भरने में काम लें। कागज़ी रिकॉर्ड से मिलाएँ।"), style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -615,27 +627,28 @@ private fun RegistersTab(data: RegistryData, visits: List<ArogyaVisit>, store: A
         var kind by remember { mutableStateOf(DiaryKind.VHND) }
         var note by remember { mutableStateOf("") }
         var date by remember { mutableStateOf(today.toString()) }
-        AlertDialog(onDismissRequest = { diaryOpen = false }, title = { Text("Add activity") }, text = {
+        AlertDialog(onDismissRequest = { diaryOpen = false }, title = { Text(tr("Add activity", "काम जोड़ें")) }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                DiaryKind.values().forEach { k -> Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(kind == k, { kind = k }); Text(k.title) } }
-                DateBox("Date", date) { date = it }
-                OutlinedTextField(note, { note = it.take(300) }, label = { Text("Note") })
+                DiaryKind.values().forEach { k -> Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(kind == k, { kind = k }); Text(if (hindi) k.titleHi else k.title) } }
+                DateBox(tr("Date", "तारीख़"), date) { date = it }
+                OutlinedTextField(note, { note = it.take(300) }, label = { Text(tr("Note", "नोट")) })
             }
-        }, confirmButton = { Button(onClick = { if (save { r -> r.copy(diary = r.diary + DiaryEntry(date = date, kind = kind, note = note)) }) diaryOpen = false }) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { diaryOpen = false }) { Text("Cancel") } })
+        }, confirmButton = { Button(onClick = { if (save { r -> r.copy(diary = r.diary + DiaryEntry(date = date, kind = kind, note = note)) }) diaryOpen = false }) { Text(tr("Save", "सहेजें")) } },
+            dismissButton = { TextButton(onClick = { diaryOpen = false }) { Text(tr("Cancel", "रद्द करें")) } })
     }
-    if (samOpen) SamCountDialog(ArogyaRegistryLogic.stockBalance(data.stock), onRecord = { item, counted, note ->
+    if (samOpen) SamCountDialog(hindi, ArogyaRegistryLogic.stockBalance(data.stock), onRecord = { item, counted, note ->
         val diff = counted - (ArogyaRegistryLogic.stockBalance(data.stock)[item] ?: 0)
         if (diff == 0 || save { r -> r.copy(stock = r.stock + StockTxn(item = item, qty = diff, note = "$note: counted $counted")) }) samOpen = false
     }, onDismiss = { samOpen = false })
-    if (receiveOpen) StockDialog("Stock received", give = false, onDismiss = { receiveOpen = false }) { item, qty, note ->
+    if (receiveOpen) StockDialog(hindi, tr("Stock received", "स्टॉक मिला"), give = false, onDismiss = { receiveOpen = false }) { item, qty, note ->
         if (save { r -> r.copy(stock = r.stock + StockTxn(item = item, qty = qty, note = note)) }) receiveOpen = false }
-    if (eventOpen) EventDialog(onDismiss = { eventOpen = false }) { kind, place, note ->
+    if (eventOpen) EventDialog(hindi, onDismiss = { eventOpen = false }) { kind, place, note ->
         if (save { r -> r.copy(vitals = r.vitals + VitalEvent(kind = kind, place = place, note = note)) }) eventOpen = false }
 }
 
 @Composable
-private fun BackupTab(store: ArogyaRegistryStore, queue: ArogyaVisitQueue) {
+private fun BackupTab(hindi: Boolean, store: ArogyaRegistryStore, queue: ArogyaVisitQueue) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
@@ -657,33 +670,33 @@ private fun BackupTab(store: ArogyaRegistryStore, queue: ArogyaVisitQueue) {
     }
     val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> restoreUri = uri }
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Backup — like WhatsApp backup", fontWeight = FontWeight.Bold)
-        Text("All patients, MCP cards, registers and visits go into one file locked with your password. Choose Google Drive in the file picker to keep it in your Drive (it uploads when you are online). Without the password nobody — including you — can open it.", style = MaterialTheme.typography.bodySmall)
+        Text(tr("Backup — like WhatsApp backup", "बैकअप — WhatsApp जैसा"), fontWeight = FontWeight.Bold)
+        Text(tr("All patients, MCP cards, registers and visits go into one file locked with your password. Choose Google Drive in the file picker to keep it in your Drive (it uploads when you are online). Without the password nobody — including you — can open it.", "सभी लोग, MCP कार्ड, रजिस्टर और विज़िट एक फ़ाइल में आपके पासवर्ड से बंद। Drive में रखने के लिए फ़ाइल चुनते समय Google Drive चुनें (ऑनलाइन आने पर अपलोड होगा)। पासवर्ड बिना कोई नहीं खोल सकता — आप भी नहीं।"), style = MaterialTheme.typography.bodySmall)
         if (!hasPw) {
-            OutlinedTextField(pw1, { pw1 = it }, label = { Text("Backup password (8+ characters)") }, singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(pw2, { pw2 = it }, label = { Text("Repeat password") }, singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-            Button(onClick = { store.savePassword(pw1); pw1 = ""; pw2 = ""; status = "Password saved on this phone (encrypted). Write it down somewhere safe." }, enabled = pw1.length >= 8 && pw1 == pw2) { Text("Save password") }
-        } else Text("✓ Backup password saved", color = MaterialTheme.colorScheme.primary)
-        Text("Location: " + (location?.let { it.authority?.let { a -> if (a.contains("google")) "Google Drive" else a } ?: it.toString() } ?: "not chosen"))
-        Button(onClick = { create.launch("ArogyaDoot-backup.argb") }, enabled = hasPw && !busy, modifier = Modifier.fillMaxWidth()) { Text("Choose backup location (Google Drive)") }
-        Button(onClick = { location?.let { u -> go { store.backupTo(u, store.password()) } } }, enabled = hasPw && location != null && !busy, modifier = Modifier.fillMaxWidth()) { Text("Back up now") }
-        Row(verticalAlignment = Alignment.CenterVertically) { Switch(auto, { auto = it; store.autoDaily = it }, enabled = hasPw && location != null); Text("  Back up automatically once a day (when the app is opened)") }
-        if (store.lastBackup > 0) Text("Last backup: " + java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(store.lastBackup)), style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(pw1, { pw1 = it }, label = { Text(tr("Backup password (8+ characters)", "बैकअप पासवर्ड (8+ अक्षर)")) }, singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(pw2, { pw2 = it }, label = { Text(tr("Repeat password", "पासवर्ड दोहराएँ")) }, singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+            Button(onClick = { store.savePassword(pw1); pw1 = ""; pw2 = ""; status = tr("Password saved on this phone (encrypted). Write it down somewhere safe.", "पासवर्ड इस फ़ोन पर सहेजा (गुप्त)। कहीं लिखकर रखें।") }, enabled = pw1.length >= 8 && pw1 == pw2) { Text(tr("Save password", "पासवर्ड सहेजें")) }
+        } else Text(tr("✓ Backup password saved", "✓ बैकअप पासवर्ड सहेजा"), color = MaterialTheme.colorScheme.primary)
+        Text(tr("Location: ", "जगह: ") + (location?.let { it.authority?.let { a -> if (a.contains("google")) "Google Drive" else a } ?: it.toString() } ?: tr("not chosen", "चुनी नहीं")))
+        Button(onClick = { create.launch("ArogyaDoot-backup.argb") }, enabled = hasPw && !busy, modifier = Modifier.fillMaxWidth()) { Text(tr("Choose backup location (Google Drive)", "बैकअप जगह चुनें (Google Drive)")) }
+        Button(onClick = { location?.let { u -> go { store.backupTo(u, store.password()) } } }, enabled = hasPw && location != null && !busy, modifier = Modifier.fillMaxWidth()) { Text(tr("Back up now", "अभी बैकअप करें")) }
+        Row(verticalAlignment = Alignment.CenterVertically) { Switch(auto, { auto = it; store.autoDaily = it }, enabled = hasPw && location != null); Text(tr("  Back up automatically once a day (when the app is opened)", "  रोज़ अपने आप बैकअप (ऐप खोलने पर)")) }
+        if (store.lastBackup > 0) Text(tr("Last backup: ", "आखिरी बैकअप: ") + java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(store.lastBackup)), style = MaterialTheme.typography.bodySmall)
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
         HorizontalDivider()
-        Text("Restore", fontWeight = FontWeight.Bold)
-        Text("On a new phone: install ArogyaDoot, open the backup file from Drive, enter the password. Registers are replaced; visits already on the phone are kept.", style = MaterialTheme.typography.bodySmall)
-        OutlinedButton(onClick = { open.launch(arrayOf("*/*")) }, enabled = !busy) { Text("Choose backup file") }
+        Text(tr("Restore", "वापस लाएँ"), fontWeight = FontWeight.Bold)
+        Text(tr("On a new phone: install ArogyaDoot, open the backup file from Drive, enter the password. Registers are replaced; visits already on the phone are kept.", "नए फ़ोन पर: ArogyaDoot डालें, Drive से बैकअप फ़ाइल खोलें, पासवर्ड डालें। रजिस्टर बदल जाएँगे; फ़ोन की विज़िट रहेंगी।"), style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(onClick = { open.launch(arrayOf("*/*")) }, enabled = !busy) { Text(tr("Choose backup file", "बैकअप फ़ाइल चुनें")) }
         restoreUri?.let { u ->
-            OutlinedTextField(restorePw, { restorePw = it }, label = { Text("Backup password") }, singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-            Button(onClick = { go { store.restore(u, restorePw, queue).also { restoreUri = null; restorePw = "" } } }, enabled = restorePw.isNotBlank() && !busy) { Text("Restore now") }
+            OutlinedTextField(restorePw, { restorePw = it }, label = { Text(tr("Backup password", "बैकअप पासवर्ड")) }, singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+            Button(onClick = { go { store.restore(u, restorePw, queue).also { restoreUri = null; restorePw = "" } } }, enabled = restorePw.isNotBlank() && !busy) { Text(tr("Restore now", "अभी वापस लाएँ")) }
         }
         HorizontalDivider()
-        Text("Demo / scale test", fontWeight = FontWeight.Bold)
+        Text(tr("Demo / scale test", "डेमो / जाँच"), fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { runCatching { store.loadSyntheticPatients(1000) }.onSuccess { status = "Added 1000 synthetic patients (marked DEMO)." } }, enabled = !busy) { Text("Add 1000 synthetic") }
-            OutlinedButton(onClick = { runCatching { store.removeSynthetic() }.onSuccess { status = "Removed synthetic patients." } }, enabled = !busy) { Text("Remove synthetic") }
+            OutlinedButton(onClick = { runCatching { store.loadSyntheticPatients(1000) }.onSuccess { status = tr("Added 1000 synthetic patients (marked DEMO).", "1000 काल्पनिक लोग जोड़े (DEMO)।") } }, enabled = !busy) { Text(tr("Add 1000 synthetic", "1000 काल्पनिक जोड़ें")) }
+            OutlinedButton(onClick = { runCatching { store.removeSynthetic() }.onSuccess { status = tr("Removed synthetic patients.", "काल्पनिक लोग हटाए।") } }, enabled = !busy) { Text(tr("Remove synthetic", "काल्पनिक हटाएँ")) }
         }
     }
 }

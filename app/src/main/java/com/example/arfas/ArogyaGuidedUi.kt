@@ -49,7 +49,8 @@ fun ArogyaPersonPicker(hindi: Boolean, people: List<Beneficiary>, due: List<DueI
 
 /** The official form as it looks on paper: rows × visit columns, earlier visits filled, today's column highlighted. */
 @Composable
-fun OfficialFormGrid(t: FormTable, highlight: Int?, sources: Map<String, String> = emptyMap()) {
+fun OfficialFormGrid(t: FormTable, highlight: Int?, sources: Map<String, String> = emptyMap(), hindi: Boolean = false) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
     val ink = Color(0xFF1A2A4A); val paper = Color(0xFFFFFBF0); val line = Color(0xFF8C8C8C); val today = Color(0xFFFFF0B3)
     Column(Modifier.background(paper).border(1.dp, line).padding(6.dp)) {
         Text(t.title.substringBefore(" · "), fontWeight = FontWeight.Bold, color = ink, style = MaterialTheme.typography.titleSmall)
@@ -66,7 +67,7 @@ fun OfficialFormGrid(t: FormTable, highlight: Int?, sources: Map<String, String>
             t.rows.forEach { r -> Row(Modifier.height(IntrinsicSize.Min)) { r.forEachIndexed { i, c -> cell(c, i, i == 0 && (c.startsWith("Date") || c.startsWith("Next")), if (i == 0) null else i - 1) } } }
         }
         if (t.note.isNotBlank()) Text(t.note, color = ink, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
-        if (highlight != null) Text("Yellow column = today's visit", color = ink, style = MaterialTheme.typography.labelSmall)
+        if (highlight != null) Text(tr("Yellow column = today's visit", "पीला कॉलम = आज की विज़िट"), color = ink, style = MaterialTheme.typography.labelSmall)
     }
 }
 

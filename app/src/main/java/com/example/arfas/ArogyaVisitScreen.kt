@@ -69,7 +69,8 @@ fun ArogyaVisitScreen(
     var mediaBusy by remember { mutableStateOf(false) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var stage by rememberSaveable { mutableStateOf(0) }; var stepIndex by rememberSaveable { mutableStateOf(0) }
-    var hindi by rememberSaveable { mutableStateOf(false) }
+    var hindi by rememberSaveable { mutableStateOf(ArogyaLang.uiHindi(context)) }
+    fun setHindi(v:Boolean) { hindi=v; ArogyaLang.setUiHindi(context,v) }
     var filter by rememberSaveable { mutableStateOf("Today") }
     var chooseStage by remember { mutableStateOf(false) }
     var chooseFilter by remember { mutableStateOf(false) }
@@ -183,16 +184,17 @@ fun ArogyaVisitScreen(
     var attachmentVisitId by rememberSaveable { mutableStateOf<String?>(null) }
     var ttsReady by remember { mutableStateOf(false) }
     val tts=remember { TextToSpeech(context.applicationContext) { ttsReady=it==TextToSpeech.SUCCESS } }
+    var voiceMissing by remember { mutableStateOf<String?>(null) }
     fun speak(text: String) {
         val lang=if(text.any { it in '\u0900'..'\u097F' }) "hi" else "en"
         // Cloud first + signal: the better online Android voice; otherwise (or as fallback) the offline voice.
-        val voices=if(ttsReady) tts.voices.orEmpty().filter { it.locale.language==lang } else emptyList()
+        // hi-IN/en-IN outranks other regions; rate 0.9 for clarity. Meta has no TTS: this is the Android voice.
+        val all=if(ttsReady) tts.voices.orEmpty().toList() else emptyList()
         val online=ArogyaCloud.cloudFirst(context) && MetaOnline.hasInternet(context)
-        val offlineVoice=voices.filter { !it.isNetworkConnectionRequired }.maxByOrNull { it.quality }
-        val onlineVoice=voices.filter { it.isNetworkConnectionRequired }.maxByOrNull { it.quality }
-        val pick=(if(online) onlineVoice ?: offlineVoice else offlineVoice ?: onlineVoice.takeIf { MetaOnline.hasInternet(context) })
-        if(pick==null) Toast.makeText(context,"Install an offline $lang voice in Android speech settings.",Toast.LENGTH_LONG).show()
-        else { tts.voice=pick; tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"arogya-step") }
+        val at=runCatching { ArogyaLang.rankVoice(all.map { Triple(it.locale,it.quality,it.isNetworkConnectionRequired) },lang,online) }.getOrDefault(-1)
+        val pick=if(at in all.indices) all[at] else null
+        if(pick==null) voiceMissing=lang
+        else { tts.voice=pick; tts.setSpeechRate(0.9f); tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"arogya-step") }
     }
     DisposableEffect(tts) {
         val owner=context as? LifecycleOwner
@@ -349,7 +351,7 @@ fun ArogyaVisitScreen(
                         style=MaterialTheme.typography.titleSmall,color=MaterialTheme.colorScheme.primary,modifier=Modifier.padding(top=4.dp).clickable { profileOpen=true })
                 }
                 Column(horizontalAlignment=Alignment.End) {
-                    TextButton(onClick={hindi=!hindi}) {Text(if(hindi) "English" else "हिन्दी")}
+                    TextButton(onClick={setHindi(!hindi)}) {Text(if(hindi) "English" else "हिन्दी")}
                     TextButton(onClick=onSettings,enabled=!locked) { Text(tr("⚙ Setup","⚙ सेटअप")) }
                 }
             }
@@ -366,14 +368,14 @@ fun ArogyaVisitScreen(
         } else {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                 TextButton(onClick={ if(!locked) selectedId=null },enabled=!locked) { Text("‹ ArogyaDoot",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold) }
-                TextButton(onClick={hindi=!hindi}) {Text(if(hindi) "English" else "हिन्दी")}
+                TextButton(onClick={setHindi(!hindi)}) {Text(if(hindi) "English" else "हिन्दी")}
             }
             Text(visit.name.ifBlank { tr("New visit","नई विज़िट") },style=MaterialTheme.typography.titleLarge)
         }
         Text(if(pending>0) "Saving on this phone…" else if(mediaBusy) "Processing locally…" else tr("Saved on this phone • private by default","इस फ़ोन पर सुरक्षित • अपने आप अपलोड नहीं होता"),style=MaterialTheme.typography.bodySmall)
         if(error.isNotBlank()) {
             Text(error,color=MaterialTheme.colorScheme.error)
-            if(loaded) TextButton(onClick={ queue.retry() },enabled=pending==0) { Text("Retry save") }
+            if(loaded) TextButton(onClick={ queue.retry() },enabled=pending==0) { Text(tr("Retry save","फिर सहेजें")) }
         }
         if(!loaded) { if(error.isBlank()) CircularProgressIndicator(); return@Column }
         if(visit==null) {
@@ -448,9 +450,9 @@ fun ArogyaVisitScreen(
                 }
             }
         } else {
-            if(visit.demo) Text("SYNTHETIC DEMO RECORD",color=MaterialTheme.colorScheme.primary)
+            if(visit.demo) Text(tr("SYNTHETIC DEMO RECORD","नमूना डेमो रिकॉर्ड"),color=MaterialTheme.colorScheme.primary)
             if(ArogyaWorkflow.priorityConcern(visit) || ArogyaUrgentTriage.assess(visit.notes,visit)!=null) Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer)) {
-                Column(Modifier.padding(12.dp)) { Text("Urgent concern recorded",fontWeight=FontWeight.Bold); Text("Arrange urgent assessment through your referral pathway. Do not wait for AI, a report or the next routine visit."); Button(onClick={escalate("")},colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(tr("Escalate to ANM","ANM को सूचित करें")) } }
+                Column(Modifier.padding(12.dp)) { Text(tr("Urgent concern recorded","तत्काल चिंता दर्ज"),fontWeight=FontWeight.Bold); Text(tr("Arrange urgent assessment through your referral pathway. Do not wait for AI, a report or the next routine visit.","अपने रेफ़रल रास्ते से तुरंत जाँच कराएँ। AI, रिपोर्ट या अगली विज़िट का इंतज़ार न करें।")); Button(onClick={escalate("")},colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(tr("Escalate to ANM","ANM को सूचित करें")) } }
             }
             val phases=listOf(tr("Person","व्यक्ति"),tr("Check","जाँच"),tr("Speak & review","बोलें और जाँचें"),tr("Next action","अगला कदम"),tr("Save","सहेजें"))
             val order=listOf(0,2,1,3,4)
@@ -463,23 +465,23 @@ fun ArogyaVisitScreen(
                 order.forEach { i -> val label=phases[i]; TextButton(onClick={stage=i;chooseStage=false},enabled=i!=1 || ArogyaWorkflow.profileIssues(visit).isEmpty()) {Text("${order.indexOf(i)+1}. $label")} }
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                if(visit.completed && stage!=4) Text("Completed records are read-only. Start a follow-up to record a new action.")
+                if(visit.completed && stage!=4) Text(tr("Completed records are read-only. Start a follow-up to record a new action.","पूरे रिकॉर्ड सिर्फ़ पढ़े जा सकते हैं। नया काम दर्ज करने के लिए फ़ॉलो-अप शुरू करें।"))
                 val editable=!visit.completed && !mediaBusy && !aiBusy && error.isBlank()
                 when(stage) {
                     0 -> {
                         ArogyaSection(tr("STEP 1","चरण 1"),tr("Who are we visiting?","किसकी विज़िट है?"))
                         ArogyaField("Name or beneficiary code",visit.name,editable) { edit(visit.id) {row->row.copy(name=it.take(100))} }
-                        Text("Local ID: ${visit.personId.take(8)} • use Follow-up visit to keep this identity",style=MaterialTheme.typography.bodySmall)
+                        Text(tr("Local ID","स्थानीय ID")+": ${visit.personId.take(8)} • "+tr("use Follow-up visit to keep this identity","यही पहचान रखने के लिए फ़ॉलो-अप विज़िट करें"),style=MaterialTheme.typography.bodySmall)
                         ArogyaField("Village / locality",visit.village,editable) { edit(visit.id) {row->row.copy(village=it.take(120))} }
                         ArogyaDateField(tr("Visit date","विज़िट की तारीख"),visit.date,editable) { value -> edit(visit.id) {row->row.copy(date=value)} }
-                        Text("Visit type")
+                        Text(tr("Visit type","विज़िट का प्रकार"))
                         ArogyaKind.values().forEach { kind ->
                             FilterChip(selected=visit.kind==kind,enabled=editable && visit.answers.isEmpty(),onClick={edit(visit.id) {row->row.copy(kind=kind)};stepIndex=0},label={Text(kind.title)})
                         }
-                        Text("Type locks after the first step response. Start a new visit if the wrong checklist was selected.",style=MaterialTheme.typography.bodySmall)
+                        Text(tr("Type locks after the first step response. Start a new visit if the wrong checklist was selected.","पहले जवाब के बाद प्रकार नहीं बदलेगा। गलत सूची चुनी हो तो नई विज़िट शुरू करें।"),style=MaterialTheme.typography.bodySmall)
                         if(visit.kind!=ArogyaKind.FOLLOW_UP) {
                             ArogyaDateField(tr("Child’s date of birth","बच्चे की जन्म तारीख"),visit.birthDate,editable) { value -> edit(visit.id) {row->row.copy(birthDate=value)} }
-                            Row { Checkbox(checked=visit.homeBirth,onCheckedChange={edit(visit.id) {row->row.copy(homeBirth=it)}},enabled=editable); Text("Birth at home") }
+                            Row { Checkbox(checked=visit.homeBirth,onCheckedChange={edit(visit.id) {row->row.copy(homeBirth=it)}},enabled=editable); Text(tr("Birth at home","घर पर जन्म")) }
                         }
                         Text(ArogyaWorkflow.FRESHNESS,style=MaterialTheme.typography.bodySmall)
                         ArogyaWorkflow.profileIssues(visit).forEach {Text(it,color=MaterialTheme.colorScheme.error)}
@@ -487,11 +489,11 @@ fun ArogyaVisitScreen(
                     }
                     1 -> {
                         val steps=ArogyaWorkflow.steps(visit); val step=steps[stepIndex.coerceIn(0,steps.lastIndex)]
-                        Text("Step ${stepIndex+1} / ${steps.size} • ${visit.answers.size} responses recorded")
+                        Text(tr("Step","चरण")+" ${stepIndex+1} / ${steps.size} • ${visit.answers.size} "+tr("responses recorded","जवाब दर्ज"))
                         val instruction=if(hindi) ArogyaHindi.instruction(step,visit.kind) else step.instruction
                         Text(step.title,style=MaterialTheme.typography.titleLarge); Text(instruction)
                         if(hindi) Text("सरल हिन्दी विवरण — मूल स्रोत अलग से देखें।",style=MaterialTheme.typography.bodySmall)
-                        Text("Record what you found below. Checked means the question was covered; it does not mean the person is well.",style=MaterialTheme.typography.bodySmall)
+                        Text(tr("Record what you found below. Checked means the question was covered; it does not mean the person is well.","नीचे जो पाया लिखें। निशान का मतलब सवाल पूछा गया, यह नहीं कि व्यक्ति ठीक है।"),style=MaterialTheme.typography.bodySmall)
                         Row(Modifier.horizontalScroll(rememberScrollState())) {
                             listOf(ArogyaAnswer.DONE to (if(hindi) "जांच की" else "Checked"),ArogyaAnswer.CONCERN to (if(hindi) "चिंता" else "Concern"),ArogyaAnswer.UNKNOWN to (if(hindi) "पता नहीं" else "Not sure")).forEach { (a,label) ->
                                 FilterChip(selected=visit.answers[step.id]==a,onClick={
@@ -502,12 +504,12 @@ fun ArogyaVisitScreen(
                         ArogyaField("Visit observations — record what you found, with units",visit.notes,editable,3) { value ->
                             edit(visit.id) { row -> row.copy(notes=value.take(20000)) }
                         }
-                        Text("Saved with this visit. Include the question name when adding an observation.",style=MaterialTheme.typography.bodySmall)
-                        Row { TextButton(onClick={speak(instruction)}) { Text("Read aloud") }; TextButton(onClick={tts.stop()}) { Text("Stop") } }
+                        Text(tr("Saved with this visit. Include the question name when adding an observation.","इसी विज़िट के साथ सहेजा जाएगा। कुछ देखें तो सवाल का नाम भी लिखें।"),style=MaterialTheme.typography.bodySmall)
+                        Row { TextButton(onClick={speak(instruction)}) { Text(tr("Read aloud","सुनें")) }; TextButton(onClick={tts.stop()}) { Text(tr("Stop","रोकें")) } }
                         OutlinedButton(onClick={openAi(ArogyaAiTask.EXPLAIN,step.title)},enabled=!locked && knowledgeReady) { Text(if(hindi) "स्वास्थ्य गाइड से पूछें" else "Help with this question") }
-                        step.sourceId?.let { id -> TextButton(onClick={source=ArogyaSources.all[id]}) { Text("View source passage") } }
+                        step.sourceId?.let { id -> TextButton(onClick={source=ArogyaSources.all[id]}) { Text(tr("View source passage","स्रोत अनुच्छेद देखें")) } }
                         Row {
-                            TextButton(onClick={stepIndex--},enabled=stepIndex>0) { Text("Previous") }
+                            TextButton(onClick={stepIndex--},enabled=stepIndex>0) { Text(tr("Previous","पिछला")) }
                             Button(onClick={if(stepIndex<steps.lastIndex) stepIndex++ else stage=3},enabled=visit.answers[step.id]!=null) { Text(if(stepIndex<steps.lastIndex) "Next" else tr("Plan next action","अगला कदम")) }
                         }
                     }
@@ -532,15 +534,15 @@ fun ArogyaVisitScreen(
                             attachmentVisitId=visit.id
                             if(context.checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED) runCatching { camera.launch(null) }.onFailure { Toast.makeText(context,"Camera unavailable",Toast.LENGTH_SHORT).show() }
                             else cameraPermission.launch(Manifest.permission.CAMERA)
-                        },enabled=editable && !locked && visit.attachments.size<8) { Text("Photograph a card (preview quality)") }
-                        Text("Ask permission first. Images and OCR remain on this phone. OCR may misread dates, handwriting and units; nothing is filled automatically.",style=MaterialTheme.typography.bodySmall)
+                        },enabled=editable && !locked && visit.attachments.size<8) { Text(tr("Photograph a card (preview quality)","कार्ड की फ़ोटो लें")) }
+                        Text(tr("Ask permission first. Images and OCR remain on this phone. OCR may misread dates, handwriting and units; nothing is filled automatically.","पहले इजाज़त लें। फ़ोटो और पढ़ा पाठ इसी फ़ोन पर रहेगा। तारीख़, लिखावट और इकाई गलत पढ़ी जा सकती है; कुछ अपने आप नहीं भरेगा।"),style=MaterialTheme.typography.bodySmall)
                         visit.attachments.forEach { a ->
                             Row { TextButton(onClick={ocrVisitId=visit.id;ocr=a}) { Text("${a.label}: review OCR") }
-                                TextButton(onClick={edit(visit.id) {row->row.copy(attachments=row.attachments.filterNot { it.id==a.id })}},enabled=editable && !locked) { Text("Remove") } }
+                                TextButton(onClick={edit(visit.id) {row->row.copy(attachments=row.attachments.filterNot { it.id==a.id })}},enabled=editable && !locked) { Text(tr("Remove","हटाएँ")) } }
                         }
                         }
                         OutlinedButton(onClick={openAi(ArogyaAiTask.ORGANISE_NOTES);autoRunDraft=true},enabled=editable && !locked && visit.notes.isNotBlank()) { Text(tr("Organise with AI","AI से नोट व्यवस्थित करें")) }
-                        Row {Checkbox(checked=visit.notesReviewedForDanger,onCheckedChange={value->edit(visit.id){row->row.copy(notesReviewedForDanger=value)}},enabled=editable && !locked);Text("I checked these notes against the priority steps and recorded concerns or uncertainty there.",modifier=Modifier.weight(1f))}
+                        Row {Checkbox(checked=visit.notesReviewedForDanger,onCheckedChange={value->edit(visit.id){row->row.copy(notesReviewedForDanger=value)}},enabled=editable && !locked);Text(tr("I checked these notes against the priority steps and recorded concerns or uncertainty there.","मैंने नोट ज़रूरी चरणों से मिलाए और चिंता या संदेह वहीं दर्ज किया।"),modifier=Modifier.weight(1f))}
                         OutlinedButton(onClick={escalate("")},enabled=!locked,modifier=Modifier.fillMaxWidth()) {Text(tr("⚠ Escalate to ANM","⚠ ANM को सूचित करें"),color=MaterialTheme.colorScheme.error)}
                         ArogyaCapture.missing(visit).forEach { Text(it,style=MaterialTheme.typography.bodySmall) }
                         Row(verticalAlignment=Alignment.CenterVertically) {
@@ -552,22 +554,22 @@ fun ArogyaVisitScreen(
                     3 -> {
                         ArogyaSection(tr("FOLLOW-UP","अगली विज़िट"),tr("What happens next?","अगला कदम क्या है?"),tr("Record only actions actually taken. Confirm the next date with the family and your applicable plan.","केवल किए गए काम दर्ज करें। अगली तारीख परिवार और लागू योजना से जाँचें।"))
                         Button(onClick={escalate("")},enabled=!locked,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(tr("Escalate to ANM — call / WhatsApp / SMS","ANM को सूचित करें — कॉल / व्हाट्सऐप / SMS")) }
-                        OutlinedButton(onClick={openAi(ArogyaAiTask.HANDOVER)},enabled=!locked && visit.notes.isNotBlank()) { Text("Draft ANM handover • local AI") }
+                        OutlinedButton(onClick={openAi(ArogyaAiTask.HANDOVER)},enabled=!locked && visit.notes.isNotBlank()) { Text(tr("Draft ANM handover • local AI","ANM संदेश बनाएँ • फ़ोन AI")) }
                         ArogyaReferral.values().forEach { r -> FilterChip(selected=visit.referral==r,onClick={edit(visit.id) {row->row.copy(referral=r,referralResolutionConfirmed=false)}},enabled=editable,label={Text(when(r) { ArogyaReferral.NONE->"No referral recorded"; ArogyaReferral.NEEDED->"Help needed"; ArogyaReferral.CONTACTED->"ANM / facility contacted"; ArogyaReferral.ARRANGED->"Transport / referral arranged"; ArogyaReferral.SEEN->"Seen by provider (confirm outcome below)" })}) }
                         ArogyaField("Referral destination, contact, action/time and outcome or pending task",visit.referralNote,editable,3) { edit(visit.id) {row->row.copy(referralNote=it.take(5000),referralResolutionConfirmed=false)} }
                         TextButton(onClick={
                             val d=ArogyaWorkflow.parseDate(visit.nextDate) ?: LocalDate.now()
                             DatePickerDialog(context,{_,y,m,day -> edit(visit.id) {row->row.copy(nextDate=LocalDate.of(y,m+1,day).toString(),planConfirmed=false)}},d.year,d.monthValue-1,d.dayOfMonth).show()
-                        },enabled=editable) { Text("Choose next visit date") }
-                        if(visit.referral==ArogyaReferral.SEEN) Row {Checkbox(checked=visit.referralResolutionConfirmed,onCheckedChange={value->edit(visit.id){row->row.copy(referralResolutionConfirmed=value)}},enabled=editable && visit.referralNote.isNotBlank());Text("I confirmed and recorded the provider outcome for this referral episode.",modifier=Modifier.weight(1f))}
+                        },enabled=editable) { Text(tr("Choose next visit date","अगली विज़िट की तारीख़ चुनें")) }
+                        if(visit.referral==ArogyaReferral.SEEN) Row {Checkbox(checked=visit.referralResolutionConfirmed,onCheckedChange={value->edit(visit.id){row->row.copy(referralResolutionConfirmed=value)}},enabled=editable && visit.referralNote.isNotBlank());Text(tr("I confirmed and recorded the provider outcome for this referral episode.","मैंने इस रेफ़रल का अस्पताल/डॉक्टर परिणाम पक्का करके दर्ज किया।"),modifier=Modifier.weight(1f))}
                         ArogyaField("Next visit date (YYYY-MM-DD), or leave blank",visit.nextDate,editable) { edit(visit.id) {row->row.copy(nextDate=it.take(10),planConfirmed=false)} }
                         ArogyaField("Next action / reason; if no date, explain why",visit.nextReason,editable,3) { edit(visit.id) {row->row.copy(nextReason=it.take(3000),planConfirmed=false)} }
-                        Text("Reference schedule only — not an automatic plan",fontWeight=FontWeight.Bold)
+                        Text(tr("Reference schedule only — not an automatic plan","सिर्फ़ संदर्भ सूची — अपने आप योजना नहीं"),fontWeight=FontWeight.Bold)
                         Text(ArogyaWorkflow.FRESHNESS,style=MaterialTheme.typography.bodySmall)
                         ArogyaWorkflow.referenceDates(visit).forEach { (label,date) -> Text("$label: $date",style=MaterialTheme.typography.bodySmall) }
-                        Text("Verify day-counting and dates against the card/local protocol. At-risk or discharged babies need an individual provider plan. Missed visits are not marked completed.",style=MaterialTheme.typography.bodySmall)
-                        Row { Checkbox(checked=visit.planConfirmed,onCheckedChange={edit(visit.id) {row->row.copy(planConfirmed=it)}},enabled=editable); Text("I confirmed this next plan against the applicable programme / supervisor instructions.",modifier=Modifier.weight(1f)) }
-                        Button(onClick={stage=4}) { Text("Review record") }
+                        Text(tr("Verify day-counting and dates against the card/local protocol. At-risk or discharged babies need an individual provider plan. Missed visits are not marked completed.","दिन-गिनती और तारीख़ कार्ड/स्थानीय नियम से मिलाएँ। जोखिम वाले या छुट्टी पाए बच्चों के लिए अलग डॉक्टर योजना चाहिए। छूटी विज़िट पूरी नहीं मानी जाती।"),style=MaterialTheme.typography.bodySmall)
+                        Row { Checkbox(checked=visit.planConfirmed,onCheckedChange={edit(visit.id) {row->row.copy(planConfirmed=it)}},enabled=editable); Text(tr("I confirmed this next plan against the applicable programme / supervisor instructions.","मैंने अगली योजना कार्यक्रम/सुपरवाइज़र निर्देश से मिलाई।"),modifier=Modifier.weight(1f)) }
+                        Button(onClick={stage=4}) { Text(tr("Review record","रिकॉर्ड देखें")) }
                     }
                     4 -> {
                         ArogyaSection(tr("READY TO SAVE","सहेजने से पहले"),tr("Review this visit","विज़िट की समीक्षा करें"))
@@ -591,10 +593,10 @@ fun ArogyaVisitScreen(
                             if(visit.captureOriginal.isNotBlank()) {Text(tr("Original recording before AI review","AI समीक्षा से पहले की मूल रिकॉर्डिंग"),fontWeight=FontWeight.Bold);Text(visit.captureOriginal)}
                         }
                         if(!visit.completed) {
-                            Row { Checkbox(checked=visit.reviewed,onCheckedChange={edit(visit.id,false) {row->row.copy(reviewed=it)}},enabled=editable); Text("I reviewed this record, including dates, observations and pending actions.",modifier=Modifier.weight(1f)) }
+                            Row { Checkbox(checked=visit.reviewed,onCheckedChange={edit(visit.id,false) {row->row.copy(reviewed=it)}},enabled=editable); Text(tr("I reviewed this record, including dates, observations and pending actions.","मैंने रिकॉर्ड देखा — तारीख़, अवलोकन और बाकी काम समेत।"),modifier=Modifier.weight(1f)) }
                             val issues=ArogyaWorkflow.validation(visit)
                             issues.forEach { Text("• $it",color=MaterialTheme.colorScheme.error) }
-                            Button(onClick={edit(visit.id,false) {row->row.copy(completed=true)}},enabled=issues.isEmpty() && !locked) { Text("Complete and save visit") }
+                            Button(onClick={edit(visit.id,false) {row->row.copy(completed=true)}},enabled=issues.isEmpty() && !locked) { Text(tr("Complete and save visit","विज़िट पूरी करें और सहेजें")) }
                         }
                         if(visit.guideLog.isNotEmpty()) TextButton(onClick={historyOpen=true}) { Text(tr("Guide questions in this visit: ${visit.guideLog.size} — view","इस विज़िट के गाइड सवाल: ${visit.guideLog.size} — देखें")) }
                         if(!visit.completed && visit.notes.isNotBlank() && ai!=null) Button(onClick={startFinish()},enabled=!locked,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)) { Text(tr("✅ Finish visit with AI","✅ AI से विज़िट पूरी करें")) }
@@ -605,15 +607,15 @@ fun ArogyaVisitScreen(
                         }
                         Text(tr("Includes the visit, observations, referral and every guide question with its sources. You choose who receives it.","विज़िट, नोट, रेफ़रल और हर गाइड सवाल स्रोत सहित। किसे भेजना है आप चुनें।"),style=MaterialTheme.typography.bodySmall)
                         OutlinedButton(onClick={exportVisitId=visit.id;exportRevision=visit.updatedAt;pdf.launch("ArogyaDoot-visit-${visit.date}.pdf")},enabled=!locked) { Text(if(visit.completed) "Export visit PDF" else "Export DRAFT PDF") }
-                        Text("Export includes the beneficiary details above. Choose a destination you trust. This app does not send it to anyone.",style=MaterialTheme.typography.bodySmall)
-                        if(visit.completed) Button(onClick={start(ArogyaWorkflow.followUp(visit))},enabled=!locked) { Text("Start follow-up visit") }
-                        TextButton(onClick={deleteId=visit.id},enabled=!locked) { Text("Delete this local record") }
+                        Text(tr("Export includes the beneficiary details above. Choose a destination you trust. This app does not send it to anyone.","निर्यात में ऊपर का लाभार्थी विवरण होगा। भरोसे की जगह चुनें। यह ऐप किसी को नहीं भेजता।"),style=MaterialTheme.typography.bodySmall)
+                        if(visit.completed) Button(onClick={start(ArogyaWorkflow.followUp(visit))},enabled=!locked) { Text(tr("Start follow-up visit","फ़ॉलो-अप विज़िट शुरू करें")) }
+                        TextButton(onClick={deleteId=visit.id},enabled=!locked) { Text(tr("Delete this local record","यह स्थानीय रिकॉर्ड हटाएँ")) }
                     }
                 }
                 Spacer(Modifier.height(24.dp))
             }
             Row {
-                TextButton(onClick={selectedId=null},enabled=!locked) { Text("Back to my visits") }
+                TextButton(onClick={selectedId=null},enabled=!locked) { Text(tr("Back to my visits","मेरी विज़िट पर वापस")) }
                 TextButton(onClick={openAi(ArogyaAiTask.EXPLAIN,"home visit")},enabled=!locked && knowledgeReady) { Text(tr("Ask the guide","गाइड से पूछें")) }
                 if(visit.guideLog.isNotEmpty()) TextButton(onClick={historyOpen=true}) { Text(tr("Questions (${visit.guideLog.size})","सवाल (${visit.guideLog.size})")) }
             }
@@ -639,10 +641,10 @@ fun ArogyaVisitScreen(
         dismissButton={TextButton(onClick={source=null}) {Text(tr("Close","बंद करें"))}}) }
     ocr?.let { a ->
         var reviewedText by remember(a.id) { mutableStateOf(a.extractedText) }
-        AlertDialog(onDismissRequest={ocr=null},title={Text("Review OCR — never auto-filled")},text={Column(Modifier.verticalScroll(rememberScrollState())) { ArogyaAttachmentPreview(repo,a); Text("Compare with the original card. Edit or remove uncertain text before adding it to Notes."); OutlinedTextField(value=reviewedText,onValueChange={reviewedText=it.take(16000)},modifier=Modifier.fillMaxWidth(),minLines=5) }},
-            confirmButton={TextButton(onClick={if(appendNotes(ocrVisitId,"Worker-reviewed card transcription:\n"+reviewedText)) ocr=null},enabled=visit!=null && visit.id==ocrVisitId && !visit.completed && !locked) {Text("Confirm and add to Notes")}},dismissButton={TextButton(onClick={ocr=null}) {Text("Close")}})
+        AlertDialog(onDismissRequest={ocr=null},title={Text(tr("Review OCR — never auto-filled","OCR देखें — अपने आप नहीं भरेगा"))},text={Column(Modifier.verticalScroll(rememberScrollState())) { ArogyaAttachmentPreview(repo,a,hindi); Text(tr("Compare with the original card. Edit or remove uncertain text before adding it to Notes.","असली कार्ड से मिलाएँ। नोट्स में जोड़ने से पहले संदिग्ध पाठ सुधारें या हटाएँ।")); OutlinedTextField(value=reviewedText,onValueChange={reviewedText=it.take(16000)},modifier=Modifier.fillMaxWidth(),minLines=5) }},
+            confirmButton={TextButton(onClick={if(appendNotes(ocrVisitId,"Worker-reviewed card transcription:\n"+reviewedText)) ocr=null},enabled=visit!=null && visit.id==ocrVisitId && !visit.completed && !locked) {Text(tr("Confirm and add to Notes","पक्का करें और नोट्स में जोड़ें"))}},dismissButton={TextButton(onClick={ocr=null}) {Text(tr("Close","बंद करें"))}})
     }
-    if(voice) ArogyaDictationDialog(onDismiss={voice=false;autoOrganise=false;guidedSpeak=null},cloudVoice={ samples -> ArogyaCloud.transcribe(context,samples) },cloudFirst=ArogyaCloud.cloudFirst(context),onAccept={text ->
+    if(voice) ArogyaDictationDialog(onDismiss={voice=false;autoOrganise=false;guidedSpeak=null},cloudVoice={ samples,langs -> ArogyaCloud.transcribe(context,samples,langs) },cloudFirst=ArogyaCloud.cloudFirst(context),hindi=hindi,onAccept={text ->
         val cb=guidedSpeak
         if(cb!=null) { guidedSpeak=null; voice=false; cb(text) }
         else if(questionDictation) {
@@ -808,7 +810,7 @@ fun ArogyaVisitScreen(
                             fun family(h:Boolean) { familyBusy=true; scope.launch { try { familyText=ai.familyExplain(result.text,result.quote,h) } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
                             Row(verticalAlignment=Alignment.CenterVertically) {
                                 Button(onClick={family(true)},enabled=!familyBusy && !aiBusy) { Text(if(familyBusy) tr("Writing…","लिखा जा रहा है…") else tr("👪 Explain to family (हिंदी)","👪 परिवार को समझाएँ")) }
-                                TextButton(onClick={family(false)},enabled=!familyBusy && !aiBusy) { Text("English") }
+                                TextButton(onClick={family(false)},enabled=!familyBusy && !aiBusy) { Text(tr("English","English")) }
                                 AiBadge("Explain to family")
                             }
                             if(familyText.isNotBlank()) Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(12.dp)) {
@@ -865,8 +867,8 @@ fun ArogyaVisitScreen(
                 if(ai!=null) AiBadge("Message to ANM")
                 if(anmBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick={record("WhatsApp");ArogyaShare.whatsApp(context,anmPhone,message)},modifier=Modifier.weight(1f)) { Text("WhatsApp") }
-                    OutlinedButton(onClick={record("SMS");ArogyaShare.sms(context,anmPhone,message)},enabled=hasPhone,modifier=Modifier.weight(1f)) { Text("SMS") }
+                    OutlinedButton(onClick={record("WhatsApp");ArogyaShare.whatsApp(context,anmPhone,message)},modifier=Modifier.weight(1f)) { Text(tr("WhatsApp","WhatsApp")) }
+                    OutlinedButton(onClick={record("SMS");ArogyaShare.sms(context,anmPhone,message)},enabled=hasPhone,modifier=Modifier.weight(1f)) { Text(tr("SMS","SMS")) }
                 }
                 if(!hasPhone) Text(tr("Add the ANM's number once; it is remembered on this phone.","ANM का नंबर एक बार डालें; फ़ोन पर याद रहेगा।"),style=MaterialTheme.typography.bodySmall)
                 Text(tr("Nothing is sent until you press Send in the call / WhatsApp / SMS app. Each contact is noted in the visit's referral record.","आप भेजें दबाएँगी तभी जाएगा। हर संपर्क विज़िट के रेफ़रल में दर्ज होता है।"),style=MaterialTheme.typography.bodySmall)
@@ -957,7 +959,7 @@ fun ArogyaVisitScreen(
         } },confirmButton={TextButton(onClick={ ashaName=n.trim(); ashaVillage=v.trim(); profilePrefs.edit().putString("name",ashaName).putString("village",ashaVillage).apply(); profileOpen=false }) {Text(tr("Save","सहेजें"))}},
             dismissButton={TextButton(onClick={profileOpen=false}) {Text(tr("Cancel","रद्द करें"))}})
     }
-    hubOpen?.let { tab -> ArogyaRegistryHub(tab,visits,queue,onClose={hubOpen=null},ai=ai) { b -> hubOpen=null; guidedFor=b } }
+    hubOpen?.let { tab -> ArogyaRegistryHub(hindi,tab,visits,queue,onClose={hubOpen=null},ai=ai) { b -> hubOpen=null; guidedFor=b } }
     if(pickerOpen) ArogyaPersonPicker(hindi,reg.beneficiaries,dueNow,onPick={ b -> pickerOpen=false; guidedFor=b },onAdd={ pickerOpen=false; hubOpen="patients" },onDismiss={ pickerOpen=false })
     guidedFor?.let { b -> ArogyaGuidedVisit(b,hindi,visits,queue,ai,onClose={ guidedFor=null },
         onAskSop={ q -> if(knowledgeReady) { openAi(ArogyaAiTask.EXPLAIN,"",sop=true); aiQuestion=q } else Toast.makeText(context,"Install the ASHA guide first.",Toast.LENGTH_LONG).show() },
@@ -984,8 +986,8 @@ fun ArogyaVisitScreen(
             }
         },confirmButton={TextButton(onClick={visitsOpen=false}) {Text(tr("Close","बंद करें"))}})
     }
-    if(aiPageOpen) ArogyaAiPage(
-        modelStatus=ai?.modelStatus() ?: "AI not available",
+    if(aiPageOpen) ArogyaAiPage(hindi,
+        modelStatus=ai?.modelStatus() ?: tr("AI not available","AI नहीं है"),
         onlineStatus=ArogyaCloud.status(context),
         onDismiss={aiPageOpen=false},ai=ai)
     val fvVisit=visits.firstOrNull {it.id==fvVisitId}
@@ -1069,8 +1071,9 @@ fun ArogyaVisitScreen(
             }
         }
     }
-    if(modelSettingsOpen) ArogyaCloudSettingsDialog { modelSettingsOpen=false }
-    deleteId?.let { id -> AlertDialog(onDismissRequest={deleteId=null},title={Text("Delete visit?")},text={Text("This deletes this local visit and its attachments. Exported copies are not deleted.")},confirmButton={TextButton(onClick={deleteId=null;queue.delete(id);selectedId=null}) {Text("Delete")}},dismissButton={TextButton(onClick={deleteId=null}) {Text("Cancel")}}) }
+    if(modelSettingsOpen) ArogyaCloudSettingsDialog(hindi) { modelSettingsOpen=false }
+    voiceMissing?.let { lang -> AlertDialog(onDismissRequest={voiceMissing=null},title={Text(tr("Voice not installed","आवाज़ नहीं है"))},text={Text(tr("Reading aloud uses the Android voice. Install a ${if(lang=="hi") "Hindi" else "English"} voice, then try again.","बोलकर सुनाने के लिए Android आवाज़ चाहिए। ${if(lang=="hi") "हिन्दी" else "English"} आवाज़ इंस्टॉल करें, फिर सुनें।"))},confirmButton={TextButton(onClick={voiceMissing=null;runCatching {context.startActivity(android.content.Intent(android.speech.tts.TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA))}}) {Text(tr("Download voice","आवाज़ डाउनलोड करें"))}},dismissButton={TextButton(onClick={voiceMissing=null}) {Text(tr("Later","बाद में"))}}) }
+    deleteId?.let { id -> AlertDialog(onDismissRequest={deleteId=null},title={Text(tr("Delete visit?","विज़िट हटाएँ?"))},text={Text(tr("This deletes this local visit and its attachments. Exported copies are not deleted.","यह स्थानीय विज़िट और इसके अटैचमेंट हटाएगा। भेजी गई कॉपी नहीं हटेगी।"))},confirmButton={TextButton(onClick={deleteId=null;queue.delete(id);selectedId=null}) {Text(tr("Delete","हटाएँ"))}},dismissButton={TextButton(onClick={deleteId=null}) {Text(tr("Cancel","रद्द करें"))}}) }
 }
 
 @Composable
@@ -1079,49 +1082,62 @@ private fun ArogyaField(label: String,value: String,enabled: Boolean,lines: Int=
 }
 
 @Composable
-internal fun ArogyaDictationDialog(onDismiss:()->Unit,cloudVoice:(suspend (FloatArray)->String?)?=null,cloudFirst:Boolean=false,onAccept:(String)->Unit) {
+internal fun ArogyaDictationDialog(onDismiss:()->Unit,cloudVoice:(suspend (FloatArray,List<String>)->String?)?=null,cloudFirst:Boolean=false,hindi:Boolean=false,onAccept:(String)->Unit) {
+    fun tr(en:String,hi:String)=if(hindi) hi else en
     val context=LocalContext.current
-    var status by remember {mutableStateOf("Getting ready to listen…")}
+    var status by remember {mutableStateOf(tr("Getting ready to listen…","सुनने की तैयारी…"))}
     var text by remember {mutableStateOf("")}; var ready by remember {mutableStateOf(false)}
     var recorder by remember {mutableStateOf<AndroAudioRecorder?>(null)}
     var engine by remember {mutableStateOf("")}
+    var voiceChoice by remember {mutableStateOf(ArogyaLang.voiceLang(context))}
     DisposableEffect(Unit) { onDispose {recorder?.stop()} }
     LaunchedEffect(Unit) {
         val recognizer=AndroWhisperRecognizer(context.applicationContext)
         try {
             // Whisper (offline) and Muse Voice Transcribe (online): the Settings order decides which is tried first; the other is the fallback.
             val whisperOk=withContext(Dispatchers.IO) {recognizer.ensureInitialized()}
-            if(!whisperOk && cloudVoice==null) {ready=true;status="Speech model unavailable. Type your note instead.";return@LaunchedEffect}
-            val session=if(whisperOk) recognizer.newSession(maxSeconds=60,streaming=false) else null
+            if(!whisperOk && cloudVoice==null) {ready=true;status=tr("Speech model unavailable. Type your note instead.","बोलने वाला मॉडल नहीं है। नोट लिखें।");return@LaunchedEffect}
+            val session=if(whisperOk) recognizer.newSession(language=ArogyaLang.whisperLang(voiceChoice),maxSeconds=60,streaming=false) else null
             val audio=AndroAudioRecorder();recorder=audio
-            if(!audio.start()) {ready=true;status="Microphone unavailable. Type your note instead.";return@LaunchedEffect}
-            status="Listening (up to 60 seconds)… Tap Stop when done."
+            if(!audio.start()) {ready=true;status=tr("Microphone unavailable. Type your note instead.","माइक नहीं है। नोट लिखें।");return@LaunchedEffect}
+            status=tr("Listening (up to 60 seconds)… Tap Stop when done.","सुन रहे हैं (60 सेकंड तक)… हो जाए तो रोकें दबाएँ।")
             val heard=ArrayList<FloatArray>()
             try { withTimeoutOrNull(60000) { for(chunk in audio.chunks) { session?.append(chunk); if(cloudVoice!=null) heard.add(chunk) } } }
             finally {audio.stop()}
+            val choiceAtStop=voiceChoice
             suspend fun cloud():String? {
                 if(cloudVoice==null || heard.isEmpty()) return null
-                status="Transcribing with Muse Voice Transcribe (Meta, online)…"
+                status=tr("Transcribing with Muse Voice Transcribe (Meta, online)…","Muse Voice Transcribe (Meta, ऑनलाइन) से लिख रहे हैं…")
                 val all=FloatArray(heard.sumOf {it.size}); var o=0; heard.forEach { c -> c.copyInto(all,o); o+=c.size }
-                return cloudVoice(all)?.takeIf { it.isNotBlank() }?.also { engine="Muse Voice Transcribe (Meta, online)" }
+                return cloudVoice(all,ArogyaLang.metaLanguages(choiceAtStop))?.takeIf { it.isNotBlank() }?.also { engine=tr("Muse Voice Transcribe (Meta, online)","Muse Voice Transcribe (Meta, ऑनलाइन)") }
             }
             suspend fun phone():String? {
                 if(session==null) return null
-                status="Transcribing on this phone…"
-                return withContext(Dispatchers.Default) {session.finish()}.takeIf { it.isNotBlank() }?.also { engine="Whisper (on this phone, offline)" }
+                status=tr("Transcribing on this phone…","इसी फ़ोन पर लिख रहे हैं…")
+                // An explicit Hindi/English choice re-decodes in that language ("hi" fixes
+                // Hindi coming out in Urdu script); Auto keeps the session's own result.
+                val t=withContext(Dispatchers.Default) { if(choiceAtStop==ArogyaLang.VOICE_AUTO) session.finish() else session.finishWithLanguage(ArogyaLang.whisperLang(choiceAtStop)) }
+                return t.takeIf { it.isNotBlank() }?.also { engine=tr("Whisper (on this phone, offline)","Whisper (इसी फ़ोन पर, ऑफलाइन)") }
             }
             text=(if(cloudFirst) cloud() ?: phone() else phone() ?: cloud()).orEmpty()
             ready=true
-            status=if(text.isBlank()) "No speech recognised. Type your note instead." else "Review and correct the transcript before adding it. ($engine)"
+            status=if(text.isBlank()) tr("No speech recognised. Type your note instead.","कुछ सुनाई नहीं दिया। नोट लिखें।") else tr("Review and correct the transcript before adding it. ($engine)","जोड़ने से पहले देखकर सुधारें। ($engine)")
         } catch(e:CancellationException) {throw e}
-        catch(_:Exception) {ready=true;status="Voice unavailable. You can type and confirm your note below."}
+        catch(_:Exception) {ready=true;status=tr("Voice unavailable. You can type and confirm your note below.","आवाज़ नहीं चली। नीचे नोट लिखकर पक्का करें।")}
         finally {recorder?.stop();withContext(NonCancellable+Dispatchers.IO) {recognizer.release()} }
     }
-    AlertDialog(onDismissRequest=onDismiss,title={Row(verticalAlignment=Alignment.CenterVertically) { Text("Visit dictation",modifier=Modifier.weight(1f)); AiBadge("Speak instead of typing") }},text={Column {Text(status);OutlinedTextField(value=text,onValueChange={text=it.take(10000)},minLines=4,modifier=Modifier.fillMaxWidth());TextButton(onClick={recorder?.stop()},enabled=!ready) {Text("Stop recording")}}},confirmButton={TextButton(onClick={onAccept(text)},enabled=ready&&text.isNotBlank()) {Text("Confirm transcript")}},dismissButton={TextButton(onClick=onDismiss) {Text("Cancel")}})
+    AlertDialog(onDismissRequest=onDismiss,title={Row(verticalAlignment=Alignment.CenterVertically) { Text(tr("Visit dictation","विज़िट बोलकर लिखें"),modifier=Modifier.weight(1f)); AiBadge("Speak instead of typing") }},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            listOf(ArogyaLang.VOICE_AUTO to tr("Auto (Hindi+English)","ऑटो (हिन्दी+English)"),ArogyaLang.VOICE_HINDI to tr("Hindi","हिन्दी"),ArogyaLang.VOICE_ENGLISH to tr("English","English")).forEach { (v,label) ->
+                FilterChip(selected=voiceChoice==v,onClick={voiceChoice=v;ArogyaLang.setVoiceLang(context,v)},label={Text(label,maxLines=1)})
+            }
+        }
+        Text(status);OutlinedTextField(value=text,onValueChange={text=it.take(10000)},minLines=4,modifier=Modifier.fillMaxWidth());TextButton(onClick={recorder?.stop()},enabled=!ready) {Text(tr("Stop recording","रिकॉर्डिंग रोकें"))}}},confirmButton={TextButton(onClick={onAccept(text)},enabled=ready&&text.isNotBlank()) {Text(tr("Confirm transcript","लिखा पक्का करें"))}},dismissButton={TextButton(onClick=onDismiss) {Text(tr("Cancel","रद्द करें"))}})
 }
 
 @Composable
-private fun ArogyaAttachmentPreview(repo: ArogyaVisitRepository, attachment: ArogyaAttachment) {
+private fun ArogyaAttachmentPreview(repo: ArogyaVisitRepository, attachment: ArogyaAttachment, hindi: Boolean = false) {
+    fun tr(en:String,hi:String)=if(hindi) hi else en
     val context=LocalContext.current
     var page by remember(attachment.id) {mutableStateOf(0)}
     var count by remember(attachment.id) {mutableStateOf(1)}
@@ -1132,12 +1148,12 @@ private fun ArogyaAttachmentPreview(repo: ArogyaVisitRepository, attachment: Aro
         catch(e:CancellationException) {throw e}
         catch(_:Exception) {failed=true}
     }
-    if(failed) Text("Original preview unavailable. Check the original card manually.")
-    bitmap?.let {Image(it.asImageBitmap(),contentDescription="Original visit card or PDF page",modifier=Modifier.fillMaxWidth().heightIn(max=300.dp))}
+    if(failed) Text(tr("Original preview unavailable. Check the original card manually.","असली झलक नहीं है। असली कार्ड खुद देखें।"))
+    bitmap?.let {Image(it.asImageBitmap(),contentDescription=tr("Original visit card or PDF page","असली विज़िट कार्ड या PDF पेज"),modifier=Modifier.fillMaxWidth().heightIn(max=300.dp))}
     if(attachment.mime=="application/pdf") Row {
-        TextButton(onClick={page--},enabled=page>0) {Text("Previous page")}
+        TextButton(onClick={page--},enabled=page>0) {Text(tr("Previous page","पिछला पेज"))}
         Text("${page+1} / $count")
-        TextButton(onClick={page++},enabled=page+1<count) {Text("Next page")}
+        TextButton(onClick={page++},enabled=page+1<count) {Text(tr("Next page","अगला पेज"))}
     }
 }
 
