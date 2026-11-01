@@ -393,6 +393,9 @@ fun SettingsDialog(
     kbSwitching: Boolean = false,
     onUseKbPack: ((String) -> Unit)? = null,
     onRemoveKbPack: ((String) -> Unit)? = null,
+    /** One-tap Guide v1 → v2 update when the wanted file is in Downloads. Null = nothing offered. */
+    kbGuideUpdate: KbGuideUpdate? = null,
+    onInstallGuideUpdate: (() -> Unit)? = null,
     kbCheckText: String = "",
     kbCheckRunning: Boolean = false,
     onCheckKb: (() -> Unit)? = null,
@@ -773,6 +776,15 @@ fun SettingsDialog(
                 )
                 if (kbPacks.size > 1) {
                     KnowledgePackList(kbPacks, kbSwitching, onUseKbPack, onRemoveKbPack)
+                }
+                if (kbGuideUpdate != null && onInstallGuideUpdate != null) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Guide on this phone: ${kbGuideUpdate.activeLabel} — ${kbGuideUpdate.wantedName} is in Downloads",
+                            color = Color(0xFFFFD54F), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Button(onClick = { onInstallGuideUpdate() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Install ${kbGuideUpdate.wantedName}")
+                        }
+                    }
                 }
                 // KB validation: does search find the pack's own passages, and is its data clean?
                 if (kbInstalled && onCheckKb != null) {

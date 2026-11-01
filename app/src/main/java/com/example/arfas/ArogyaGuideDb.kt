@@ -27,3 +27,6 @@ object ArogyaGuideDb {
         else -> "Guide ?"
     }
 }
+
+/** One-tap guide update offered on the Knowledge Base screen when the wanted file is in Downloads. */
+data class KbGuideUpdate(val activeLabel: String, val wantedName: String)

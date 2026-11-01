@@ -104,6 +104,8 @@ class MainActivity : ComponentActivity() {
     private var knowledgeInstalled by mutableStateOf(false)
     private var knowledgeReady by mutableStateOf(false)
     private var knowledgeStatusText by mutableStateOf("Not installed")
+    /** One-tap Guide v1 → v2 update, when the wanted file sits in Downloads. Null = nothing offered. */
+    private var guideUpdateOffer by mutableStateOf<KbGuideUpdate?>(null)
     private var pendingAttachmentLabel by mutableStateOf("")
     private var attachmentPreparing by mutableStateOf(false)
     private var runtimeHealthText by mutableStateOf("")
@@ -699,6 +701,8 @@ class MainActivity : ComponentActivity() {
                             kbSwitching = knowledgeSwitching,
                             onUseKbPack = { id -> switchKnowledgePack(id) },
                             onRemoveKbPack = { id -> confirmRemoveKnowledgePack(id) },
+                            kbGuideUpdate = guideUpdateOffer,
+                            onInstallGuideUpdate = { installGuideUpdateFromDownloads() },
                             kbCheckText = kbCheckText,
                             kbCheckRunning = kbCheckRunning,
                             onCheckKb = { runKbCheck() },
@@ -1398,9 +1402,7 @@ class MainActivity : ComponentActivity() {
             val ready = phase1Features.ensureKnowledgeReady()
             val install = phase1Features.inspectKnowledgeInstallation()
             val status = phase1Features.knowledgeStatusText()
-            val guideV = phase1Features.guideVersion()
-            val guideSuffix = " • " + ArogyaGuideDb.describe(guideV) +
-                (if (ArogyaGuideDb.needsSwitch(guideV)) " — replace with ${ArogyaGuideDb.wantedName()}" else "")
+            val guideSuffix = kbGuideSuffix()
             withContext(Dispatchers.Main) {
                 knowledgeInstalled = install.valid
                 knowledgeReady = ready
@@ -1777,6 +1779,44 @@ class MainActivity : ComponentActivity() {
         refreshKnowledgeSettingsStatus()
     }
 
+    /** " • Guide v1/v2" suffix for every Knowledge Base status line (IO thread: reads the DB marker). */
+    private fun kbGuideSuffix(): String {
+        val v = phase1Features.guideVersion()
+        return " • " + ArogyaGuideDb.describe(v) +
+            (if (ArogyaGuideDb.needsSwitch(v)) " — replace with ${ArogyaGuideDb.wantedName()}" else "")
+    }
+
+    /** Recomputes the one-tap guide update offer (IO: DB marker + Downloads lookup). */
+    private suspend fun refreshGuideUpdate() {
+        val offer = withContext(Dispatchers.IO) {
+            val v = phase1Features.guideVersion()
+            if (ArogyaGuideDb.needsSwitch(v) && findDownloadDbUri(ArogyaGuideDb.wantedName()) != null)
+                KbGuideUpdate(ArogyaGuideDb.describe(v), ArogyaGuideDb.wantedName()) else null
+        }
+        withContext(Dispatchers.Main) { guideUpdateOffer = offer }
+    }
+
+    private fun findDownloadDbUri(fileName: String): android.net.Uri? = runCatching {
+        val files = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        contentResolver.query(files, arrayOf(MediaStore.Downloads._ID),
+            "${MediaStore.Downloads.DISPLAY_NAME}=?", arrayOf(fileName), null)?.use { c ->
+            if (c.moveToFirst()) android.content.ContentUris.withAppendedId(files, c.getLong(0)) else null
+        }
+    }.getOrNull()
+
+    /** One tap: install the wanted guide file from Downloads through the normal install path. */
+    private fun installGuideUpdateFromDownloads() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val uri = findDownloadDbUri(ArogyaGuideDb.wantedName())
+            withContext(Dispatchers.Main) {
+                if (uri == null) {
+                    Toast.makeText(this@MainActivity, "${ArogyaGuideDb.wantedName()} was not found in Downloads.", Toast.LENGTH_LONG).show()
+                    lifecycleScope.launch { refreshGuideUpdate() }
+                } else handleKbFilePick(uri)
+            }
+        }
+    }
+
     private fun refreshKnowledgeSettingsStatus() {
         knowledgeStatusText = "Checking installed Knowledge Base…"
         lifecycleScope.launch(Dispatchers.IO) {
@@ -1792,18 +1832,20 @@ class MainActivity : ComponentActivity() {
                     false
                 }
             } else false
+            val suffix = kbGuideSuffix()
             withContext(Dispatchers.Main) {
                 knowledgeInstalled = install.valid
                 knowledgeReady = ready
                 knowledgeStatusText = when {
-                    install.valid && ready -> "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search ready"
-                    install.valid -> "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search unavailable"
+                    install.valid && ready -> "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search ready$suffix"
+                    install.valid -> "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search unavailable$suffix"
                     install.fileExists -> "Knowledge Base file found but validation failed"
                     else -> "Not installed"
                 }
                 Log.i(TAG, "FIXSIGHT_KB_SETTINGS_REFRESH installed=${install.valid} ready=$ready rows=${install.rowCount}")
             }
             refreshKnowledgePacks()
+            refreshGuideUpdate()
         }
     }
 
@@ -1825,13 +1867,15 @@ class MainActivity : ComponentActivity() {
             val ok = phase1Features.switchKnowledgePack(packId)
             val install = phase1Features.inspectKnowledgeInstallation()
             refreshKnowledgePacks()
+            refreshGuideUpdate()
+            val suffix = kbGuideSuffix()
             withContext(Dispatchers.Main) {
                 knowledgeSwitching = false
                 knowledgeInstalled = install.valid
                 knowledgeReady = ok
                 knowledgeStatusText = if (install.valid) {
                     "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • " +
-                        if (ok) "Semantic search ready" else "Semantic search unavailable"
+                        (if (ok) "Semantic search ready" else "Semantic search unavailable") + suffix
                 } else "Not installed"
                 // A KB chosen for the next session now refers to the new pack.
                 if (knowledgePreselected && !ok) {
@@ -1873,21 +1917,23 @@ class MainActivity : ComponentActivity() {
         knowledgeStatusText = "Preparing health guide…"
         lifecycleScope.launch(Dispatchers.IO) {
           try {
-            val ok = phase1Features.installKnowledgeDatabase(uri, resolveDisplayName(uri))
+            val outcome = phase1Features.installKnowledgeDatabaseDetailed(uri, resolveDisplayName(uri))
             val install = phase1Features.inspectKnowledgeInstallation()
             val ready = phase1Features.isKnowledgeReady()
             refreshKnowledgePacks()
+            refreshGuideUpdate()
+            val suffix = kbGuideSuffix()
             withContext(Dispatchers.Main) {
                 knowledgeInstalled = install.valid
                 knowledgeReady = ready
-                knowledgeStatusText = (if (!ok) "Attachment failed. Check the search model in Settings, then retry. Current guide: " else "") + when {
-                    install.valid && ready -> "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search ready"
-                    install.valid -> "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search unavailable"
+                knowledgeStatusText = (if (!outcome.ok) "Install failed: ${outcome.reason}. Current guide: " else "") + when {
+                    install.valid && ready -> "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search ready$suffix"
+                    install.valid -> "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search unavailable$suffix"
                     else -> "Not installed"
                 }
                 Toast.makeText(
                     this@MainActivity,
-                    if (ok && ready) "Health guide ready" else if (ok) "Guide attached. Set up the search model in Settings to ask questions." else "Could not attach guide. Check the .db file and try again.",
+                    if (outcome.ok && ready) "Health guide ready" else if (outcome.ok) "Guide attached. Set up the search model in Settings to ask questions." else "Could not attach guide: ${outcome.reason}",
                     Toast.LENGTH_LONG
                 ).show()
             }

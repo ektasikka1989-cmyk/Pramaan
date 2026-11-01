@@ -234,6 +234,47 @@ class Phase1FeatureBundle(private val context: Context) {
         return semanticReady
     }
 
+    /** Outcome of [installKnowledgeDatabaseDetailed]: success plus the real reason either way. */
+    data class KbInstallOutcome(val ok: Boolean, val reason: String)
+
+    /**
+     * ArogyaDoot install path (Guide v1 → v2). The plain installer rejects while a KB is
+     * selected for the session, and ArogyaDoot selects it at startup — so selection is
+     * dropped around the install; on success the new pack (already active) is re-enabled
+     * and search is re-warmed, on failure the previous selection is restored. Returns the
+     * real failure reason so the Knowledge Base screen can show it.
+     */
+    suspend fun installKnowledgeDatabaseDetailed(
+        uri: Uri,
+        displayName: String = "",
+        onProgress: (String) -> Unit = {}
+    ): KbInstallOutcome {
+        val wasEnabled = isKnowledgeEnabled()
+        if (wasEnabled) setKnowledgeEnabled(false)
+        val ok = installKnowledgeDatabase(uri, displayName, onProgress)
+        if (!ok) {
+            if (wasEnabled && isKnowledgeReady()) setKnowledgeEnabled(true)
+            val reason = installFailureReason()
+            Log.w(TAG, "FIXSIGHT_KB_INSTALL_DETAILED ok=false reason=$reason")
+            return KbInstallOutcome(false, reason)
+        }
+        if (wasEnabled) {
+            val ready = ensureKnowledgeReady()
+            setKnowledgeEnabled(ready)
+            if (ready) runCatching { warmKnowledgeSearch() }
+            Log.i(TAG, "FIXSIGHT_KB_INSTALL_DETAILED ok=true reselected=$ready")
+        } else {
+            Log.i(TAG, "FIXSIGHT_KB_INSTALL_DETAILED ok=true reselected=false")
+        }
+        return KbInstallOutcome(true, "installed")
+    }
+
+    /** Best-effort real reason for a failed install (the Boolean installer hides it). */
+    private fun installFailureReason(): String = when {
+        !semanticEngine.isReady -> "search models not ready — open Setup → AI on this phone first, then retry"
+        else -> "the chosen file was not recognised as a guide database (needs the knowledge_chunks / procurement_chunks table with embeddings)"
+    }
+
     /**
      * Warms the KB search sessions (E5 first embedding + re-ranker verification) so the
      * first question does not pay for them. Best-effort; never fails warm-up.
