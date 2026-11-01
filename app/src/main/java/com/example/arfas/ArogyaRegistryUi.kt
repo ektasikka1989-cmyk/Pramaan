@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -109,6 +110,42 @@ fun ArogyaTodayCard(hindi: Boolean, due: List<DueItem>, today: LocalDate, onOpen
     }
 }
 
+/** U7: "Next visits this week" strip — one-line chips, tap opens the full due list. */
+@Composable
+fun ArogyaNextStrip(hindi: Boolean, due: List<DueItem>, onOpen: () -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val open = due.filter { !it.done }.sortedBy { it.due }.take(7)
+    if (open.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(tr("Next visits this week", "इस हफ़्ते अगली विज़िट"), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            open.forEach { AssistChip(onClick = onOpen, label = { Text("${it.name.removeSuffix(" (demo)")} — ${it.label} (${it.due})", maxLines = 1) }) }
+        }
+    }
+}
+
+/** U7: first-time welcome, 3 slides, shown once (ArogyaLang.welcomed). */
+@Composable
+fun ArogyaWelcome(hindi: Boolean, onDone: () -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val slides = listOf(
+        tr("ArogyaDoot does the paperwork with you", "ArogyaDoot आपके साथ कागज़ी काम करता है") to
+            tr("Speak one visit note — the app fills the official form, MCP card, diary and registers.", "एक विज़िट नोट बोलें — ऐप आधिकारिक फ़ॉर्म, MCP कार्ड, डायरी और रजिस्टर भरता है।"),
+        tr("Works offline, speaks your language", "ऑफ़लाइन चलता है, आपकी भाषा बोलता है") to
+            tr("No internet needed. Ask the ASHA guides in Hindi or English, with the page for every answer.", "इंटरनेट ज़रूरी नहीं। आशा गाइड से हिन्दी या English में पूछें — हर उत्तर के साथ पेज।"),
+        tr("You stay in charge", "फ़ैसला आपका") to
+            tr("You approve everything AI suggests. Danger signs and schedules are fixed rules, never AI guesses.", "AI जो सुझाए आप पक्का करती हैं। खतरे के संकेत और शेड्यूल तय नियम हैं, AI अंदाज़ा नहीं।")
+    )
+    var page by remember { mutableStateOf(0) }
+    AlertDialog(onDismissRequest = {}, title = { Text(slides[page].first) }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(slides[page].second)
+            Text("${page + 1} / ${slides.size}", style = MaterialTheme.typography.labelMedium)
+        }
+    }, confirmButton = { TextButton(onClick = { if (page < slides.lastIndex) page++ else onDone() }) { Text(if (page < slides.lastIndex) tr("Next ›", "आगे ›") else tr("Start", "शुरू करें")) } },
+        dismissButton = { if (page > 0) TextButton(onClick = { page-- }) { Text(tr("‹ Back", "‹ पीछे")) } else TextButton(onClick = onDone) { Text(tr("Skip", "छोड़ें")) } })
+}
+
 /** Home: the four things an ASHA does. Big, two words each, Hindi on request. */
 @Composable
 fun ArogyaHomeGrid(hindi: Boolean, people: Int, onPeople: () -> Unit, onVisit: () -> Unit, onAsk: () -> Unit, onRegisters: () -> Unit,
@@ -119,8 +156,8 @@ fun ArogyaHomeGrid(hindi: Boolean, people: Int, onPeople: () -> Unit, onVisit: (
             colors = if (primary) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) else CardDefaults.cardColors()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(icon, style = MaterialTheme.typography.headlineMedium)
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(sub, style = MaterialTheme.typography.bodySmall)
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(sub, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }

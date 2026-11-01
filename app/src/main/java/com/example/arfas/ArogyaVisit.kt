@@ -7,6 +7,12 @@ import java.util.UUID
 enum class ArogyaKind(val title: String) { NEWBORN("Mother & newborn"), CHILD("Young child"), FOLLOW_UP("General follow-up") }
 enum class ArogyaAnswer { DONE, CONCERN, UNKNOWN }
 enum class ArogyaReferral { NONE, NEEDED, CONTACTED, ARRANGED, SEEN }
+
+/** Batch 6 (U7): referrals the ASHA has not followed up yet — recorded NEEDED, never contacted. Pure, host-tested. */
+object ArogyaReferralFollowUp {
+    fun pending(visits: List<ArogyaVisit>, today: LocalDate, days: Long = 7): List<ArogyaVisit> =
+        visits.filter { it.completed && it.referral == ArogyaReferral.NEEDED && it.date >= today.minusDays(days).toString() }
+}
 data class ArogyaAttachment(val id: String, val label: String, val mime: String, val extractedText: String = "")
 data class ArogyaVisit(
     val id: String = UUID.randomUUID().toString(),

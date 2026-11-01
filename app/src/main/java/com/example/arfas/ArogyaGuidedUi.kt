@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -40,7 +41,7 @@ fun ArogyaPersonPicker(hindi: Boolean, people: List<Beneficiary>, due: List<DueI
             OutlinedTextField(q, { q = it }, placeholder = { Text(tr("Search name or house", "नाम या घर खोजें")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             if (people.isEmpty()) Text(tr("No people yet. Add one, or load the sample village from Home.", "अभी कोई नहीं। जोड़ें, या होम से नमूना गाँव लोड करें।"))
             shown.forEach { b -> Card(Modifier.fillMaxWidth().clickable { onPick(b) }) { Column(Modifier.padding(10.dp)) {
-                Text(b.name, fontWeight = FontWeight.Bold)
+                Text(b.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(ArogyaGuided.kindFor(b).let { if (hindi) it.hi else it.title } + " · " + b.household.ifBlank { b.village } + if (b.id in dueIds) tr(" · due", " · बाकी") else "", style = MaterialTheme.typography.bodySmall)
             } } }
         }
@@ -60,8 +61,8 @@ fun OfficialFormGrid(t: FormTable, highlight: Int?, sources: Map<String, String>
             val w = t.headers.mapIndexed { i, _ -> if (i == 0) 190.dp else 78.dp }
             @Composable fun cell(text: String, i: Int, bold: Boolean, col: Int?) {
                 val bg = if (col != null && col == highlight) today else paper
-                Text(text, Modifier.width(w.getOrElse(i) { 78.dp }).border(0.5.dp, line).background(bg).padding(3.dp), color = ink, maxLines = 4,
-                    fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal, style = MaterialTheme.typography.bodySmall)
+                Text(text, Modifier.width(w.getOrElse(i) { 78.dp }).border(0.5.dp, line).background(bg).padding(4.dp), color = ink, maxLines = 4,
+                    fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal, style = MaterialTheme.typography.bodyMedium)
             }
             Row(Modifier.height(IntrinsicSize.Min)) { t.headers.forEachIndexed { i, h -> cell(h, i, true, if (i == 0) null else i - 1) } }
             t.rows.forEach { r -> Row(Modifier.height(IntrinsicSize.Min)) { r.forEachIndexed { i, c -> cell(c, i, i == 0 && (c.startsWith("Date") || c.startsWith("Next")), if (i == 0) null else i - 1) } } }
@@ -138,12 +139,14 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
             QType.YESNO -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("Yes" to tr("Yes", "हाँ"), "No" to tr("No", "नहीं")).forEach { (code, l) ->
                     val sel = v == code
-                    FilterChip(selected = sel, onClick = { set(f.id, if (sel) "" else code) }, label = { Text(l) },
+                    FilterChip(selected = sel, onClick = { set(f.id, if (sel) "" else code) }, modifier = Modifier.heightIn(min = 48.dp),
+                        label = { Text(l, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), maxLines = 1) },
                         colors = if (sel && f.dangerIf == code) FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.errorContainer) else FilterChipDefaults.filterChipColors())
                 }
             }
             QType.CHOICE -> Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                f.choices.forEach { c -> FilterChip(selected = v == c, onClick = { set(f.id, c) }, label = { Text(c) }) } }
+                f.choices.forEach { c -> FilterChip(selected = v == c, onClick = { set(f.id, c) }, modifier = Modifier.heightIn(min = 48.dp),
+                    label = { Text(c, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp), maxLines = 1) }) } }
             else -> OutlinedTextField(v, { nv -> set(f.id, if (f.type == QType.NUMBER) nv.filter { c -> c.isDigit() || c == '.' || c == '/' }.take(7) else nv.replace("\n", " ").take(120)) },
                 singleLine = true, suffix = { if (f.unit.isNotBlank()) Text(f.unit) }, modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = if (f.type == QType.NUMBER && f.id != "bp") KeyboardType.Decimal else KeyboardType.Text))
@@ -177,15 +180,22 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
                             var typed by remember { mutableStateOf("") }
                             OutlinedTextField(typed, { typed = it.take(3000) }, label = { Text(tr("…or type the note", "…या नोट लिखें")) }, minLines = 2, modifier = Modifier.fillMaxWidth())
                             if (typed.isNotBlank()) OutlinedButton(onClick = { fill(typed); typed = "" }, enabled = !aiBusy, modifier = Modifier.fillMaxWidth()) { Text(tr("✨ Fill the form from this note", "✨ इस नोट से फ़ॉर्म भरें")) }
+                            var hintFor by remember { mutableStateOf<FieldSpec?>(null) }
                             var lastSec = ""
                             rows.forEach { f ->
                                 if (f.section != lastSec) { lastSec = f.section; Text(f.section, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp)) }
-                                Column(Modifier.fillMaxWidth().padding(start = 6.dp)) {
-                                    Text("☐ " + label(f) + if (f.unit.isNotBlank() && f.type == QType.NUMBER) " (${f.unit})" else "")
-                                    val extra = listOfNotNull(f.hint.takeIf { it.isNotBlank() }, prev[f.id]?.let { (v, c) -> tr("last: $v ($c)", "पिछली बार: $v ($c)") })
-                                    if (extra.isNotEmpty()) Text(extra.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(Modifier.fillMaxWidth().padding(start = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("☐ " + label(f) + if (f.unit.isNotBlank() && f.type == QType.NUMBER) " (${f.unit})" else "",
+                                        Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                                    if (f.hint.isNotBlank() || prev[f.id] != null) TextButton(onClick = { hintFor = f }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("ⓘ") }
                                 }
                             }
+                            hintFor?.let { f -> AlertDialog(onDismissRequest = { hintFor = null }, title = { Text(label(f)) }, text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    if (f.hint.isNotBlank()) Text(f.hint)
+                                    prev[f.id]?.let { (v, c) -> Text(tr("Last time: $v ($c)", "पिछली बार: $v ($c)"), fontWeight = FontWeight.Medium) }
+                                }
+                            }, confirmButton = { TextButton(onClick = { hintFor = null }) { Text(tr("OK", "ठीक")) } }) }
                             if (dueVaccines.isNotEmpty()) Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp)) {
                                 Text(tr("Vaccines due — tick those given today (goes on the MCP card)", "बाकी टीके — आज दिए गए पर ✓"), fontWeight = FontWeight.Medium)
                                 dueVaccines.forEach { code -> Row(verticalAlignment = Alignment.CenterVertically) {
@@ -216,7 +226,7 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
                                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (empty) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)) {
                                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(label(f), Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                                            Text(label(f), Modifier.weight(1f), fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyLarge)
                                             when (src) {
                                                 "ai" -> TextButton(onClick = { showEv = !showEv }) { Text("✨") }
                                                 "rule" -> Text(tr("pattern", "पैटर्न"), style = MaterialTheme.typography.labelSmall)

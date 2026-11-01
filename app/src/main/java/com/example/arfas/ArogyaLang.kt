@@ -19,6 +19,7 @@ object ArogyaLang {
     private const val KEY_UI_HINDI = "ui_hindi"
     private const val KEY_UI_SET = "ui_hindi_set"
     private const val KEY_VOICE = "voice_lang"
+    private const val KEY_WELCOMED = "welcomed"
 
     private fun prefs(c: Context) = c.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -41,6 +42,13 @@ object ArogyaLang {
 
     fun setVoiceLang(c: Context, v: String) {
         prefs(c).edit().putString(KEY_VOICE, if (v == VOICE_HINDI || v == VOICE_ENGLISH) v else VOICE_AUTO).apply()
+    }
+
+    /** Batch 6 (U7): the 3-slide welcome shows once, then never again. Same new prefs file. */
+    fun welcomed(c: Context): Boolean = prefs(c).getBoolean(KEY_WELCOMED, false)
+
+    fun setWelcomed(c: Context) {
+        prefs(c).edit().putBoolean(KEY_WELCOMED, true).apply()
     }
 
     /** Whisper session language: "hi" fixes the Urdu-script Hindi output; "auto" lets it detect. */

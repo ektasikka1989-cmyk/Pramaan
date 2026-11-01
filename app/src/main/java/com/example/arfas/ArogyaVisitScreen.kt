@@ -152,6 +152,9 @@ fun ArogyaVisitScreen(
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
     var demoOpen by rememberSaveable { mutableStateOf(false) }
     var profileOpen by rememberSaveable { mutableStateOf(false) }
+    var moreOpen by remember { mutableStateOf(false) }
+    var welcome by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(loaded) { if(loaded && !ArogyaLang.welcomed(context)) welcome=true }
     val profilePrefs=remember { context.getSharedPreferences("arogya_profile",android.content.Context.MODE_PRIVATE) }
     var ashaName by remember { mutableStateOf(profilePrefs.getString("name","").orEmpty()) }
     var ashaVillage by remember { mutableStateOf(profilePrefs.getString("village","").orEmpty()) }
@@ -363,7 +366,7 @@ fun ArogyaVisitScreen(
                 AssistChip(onClick={aiPageOpen=true},label={ Text(when {
                     !online -> tr("📱 Offline · phone AI","📱 ऑफ़लाइन · फ़ोन AI")
                     cloudFirst -> tr("☁ Online · Meta cloud AI","☁ ऑनलाइन · Meta क्लाउड AI")
-                    else -> tr("📱 Online · phone AI first","📱 ऑनलाइन · पहले फ़ोन AI") },style=MaterialTheme.typography.labelMedium) })
+                    else -> tr("📱 Online · phone AI first","📱 ऑनलाइन · पहले फ़ोन AI") },style=MaterialTheme.typography.labelMedium,maxLines=1) })
             }
         } else {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
@@ -380,9 +383,20 @@ fun ArogyaVisitScreen(
         if(!loaded) { if(error.isBlank()) CircularProgressIndicator(); return@Column }
         if(visit==null) {
             val drafts=visits.filter {!it.completed}
+            val followUps=remember(visits) { ArogyaReferralFollowUp.pending(visits,LocalDate.now(),7) }
             LazyColumn(verticalArrangement=Arrangement.spacedBy(12.dp),modifier=Modifier.weight(1f)) {
+                // U7: red banner while any referral still needs following up (same count as the tile).
+                if(followUps.isNotEmpty()) item {
+                    val n=followUps.size
+                    ArogyaCard(tr("⚠ $n " + (if(n==1) "referral needs" else "referrals need") + " follow-up","⚠ $n रेफ़रल फ़ॉलो-अप बाकी"),
+                        container=ArogyaUi.dangerContainer(),titleColor=ArogyaUi.danger()) {
+                        followUps.take(3).forEach { Text("• ${it.name} — ${it.referralNote.ifBlank { it.date }}",maxLines=1) }
+                        TextButton(onClick={visitsOpen=true}) { Text(tr("Open visits ›","विज़िट खोलें ›")) }
+                    }
+                }
                 // 1. Today — what to do now
                 item { ArogyaTodayCard(hindi,dueNow,LocalDate.now()) { hubOpen="due" } }
+                item { ArogyaNextStrip(hindi,dueNow) { hubOpen="due" } }
                 // 2. Four things she does, nothing else
                 item { ArogyaHomeGrid(hindi,reg.beneficiaries.count {it.active},
                     onPeople={ hubOpen="patients" }, onVisit={ pickerOpen=true },
@@ -398,13 +412,19 @@ fun ArogyaVisitScreen(
                 if(drafts.isNotEmpty()) item {
                     OutlinedButton(onClick={visitsOpen=true},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)) { Text(tr("Continue unfinished visits (${drafts.size})","अधूरी विज़िट जारी रखें (${drafts.size})")) }
                 }
-                // 4. Small extras
+                // 4. Small extras (U2: Backup and Practice live under More; ✨ AI stays visible).
                 item {
-                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly) {
-                        TextButton(onClick={visitsOpen=true}) { Text(tr("🕘 Visits","🕘 विज़िट")) }
-                        TextButton(onClick={hubOpen="backup"}) { Text(tr("☁ Backup","☁ बैकअप")) }
-                        TextButton(onClick={aiPageOpen=true}) { Text("✨ AI") }
-                        if(knowledgeReady && ai!=null) TextButton(onClick={quizOpen=true;if(quizItems.isEmpty() && !quizBusy) loadQuiz()}) { Text(tr("📚 Practice","📚 अभ्यास")) }
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically) {
+                        TextButton(onClick={visitsOpen=true}) { Text(tr("🕘 Visits","🕘 विज़िट"),maxLines=1) }
+                        TextButton(onClick={aiPageOpen=true}) { Text("✨ AI",maxLines=1) }
+                        Box {
+                            TextButton(onClick={moreOpen=true}) { Text(tr("⋯ More","⋯ और"),maxLines=1) }
+                            DropdownMenu(expanded=moreOpen,onDismissRequest={moreOpen=false}) {
+                                DropdownMenuItem(text={ Text(tr("☁ Backup","☁ बैकअप")) },onClick={moreOpen=false;hubOpen="backup"})
+                                if(knowledgeReady && ai!=null) DropdownMenuItem(text={ Text(tr("📚 Practice","📚 अभ्यास")) },
+                                    onClick={moreOpen=false;quizOpen=true;if(quizItems.isEmpty() && !quizBusy) loadQuiz()})
+                            }
+                        }
                     }
                 }
                 if(reg.beneficiaries.isEmpty()) item {
@@ -949,6 +969,7 @@ fun ArogyaVisitScreen(
         }
     },confirmButton={TextButton(onClick={quizOpen=false}) {Text(tr("Close","बंद करें"))}},
     dismissButton={TextButton(onClick={loadQuiz()},enabled=!quizBusy) {Text(tr("New questions","नए सवाल"))}})
+    if(welcome) ArogyaWelcome(hindi) { ArogyaLang.setWelcomed(context); welcome=false }
     if(demoOpen) ArogyaDemoTour(ai,queue,visits,hindi,speak={ t -> speak(t) },onLoadSample={ loadSample() },onClose={ demoOpen=false; tts.stop() },
         onDeepLink={ target -> demoOpen=false; tts.stop(); if(target.startsWith("guided:")) guidedFor=reg.beneficiaries.firstOrNull { it.id==target.removePrefix("guided:") } else hubOpen=target })
     if(profileOpen) {
