@@ -258,11 +258,68 @@ object AnswerProof {
         fun spell(t: String) = t.replace("ae", "e").replace("oe", "e").replace("our", "or")
         val evidence = spell(citedPassages.joinToString(" ").lowercase(Locale.ROOT))
         // Stem match: "weighing" ~ "weight", "pregnancy" ~ "pregnant", "screening" ~ "screened".
-        val missing = terms.filter { t -> spell(t).let { st -> !evidence.contains(st.take(minOf(st.length, maxOf(5, st.length - 3)))) } }
+        val stemmed = terms.filter { t -> spell(t).let { st -> !evidence.contains(st.take(minOf(st.length, maxOf(5, st.length - 3)))) } }
+        // Spelling-tolerant: a typo ("umblical") or a known alias/Hinglish form ("dast")
+        // that the evidence does state never raises the warning.
+        val missing = if (!ArogyaFlags.coverageFuzzy || stemmed.isEmpty()) stemmed else {
+            val evWords = evidence.split(Regex("[^\\p{L}]+")).filter { it.length >= 5 }.distinct().take(3000)
+            stemmed.filter { t -> !fuzzyHit(t, evWords) && !aliasHit(t, evWords) }
+        }
         // One missing word alone is a warning only when it is long and specific ("pregnancy"), not a
         // verb the passage words differently ("bought" for "purchase").
         val enough = missing.size >= 2 || missing.singleOrNull()?.let { it.length >= 8 } == true
         return if (enough && missing.size * 2 >= terms.size) missing else emptyList()
+    }
+
+    /** Edit distance ≤ 1 (short words) or ≤ 2, same first letter (typos, not different words). */
+    internal fun fuzzyHit(term: String, evidenceWords: List<String>): Boolean {
+        if (term.length < 6) return false
+        val cap = if (term.length <= 7) 1 else 2
+        return evidenceWords.any { w ->
+            w.isNotEmpty() && w[0] == term[0] && kotlin.math.abs(w.length - term.length) <= cap &&
+                editDistance(term, w, cap) <= cap
+        }
+    }
+
+    /** True when [term]'s alias group (or the term itself as an alias) appears in the evidence. */
+    internal fun aliasHit(term: String, evidenceWords: List<String>): Boolean {
+        val group = if (TOPIC_ALIASES.containsKey(term)) term else TOPIC_ALIAS_OF[term] ?: return false
+        return TOPIC_ALIASES[group]?.any { it in evidenceWords } == true
+    }
+
+    private val TOPIC_ALIASES = mapOf(
+        "umbilical" to setOf("umbilical", "umblical", "umbical", "cord", "stump", "naal"),
+        "diarrhoea" to setOf("diarrhoea", "diarrhea", "dast", "loose", "motion"),
+        "anaemia" to setOf("anaemia", "anemia", "haemoglobin", "hemoglobin", "khoon"),
+        "pregnancy" to setOf("pregnancy", "pregnant", "garbh", "garbhvati", "antenatal"),
+        "breastfeeding" to setOf("breastfeeding", "breastfeed", "feeding", "doodh", "stanpan"),
+        "immunization" to setOf("immunization", "immunisation", "vaccine", "tika", "teeka", "teekakaran"),
+        "newborn" to setOf("newborn", "navjat", "navjaat", "neonatal"),
+        "fever" to setOf("fever", "bukhar", "temperature"),
+        "pneumonia" to setOf("pneumonia", "saans"),
+        "malaria" to setOf("malaria", "meleriya"),
+        "tuberculosis" to setOf("tuberculosis", "tubercular"),
+    )
+    private val TOPIC_ALIAS_OF: Map<String, String> = TOPIC_ALIASES.flatMap { (g, ws) -> ws.map { it to g } }.toMap()
+
+    /** Damerau-Levenshtein distance (an adjacent transposition costs 1), capped at [cap] + 1. */
+    internal fun editDistance(a: String, b: String, cap: Int): Int {
+        if (a == b) return 0
+        val d = Array(a.length + 1) { i -> IntArray(b.length + 1) { j -> if (i == 0) j else if (j == 0) i else 0 } }
+        for (i in 1..a.length) {
+            var rowMin = cap + 1
+            for (j in 1..b.length) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                var v = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+                if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) {
+                    v = minOf(v, d[i - 2][j - 2] + 1)
+                }
+                d[i][j] = v
+                if (v < rowMin) rowMin = v
+            }
+            if (rowMin > cap) return cap + 1
+        }
+        return d[a.length][b.length]
     }
 
     /** (found, total) from a "proof:4/5" marker, or null. */

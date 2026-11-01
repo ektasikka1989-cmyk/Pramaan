@@ -246,6 +246,9 @@ class Phase1FeatureBundle(private val context: Context) {
         e5
     }
 
+    /** R9 marker of the installed guide pack (2 = v2, 0 = v1, -1 = none). */
+    fun guideVersion(): Int = runCatching { genericKnowledgeDb.guideVersion() }.getOrDefault(-1)
+
     suspend fun ensureKnowledgeReady(): Boolean = withContext(Dispatchers.IO) {
         knowledgeMutex.withLock {
             if (!ensureSemanticReadyLocked()) {

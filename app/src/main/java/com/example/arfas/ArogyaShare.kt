@@ -38,7 +38,7 @@ object ArogyaShare {
         appendLine((if (n > 0) "Q$n. " else "Q. ") + e.question + "   (" + time.format(Date(e.at)) + ")")
         if (e.warning.isNotBlank()) appendLine("Danger-sign alert shown: " + e.warning.lineSequence().first())
         if (e.quote.isNotBlank()) appendLine("The guide says: “${e.quote}”" + if (e.quoteSource.isNotBlank()) " — ${e.quoteSource}" else "")
-        appendLine("Answer: " + e.answer)
+        appendLine("Answer: " + ArogyaMarkdown.strip(e.answer))
         if (e.sources.isNotEmpty()) {
             appendLine("Sources:")
             e.sources.forEach { s ->

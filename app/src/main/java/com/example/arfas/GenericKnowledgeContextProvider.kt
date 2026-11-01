@@ -371,24 +371,29 @@ class GenericKnowledgeContextProvider(
         // amount; one search per part finds both.
         val unknownWords = runCatching { repository.unknownWords(resolvedRetrievalQuery) }.getOrDefault(emptyList())
         if (unknownWords.isNotEmpty()) Log.i(TAG, "KB_UNKNOWN_WORDS ${unknownWords.take(6).joinToString(",")}")
+        // Hindi/Hinglish questions also search English dictionary terms (the question itself
+        // is untouched, so the answer stays in Hindi).
+        val hindiViews = if (ArogyaFlags.hindiRewrite && ArogyaHindiTerms.needsViews(resolvedRetrievalQuery))
+            runCatching { ArogyaHindiTerms.views(resolvedRetrievalQuery) }.getOrDefault(emptyList()) else emptyList()
+        if (hindiViews.isNotEmpty()) Log.i(TAG, "KB_HINDI_VIEWS ${hindiViews.joinToString(" | ").take(160)}")
         if (rewriter != null && GenericKbQuestionRewrite.worthRewritingForSearch(resolvedRetrievalQuery, unknownWords.size)) {
             val rw = rewrite()
             currentRewrite = rw
             if (rw != null) {
-                phase14 = runCatching { repository.searchPhase14(resolvedRetrievalQuery, queryPlan.clauses, candidateWork, denseEnabled, rw.parts) }
+                phase14 = runCatching { repository.searchPhase14(resolvedRetrievalQuery, queryPlan.clauses, candidateWork, denseEnabled, (rw.parts + hindiViews).distinct()) }
                     .onFailure { Log.w(TAG, "KB_PHASE14_REWRITE_FAILED ${it.javaClass.simpleName}:${it.message}") }
                     .getOrNull()
             }
         }
         if (phase14 == null) {
-            phase14 = runCatching { repository.searchPhase14(resolvedRetrievalQuery, queryPlan.clauses, candidateWork, denseEnabled) }
+            phase14 = runCatching { repository.searchPhase14(resolvedRetrievalQuery, queryPlan.clauses, candidateWork, denseEnabled, hindiViews) }
                 .onFailure { Log.w(TAG, "KB_PHASE14_FAILED ${it.javaClass.simpleName}:${it.message}") }
                 .getOrNull()
             val literalBestScore = phase14?.bestRerank
             if (rewriter != null && currentRewrite == null && phase14 != null && literalBestScore != null && literalBestScore < REWRITE_BELOW_RERANK) {
                 val rw = rewrite()
                 if (rw != null && !rw.search.equals(resolvedRetrievalQuery, ignoreCase = true)) {
-                    val viaRewrite = runCatching { repository.searchPhase14(resolvedRetrievalQuery, queryPlan.clauses, candidateWork, denseEnabled, rw.parts) }.getOrNull()
+                    val viaRewrite = runCatching { repository.searchPhase14(resolvedRetrievalQuery, queryPlan.clauses, candidateWork, denseEnabled, (rw.parts + hindiViews).distinct()) }.getOrNull()
                     val rewriteBest = viaRewrite?.bestRerank
                     val use = viaRewrite != null && viaRewrite.hits.isNotEmpty() && rewriteBest != null && rewriteBest >= literalBestScore - REWRITE_MAX_LOSS
                     Log.i(TAG, "KB_REWRITE_SEARCH literalBest=${"%.2f".format(Locale.US, literalBestScore)} rewriteBest=${rewriteBest?.let { "%.2f".format(Locale.US, it) } ?: "-"} used=$use search=${rw.search.take(120)}")
@@ -663,7 +668,9 @@ class GenericKnowledgeContextProvider(
     private fun keyFactPassageCount(queryPlan: GenericKbQueryPlan): Int {
         val partCount = maxOf(currentRewrite?.parts?.size ?: 1, queryPlan.clauses.size).coerceIn(1, 3)
         if (widePassages) return ONLINE_PASSAGES + 2 * (partCount - 1)
-        return KEY_FACT_PASSAGES + 2 * (partCount - 1)
+        // R1-lite: six passages compete for key facts when the switch is on, else five.
+        val base = if (ArogyaFlags.r1WideEvidence) KEY_FACT_PASSAGES + 1 else KEY_FACT_PASSAGES
+        return base + 2 * (partCount - 1)
     }
 
     /**

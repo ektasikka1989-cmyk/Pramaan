@@ -1614,6 +1614,17 @@ class GenericKnowledgePackRepository(
     }
 
     /**
+     * R9 marker of the installed pack: 2 = v2 guide file, 0 = v1, -1 = none installed.
+     * Read live (no caching) so a replaced guide is reported correctly.
+     */
+    fun guideVersion(): Int {
+        val database = db ?: return -1
+        return runCatching {
+            database.rawQuery("PRAGMA user_version", null).use { c -> if (c.moveToFirst()) c.getInt(0) else -1 }
+        }.getOrDefault(-1)
+    }
+
+    /**
      * Optional build-time enrichment (tools/kb_enrich.py): likely questions per passage and their
      * centroid vector. Searchable only; answers and sources always come from the passage row.
      */

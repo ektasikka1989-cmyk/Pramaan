@@ -35,7 +35,9 @@ data class ArogyaProgress(val stage:String,val draft:String="")
 data class ArogyaExtraction(val fields:List<ExtractedField>,val modelLabel:String,val metaModel:Boolean,val ms:Long,val note:String)
 data class ArogyaAiResult(val text:String,val provider:String,val elapsedMs:Long,val sources:List<ArogyaSource> = emptyList(),val canCopyToNotes:Boolean=false,val online:Boolean=false,val checkedAt:String="",val sourceOnly:Boolean=false,val captureItems:List<ArogyaCaptureItem> = emptyList(),val timingsMs:Map<String,Long> = emptyMap(),val safetyPrompt:Boolean=false,
     /** "The guide says": Pramaan's own chosen source sentence for this answer, with its source label. */
-    val quote:String="",val quoteSource:String="")
+    val quote:String="",val quoteSource:String="",
+    /** R8: the web/general answer was replaced by the ANM message; closest guide topics shown with it. */
+    val r8Blocked:Boolean=false,val r8Topics:List<String> = emptyList())
 
 class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val features:Phase1FeatureBundle,private val onlineKey:()->String = {""},
     /** Pramaan's own attachment manager: photo/PDF text is read on the phone (ML Kit OCR, PDF text). */
@@ -89,7 +91,17 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     }
 
     /** Loads the model and selects the ASHA guide as soon as ArogyaDoot opens, so the first question does not wait ~30 s. */
+    /** R9 marker of the installed guide pack (2 = v2, 0 = v1, -1 = none). */
+    fun guideVersion(): Int = runCatching { features.guideVersion() }.getOrDefault(-1)
+
+    /** R1-lite: wider phone evidence (6 x ~1100 chars) when the switch is on, else 4 x 900. */
+    private fun applyEvidenceSize() {
+        GenericKbKeyFacts.WINDOW_PASSAGES = if (ArogyaFlags.r1WideEvidence) 6 else 4
+        GenericKbKeyFacts.WINDOW_CHARS = if (ArogyaFlags.r1WideEvidence) 1_100 else 900
+    }
+
     suspend fun warmUp() {
+        applyEvidenceSize()
         val t = System.currentTimeMillis()
         val model = runCatching { ensureLocalModel() }.getOrDefault(false)
         val kb = runCatching { features.ensureKnowledgeReady() && (features.isKnowledgeEnabled() || features.setKnowledgeEnabled(true)) }.getOrDefault(false)
@@ -105,6 +117,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     fun clearAttachments() { attachments?.clearPending() }
 
     suspend fun run(request:ArogyaAiRequest):ArogyaAiResult {
+        applyEvidenceSize()
         val started = System.nanoTime()
         // 1. Danger-sign rules: instant, no model. URGENT stops here unless the worker asked for guidance after it.
         val danger = ArogyaDangerSigns.evaluate(request.question, request.visit)
@@ -187,6 +200,22 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             attachments?.releaseTurnAttachments(turnFiles.map { it.id }, consumed = answered)
         }
         val elapsed = System.currentTimeMillis() - t0
+        // R8 guideline-only mode (Ask SOP): a live-web or general answer — recognised by the
+        // kbnotfound:/freshness: markers, never by verification:optional — becomes the ANM
+        // message with the closest guide topics. Grounded and "Check online" answers pass through.
+        val notFoundMarker = turn.sourceIds.firstOrNull { it.startsWith(KnowledgeSourcePresentation.NOT_FOUND_PREFIX) }
+        val liveWeb = turn.sourceIds.any { it.startsWith("freshness:") }
+        if (ArogyaFlags.r8GuidelineOnly && (notFoundMarker != null || liveWeb)) {
+            val topics = if (notFoundMarker != null) runCatching { KnowledgeSourcePresentation.topicsOf(notFoundMarker) }.getOrDefault(emptyList()) else emptyList()
+            Log.i(TAG, "AROGYA_R8_BLOCKED kind=${if (liveWeb) "live_web" else "general"} topics=${topics.size}")
+            val hindiQ = KbReplyText.dominantScript(question) == KbReplyText.Script.DEVANAGARI
+            val msg = if (hindiQ) "यह आपकी आधिकारिक गाइड में नहीं है — अपनी ANM से पूछें।"
+            else "This is not in your official guides — ask your ANM."
+            val topicLine = if (topics.isEmpty()) "" else (if (hindiQ) "\n\nगाइड में सबसे करीबी विषय: " else "\n\nClosest guide topics: ") + topics.joinToString("; ")
+            return ArogyaAiResult(msg + topicLine, "ArogyaDoot", elapsed,
+                online = turn.provider == AndroBaselineRuntime.Provider.CLOUD, sourceOnly = true,
+                timingsMs = mapOf("pramaan_turn" to elapsed), r8Blocked = true, r8Topics = topics)
+        }
         val text = turn.text.trim()
         val hasAnswer = text.isNotBlank()
         val provider = when (turn.provider) {
@@ -202,13 +231,36 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             val url = KnowledgeSourcePresentation.openTarget(row).orEmpty()
             val label = row.substringBefore(" | ").trim()
             val title = KnowledgeSourcePresentation.cleanTitle(label.substringBefore(" — ").trim())
-            val pages = label.substringAfter(" — ", "").trim()
+            var pages = label.substringAfter(" — ", "").trim()
+            if (pages.isBlank()) {
+                // Every source shows a page: recover it from this row's own kbref when the
+                // grouped row lost it (diagnostic tells Batch 7 where it went missing).
+                val sid = "S${i + 1}"
+                pages = turn.sourceIds.asSequence()
+                    .filter { it.startsWith("kbref:", ignoreCase = true) && it.contains(sid, ignoreCase = true) }
+                    .mapNotNull { Regex("(?i)—\\s*pages?\\s+\\d+(?:\\s*[–-]\\s*\\d+)?").find(it)?.value?.trim() }
+                    .firstOrNull().orEmpty()
+                Log.i(TAG, "AROGYA_SOURCE_PAGE_FALLBACK row=$sid pages='$pages' title='${title.take(60)}'")
+            }
             val used = passages.getOrNull(i).orEmpty()
             ArogyaSource("${i + 1}", title, pages, used.joinToString("\n\n") { it.text }, url, used.flatMap { it.highlights }.distinct())
         }
         val quote = runCatching { KnowledgeSourcePresentation.quoteOf(turn.sourceIds) }.getOrNull()
+        // Dose safety: every dose answer is logged for the M1 human review list; a dose
+        // whose evidence context names only other age groups carries an ANM caution line.
+        var finalText = if (hasAnswer) text else "No answer came back from the guide. Rephrase the question or ask your ANM. Your visit is unchanged."
+        if (ArogyaFlags.doseAgeMatch && hasAnswer && ArogyaDoseCheck.isDoseQuestion(question)) {
+            val group = ArogyaDoseCheck.askedGroup(question)
+            val verdict = runCatching { ArogyaDoseCheck.check(question, text, sources.joinToString("\n") { it.excerpt }) }.getOrDefault(ArogyaDoseCheck.Verdict.UNCERTAIN)
+            val nums = runCatching { ArogyaAiExtras.numbers(text).distinct().take(6).joinToString(",") }.getOrDefault("")
+            Log.i(TAG, "AROGYA_DOSE_CHECK group=${group.name} verdict=${verdict.name} nums=[$nums] q='${question.take(80)}'")
+            if (verdict == ArogyaDoseCheck.Verdict.MISMATCH) {
+                val hindiQ = KbReplyText.dominantScript(question) == KbReplyText.Script.DEVANAGARI
+                finalText += "\n\n" + ArogyaDoseCheck.caution(group, hindiQ)
+            }
+        }
         return ArogyaAiResult(
-            if (hasAnswer) text else "No answer came back from the guide. Rephrase the question or ask your ANM. Your visit is unchanged.",
+            finalText,
             provider, elapsed, sources = sources, online = turn.provider == AndroBaselineRuntime.Provider.CLOUD,
             checkedAt = if (turn.provider == AndroBaselineRuntime.Provider.CLOUD) java.time.Instant.now().toString() else "",
             sourceOnly = !hasAnswer, timingsMs = mapOf("pramaan_turn" to elapsed),

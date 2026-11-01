@@ -429,7 +429,7 @@ fun ArogyaVisitScreen(
                             else Button(onClick={knowledgePicker.launch(arrayOf("*/*"))},enabled=!knowledgeBusy && !locked,modifier=Modifier.fillMaxWidth().heightIn(min=56.dp)) {
                                 Text(if(knowledgeBusy) tr("Installing…","इंस्टॉल हो रहा है…") else tr("Install ASHA guide","ASHA गाइड इंस्टॉल करें"),style=MaterialTheme.typography.titleMedium)
                             }
-                            if(!knowledgeReady && !knowledgeBusy) Text(tr("Choose the file ASHA_Health_Guide.db from your phone. If it fails, copy the file to Downloads and try again.","फ़ोन से ASHA_Health_Guide.db फ़ाइल चुनें। न हो तो फ़ाइल को Downloads में कॉपी करके फिर कोशिश करें।"),style=MaterialTheme.typography.bodySmall)
+                            if(!knowledgeReady && !knowledgeBusy) Text(tr("Choose the file ${ArogyaGuideDb.wantedName()} from your phone. If it fails, copy the file to Downloads and try again.","फ़ोन से ${ArogyaGuideDb.wantedName()} फ़ाइल चुनें। न हो तो फ़ाइल को Downloads में कॉपी करके फिर कोशिश करें।"),style=MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -655,12 +655,13 @@ fun ArogyaVisitScreen(
     })
     val gv=if(aiVisitId==SOP_VISIT_ID) sopVisit else visit
     if(aiOpen && gv!=null && gv.id==aiVisitId) Dialog(onDismissRequest={ if(!aiBusy) aiOpen=false },properties=DialogProperties(usePlatformDefaultWidth=false)) {
-        Surface(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(12.dp),shape=MaterialTheme.shapes.large) {
-            Column(Modifier.padding(16.dp).imePadding().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        Surface(Modifier.fillMaxWidth().fillMaxHeight(0.94f).statusBarsPadding().padding(12.dp),shape=MaterialTheme.shapes.large) {
+            Column(Modifier.padding(16.dp).imePadding(),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     Text(when(aiTask) { ArogyaAiTask.EXPLAIN->tr("Ask the ASHA guide","ASHA गाइड से पूछें");ArogyaAiTask.ORGANISE_NOTES->tr("Your AI visit draft","AI का विज़िट ड्राफ़्ट");ArogyaAiTask.HANDOVER->tr("Prepare ANM handover","ANM के लिए विवरण") },style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
                     AiBadge(if(aiTask==ArogyaAiTask.EXPLAIN) "Ask SOP" else "Organise notes")
                 }
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 // Warning appears after "Ask", not while typing (it used to push the text out of view).
                 val warningNow = if(aiTask==ArogyaAiTask.EXPLAIN && askedQuestionForWarning.isNotBlank()) ArogyaUrgentTriage.assess(askedQuestionForWarning,gv) else null
                 if(aiTask==ArogyaAiTask.EXPLAIN) {
@@ -771,7 +772,20 @@ fun ArogyaVisitScreen(
                                 if(result.quoteSource.isNotBlank()) Text("— "+result.quoteSource,style=MaterialTheme.typography.bodySmall)
                             }
                         }
-                        Text(result.text)
+                        Text(ArogyaMarkdown.strip(result.text))
+                        if(ArogyaFlags.r7SourceLine && aiTask==ArogyaAiTask.EXPLAIN && result.sources.isNotEmpty()) {
+                            val s0 = result.sources.first()
+                            Text(tr("Source: ","स्रोत: ")+s0.title+(if(s0.locator.isNotBlank()) ", ${s0.locator}" else ""),fontWeight=FontWeight.Medium,style=MaterialTheme.typography.bodySmall)
+                        }
+                        if(result.r8Blocked) {
+                            Button(onClick={
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_TEXT, tr("Please advise: ","कृपया बताएँ: ")+aiQuestion.trim())
+                                }
+                                runCatching { context.startActivity(android.content.Intent.createChooser(send, tr("Ask ANM","ANM से पूछें"))) }
+                            },modifier=Modifier.fillMaxWidth()) { Text(tr("Ask ANM","ANM से पूछें")) }
+                        }
                         if(result.sources.isNotEmpty()) {
                             Text(tr("Sources — tap to read","स्रोत — पढ़ने के लिए दबाएँ"),fontWeight=FontWeight.Bold)
                             result.sources.forEach { s -> OutlinedButton(onClick={source=s},modifier=Modifier.fillMaxWidth()) {
@@ -810,6 +824,7 @@ fun ArogyaVisitScreen(
                     Row {TextButton(onClick={speak(if(result.canCopyToNotes) aiCopy else result.text)}) {Text(tr("🔊 Read aloud","🔊 सुनें"))};TextButton(onClick={tts.stop()}) {Text(tr("Stop","रोकें"))}}
                 }
                 TextButton(onClick={aiOpen=false},enabled=!aiBusy) {Text(if(aiVisitId==SOP_VISIT_ID) tr("Close","बंद करें") else tr("Back to visit","विज़िट पर वापस"))}
+                }
             }
         }
     }

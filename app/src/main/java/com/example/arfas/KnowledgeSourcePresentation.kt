@@ -270,13 +270,23 @@ object KnowledgeSourcePresentation {
         }
         val (_, pi, si) = best ?: return null
         val sentences = split[pi]
-        var quote = sentences[si]
+        // One sentence only: extending a short sentence pulled in the next bullet's text
+        // ("…cord stump" + eye-ointment instructions). A lead-in ("…are:") still takes what
+        // follows it, at most two sentences. Bullet/number markers are stripped.
+        var quote = stripBullet(sentences[si])
         var next = si + 1
-        while ((quote.endsWith(":") || quote.length < 90) && next < sentences.size && quote.length < 380) {
-            quote += " " + sentences[next]; next++
+        var added = 0
+        while (quote.endsWith(":") && next < sentences.size && quote.length < 380 && added < 2) {
+            quote += " " + stripBullet(sentences[next]); next++; added++
         }
         return quote.take(600) to passages[pi].first
     }
+
+    /** Strips a bullet or list-number marker ("* ", "• ", "- ", "1. ", "2) ") from a quote. */
+    fun stripBullet(s: String): String = s.trim()
+        .replace(Regex("^[*•\\-–]+\\s+"), "")
+        .replace(Regex("^\\d{1,2}[.)]\\s+"), "")
+        .trim()
 
     private val QUOTE_STOP = setOf(
         "what", "which", "when", "where", "should", "would", "could", "about", "there", "their", "these", "those",

@@ -1398,13 +1398,16 @@ class MainActivity : ComponentActivity() {
             val ready = phase1Features.ensureKnowledgeReady()
             val install = phase1Features.inspectKnowledgeInstallation()
             val status = phase1Features.knowledgeStatusText()
+            val guideV = phase1Features.guideVersion()
+            val guideSuffix = " • " + ArogyaGuideDb.describe(guideV) +
+                (if (ArogyaGuideDb.needsSwitch(guideV)) " — replace with ${ArogyaGuideDb.wantedName()}" else "")
             withContext(Dispatchers.Main) {
                 knowledgeInstalled = install.valid
                 knowledgeReady = ready
                 knowledgeStatusText = if (install.valid && ready) {
-                    "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search ready"
+                    "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search ready$guideSuffix"
                 } else if (install.valid) {
-                    "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search unavailable"
+                    "${install.packName.ifBlank { "Knowledge Base" }} • ${install.rowCount} chunks • Semantic search unavailable$guideSuffix"
                 } else {
                     status
                 }

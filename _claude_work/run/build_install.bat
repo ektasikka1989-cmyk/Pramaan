@@ -17,5 +17,6 @@ echo PHONE=CONNECTED >> "%LOG%"
 if errorlevel 1 (echo INSTALL=FAILED >> "%LOG%") else (echo INSTALL=OK >> "%LOG%")
 "%ADB%" push "%~dp0ASHA_Health_Guide.db" /sdcard/Download/ASHA_Health_Guide.db >> "%LOG%" 2>&1
 if errorlevel 1 (echo KB_PUSH=FAILED >> "%LOG%") else (echo KB_PUSH=OK >> "%LOG%")
+if exist "%~dp0ASHA_Health_Guide_v2.db" ("%ADB%" push "%~dp0ASHA_Health_Guide_v2.db" /sdcard/Download/ASHA_Health_Guide_v2.db >> "%LOG%" 2>&1 & if errorlevel 1 (echo KB_PUSH2=FAILED >> "%LOG%") else (echo KB_PUSH2=OK >> "%LOG%")) else (echo KB_PUSH2=SKIPPED-no-v2-file >> "%LOG%")
 :end
 echo END %date% %time% >> "%LOG%"

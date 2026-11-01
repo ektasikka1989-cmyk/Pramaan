@@ -54,6 +54,9 @@ class PocketRagCloudResolver(
                     "reply with exactly $NOT_IN_EVIDENCE and nothing else; the app then searches the web instead.")
             } else {
                 appendLine("Use only the selected KB evidence above as factual authority. Synthesize the best complete conversational answer, citing source IDs like [S1]. If the evidence cannot establish part of the request, say so rather than using outside knowledge.")
+                if (ArogyaFlags.r2LengthPrompt) {
+                    runCatching { appendLine(ArogyaQuestionType.lengthLine(ArogyaQuestionType.kindOf(packet.query))) }
+                }
             }
         }
         val messages = PocketRagPromptBuilder.continuityMemory(packet.query, memory).flatMap { turn ->

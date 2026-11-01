@@ -11,6 +11,9 @@ object ArogyaFlags {
     @Volatile var r2LengthPrompt = true      // type-aware COMPLETE_ANSWER (else legacy line)
     @Volatile var r9NewDatabase = true       // v2 guide DB: precedence + URLs (else old file)
     @Volatile var r8GuidelineOnly = true     // Ask SOP: not-in-guides -> ANM message (R8)
+    @Volatile var r7SourceLine = true        // answers end with "Source: title, page N" (R7)
+    @Volatile var doseAgeMatch = true        // dose answers must match the asked age group
+    @Volatile var hindiRewrite = true        // Hindi->English search rewrite, answer stays Hindi
     @Volatile var r3Salvage = true           // drop only the unsupported sentence (R3-lite)
     @Volatile var coverageFuzzy = true       // typo-tolerant coverage warning (§4 fix)
     // Batch 3 cloud.

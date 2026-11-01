@@ -323,6 +323,8 @@ object GenericKbKeyFacts {
         // "An ASHA is a woman selected by her community…".
         (listOf(0).filter { passages.isNotEmpty() } + facts.map { it.passage }.distinct() + passages.indices).distinct().take(count).map { p ->
             val raw = passages[p]
+            // R1-lite: paragraph- and step-aware cuts (newlines kept, cuts prefer them).
+            if (ArogyaFlags.r1WideEvidence) return@map p to windowR1(raw, facts, p, maxChars)
             val text = raw.replace(Regex("\\s+"), " ").trim()
             if (text.length <= maxChars) return@map p to text
             val best = facts.firstOrNull { it.passage == p }
@@ -352,6 +354,44 @@ object GenericKbKeyFacts {
             }
             out
         }
+
+    /**
+     * R1-lite window: newlines are kept (steps, bullets and paragraphs stay readable) and cuts
+     * prefer paragraph breaks, then line breaks, then sentence ends. The anchor is the best
+     * fact's first words, matched across whitespace (the fact text itself is one line).
+     */
+    internal fun windowR1(raw: String, facts: List<Fact>, p: Int, maxChars: Int): String {
+        val text = raw.replace("\r\n", "\n")
+            .replace(Regex("[ \\t\\x0B\\f]+"), " ")
+            .replace(Regex("\n[ \\t]*\n([ \\t]*\n)+"), "\n\n")
+            .trim()
+        if (text.length <= maxChars) return text
+        val keyWords = facts.firstOrNull { it.passage == p }?.text
+            ?.replace(Regex("\\s+"), " ")?.split(' ').orEmpty()
+            .filter { it.length > 2 }.take(5).map { Regex.escape(it) }
+        val anchor = if (keyWords.size < 2) 0
+        else runCatching { Regex(keyWords.joinToString("\\s+")).find(text)?.range?.first ?: 0 }.getOrDefault(0)
+        var start = (anchor - maxChars / 4).coerceAtLeast(0)
+        if (start > 0) {
+            val look = text.substring(start, anchor.coerceAtLeast(start))
+            val para = look.lastIndexOf("\n\n").takeIf { it >= 0 }?.let { start + it + 2 }
+            val line = look.lastIndexOf('\n').takeIf { it >= 0 }?.let { start + it + 1 }
+            val sent = Regex("[.;:?!।]\\s+").findAll(look).lastOrNull()?.let { start + it.range.last + 1 }
+            start = para ?: line ?: sent ?: start
+        }
+        var end = (start + maxChars).coerceAtMost(text.length)
+        if (end < text.length) {
+            val minEnd = start + maxChars / 2
+            val seg = text.substring(minEnd, end)
+            val nl = seg.lastIndexOf("\n\n").takeIf { it >= 0 }?.let { minEnd + it }
+                ?: seg.lastIndexOf('\n').takeIf { it >= 0 }?.let { minEnd + it }
+            val sentEnd = listOf(". ", "। ", "? ", "! ", ".\n", "।\n")
+                .map { text.lastIndexOf(it, end - 1) }.maxOrNull()
+                ?.takeIf { it > minEnd }?.let { it + 1 }
+            end = nl ?: sentEnd ?: text.lastIndexOf(' ', end).coerceAtLeast(minEnd)
+        }
+        return ((if (start > 0) "… " else "") + text.substring(start, end).trim() + (if (end < text.length) " …" else ""))
+    }
 
     /**
      * Drops a half sentence at either end of a passage window ("… the AoN would"): the source chunk

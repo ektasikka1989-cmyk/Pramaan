@@ -1004,7 +1004,13 @@ class AndroBaselineRuntime(
             rewriteMissing.filter { w -> literalMissing.contains(w) } else emptyList()
         val unsupported = final.supported == 0
         var text = pruned?.first ?: result.text
-        if (missing.isNotEmpty()) {
+        // The warning is for weak evidence: when the answer's statements are well supported,
+        // a missing topic word is a typo or paraphrase, not a coverage gap.
+        val strongProof = ArogyaFlags.coverageFuzzy && final.total >= 2 && final.supported * 2 >= final.total
+        if (missing.isNotEmpty() && strongProof) {
+            Log.i(TAG, "KB_PROOF_WARN_SKIPPED missing=${missing.joinToString(",")} supported=${final.supported}/${final.total}")
+        }
+        if (missing.isNotEmpty() && !strongProof) {
             val words = missing.take(3).joinToString(", ") { "“$it”" }
             text = (if (KbReplyText.dominantScript(packet.query) == KbReplyText.Script.DEVANAGARI)
                 "⚠ मिले हुए अंशों में $words का ज़िक्र नहीं है — यह ज्ञान आधार शायद आपके प्रश्न को कवर नहीं करता।\n\n"

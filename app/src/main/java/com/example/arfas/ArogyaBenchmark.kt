@@ -41,6 +41,7 @@ object ArogyaBenchmark {
     suspend fun runAll(ai: ArogyaVisitAi, onEvent: (String) -> Unit): List<Row> {
         onEvent("Warming up…")
         runCatching { ai.warmUp() }
+        Log.i(TAG, "AROGYA_BENCH_GUIDE v=${ai.guideVersion()} want=${ArogyaGuideDb.wantedVersion()}")
         val rows = mutableListOf<Row>()
         QUESTIONS.forEachIndexed { i, q ->
             onEvent("Q${q.id} (${i + 1}/${QUESTIONS.size})…")

@@ -132,7 +132,12 @@ object PocketRagPromptBuilder {
             append("Current question: ").append(packet.query)
             // Last line the model reads (a 3B model follows the latest instruction best): a complete
             // answer, not one copied sentence. The app shows the key quote above the answer already.
-            append("\n").append(COMPLETE_ANSWER)
+            // R2: the line matches the question type (else the legacy one-size line).
+            val complete = if (ArogyaFlags.r2LengthPrompt) {
+                runCatching { ArogyaQuestionType.lengthLine(ArogyaQuestionType.kindOf(packet.query)) }
+                    .getOrDefault(COMPLETE_ANSWER)
+            } else COMPLETE_ANSWER
+            append("\n").append(complete)
         }
         // The pack's own name tells the model what kind of documents these are (health guidelines,
         // procurement rules, ...): the same instructions then fit every knowledge base.
