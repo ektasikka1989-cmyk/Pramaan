@@ -518,27 +518,12 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
         } }, confirmButton = { Button(onClick = { if (updateBen { x -> x.copy(mcp = x.mcp.copy(ancDetails = x.mcp.ancDetails + (n to AncDetail(w, bp, hb)))) }) ancEdit = null }) { Text(tr("Save", "सहेजें")) } },
             dismissButton = { TextButton(onClick = { ancEdit = null }) { Text(tr("Cancel", "रद्द करें")) } })
     }
-    if (giveOpen) StockDialog(hindi, title = tr("Give to ", "दें: ") + b.name, give = true, onDismiss = { giveOpen = false }) { item, qty, note ->
-        if (save { r -> r.copy(stock = r.stock + StockTxn(item = item, qty = -qty, beneficiaryId = b.id, note = note)) }) giveOpen = false }
+    if (giveOpen) StockGiveDialog(hindi, emptyList(), ArogyaRegistryLogic.catalog(data.stockItems),
+        ArogyaRegistryLogic.stockBalance(data.stock), fixedPerson = b, onDismiss = { giveOpen = false }) { txn ->
+        if (save { r -> r.copy(stock = r.stock + txn) }) giveOpen = false }
     if (eventOpen) EventDialog(hindi, onDismiss = { eventOpen = false }) { kind, place, note ->
         if (save { r -> r.copy(vitals = r.vitals + VitalEvent(kind = kind, beneficiaryId = b.id, place = place, note = note)) }) eventOpen = false }
     viewForm?.let { f -> ArogyaFormViewer(f, hindi, ArogyaRegistryStore.get(context)) { viewForm = null } }
-}
-
-@Composable
-private fun StockDialog(hindi: Boolean, title: String, give: Boolean, onDismiss: () -> Unit, onSave: (String, Int, String) -> Unit) {
-    fun tr(en: String, hi: String) = if (hindi) hi else en
-    var item by remember { mutableStateOf(ArogyaRegistryLogic.DRUG_KIT.first()) }
-    var qty by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = {
-        Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            ArogyaRegistryLogic.DRUG_KIT.forEach { i -> Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(item == i, { item = i }); Text(i) } }
-            OutlinedTextField(qty, { qty = it.filter { c -> c.isDigit() }.take(5) }, label = { Text(if (give) tr("Quantity given", "कितनी दी") else tr("Quantity received", "कितनी मिली")) }, singleLine = true)
-            OutlinedTextField(note, { note = it.take(200) }, label = { Text(tr("Note", "नोट")) }, singleLine = true)
-        }
-    }, confirmButton = { Button(onClick = { qty.toIntOrNull()?.takeIf { it > 0 }?.let { onSave(item, it, note) } }, enabled = (qty.toIntOrNull() ?: 0) > 0) { Text(tr("Save", "सहेजें")) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "रद्द करें")) } })
 }
 
 @Composable
@@ -641,16 +626,55 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 ArogyaRegisterTable(hindi, tr("Activity diary", "कार्य डायरी"), dt, store, monthCol = 0, onOpenPerson = onOpen)
             }
             "drugs" -> {
-                Text(tr("Drug kit — current stock", "दवा किट — अभी का स्टॉक"), fontWeight = FontWeight.Bold)
-                val bal = ArogyaRegistryLogic.stockBalance(data.stock)
-                ArogyaRegistryLogic.DRUG_KIT.forEach { i -> Text("$i: ${bal[i] ?: 0}", color = if ((bal[i] ?: 0) <= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { receiveOpen = true }) { Text(tr("+ Stock received", "+ स्टॉक मिला")) }
-                    OutlinedButton(onClick = { samOpen = true }) { Text(tr("📷 Count from photo", "📷 फ़ोटो से गिनें")) }
+                var stockMonth by remember { mutableStateOf(YearMonth.from(today)) }
+                var addOpen by remember { mutableStateOf(false) }
+                var adjustOpen by remember { mutableStateOf(false) }
+                var writeoffOpen by remember { mutableStateOf(false) }
+                var giveOpen by remember { mutableStateOf(false) }
+                var viewer by remember { mutableStateOf<FormTable?>(null) }
+                var historyItem by remember { mutableStateOf("") }
+                val cat = remember(data) { ArogyaRegistryLogic.catalog(data.stockItems) }
+                val bal = remember(data) { ArogyaRegistryLogic.stockBalance(data.stock) }
+                val reg = remember(data, stockMonth) { ArogyaRegistryLogic.stockRegister(data.stock, data.stockItems, stockMonth, today, hindi) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { stockMonth = stockMonth.minusMonths(1) }) { Text("◀") }
+                    Text(tr("Drug kit stock register — ", "दवा किट स्टॉक रजिस्टर — ") + "$stockMonth", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { stockMonth = stockMonth.plusMonths(1) }) { Text("▶") }
                 }
-                Text(tr("Give to a person from their MCP card.", "किसी को उनके MCP कार्ड से दें।"), style = MaterialTheme.typography.bodySmall)
-                data.stock.sortedByDescending { it.date }.take(100).forEach { t -> Text("${t.date} · ${t.item} · ${if (t.qty > 0) "+${t.qty} " + tr("received", "मिला") else "${-t.qty} " + tr("given", "दिया")} ${names[t.beneficiaryId]?.let { tr("to ", "को ") + it } ?: ""}", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = { share("Drug-register-$today.csv", ArogyaRegistryLogic.stockCsv(data.stock, names)) }) { Text(tr("Export drug register (CSV)", "दवा रजिस्टर भेजें (CSV)")) }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    Button(onClick = { receiveOpen = true }) { Text(tr("+ Received", "+ मिला"), maxLines = 1) }
+                    OutlinedButton(onClick = { giveOpen = true }) { Text(tr("Give", "दें"), maxLines = 1) }
+                    OutlinedButton(onClick = { adjustOpen = true }) { Text(tr("Correction", "सुधार"), maxLines = 1) }
+                    OutlinedButton(onClick = { writeoffOpen = true }) { Text(tr("Expired", "एक्सपायर"), maxLines = 1) }
+                    OutlinedButton(onClick = { addOpen = true }) { Text(tr("+ Item", "+ दवा"), maxLines = 1) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = { samOpen = true }) { Text(tr("📷 Count from photo", "📷 फ़ोटो से गिनें"), maxLines = 1) }
+                    OutlinedButton(onClick = { viewer = ArogyaForms.drugKitCard(data.stock) }) { Text(tr("Annexure 5", "Annexure 5"), maxLines = 1) }
+                }
+                if (reg.rows.any { it.status == "OUT" || it.status == "LOW" || it.status == "EXPIRED" || it.status == "EXPIRING" }) {
+                    Button(onClick = { ArogyaShare.shareText(context, tr("Drug kit refill request", "दवा किट रिफिल अनुरोध"),
+                        ArogyaRegistryLogic.refillRequest(data.stock, data.stockItems, today, hindi)) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(tr("Request refill from ANM", "ANM से रिफिल माँगें"))
+                    }
+                }
+                ArogyaRegisterTable(hindi, tr("Drug kit stock", "दवा किट स्टॉक") + " $stockMonth", reg, store, statusCol = 8,
+                    onRowKey = { historyItem = it },
+                    colWidths = listOf(150.dp, 80.dp, 80.dp, 80.dp, 80.dp, 80.dp, 90.dp, 104.dp, 110.dp),
+                    note = tr("Opening = before this month. Tap a row for its full history.", "शुरुआत = इस महीने से पहले। पूरी जानकारी के लिए पंक्ति दबाएँ।"))
+                if (addOpen) StockAddItemDialog(hindi, onDismiss = { addOpen = false }) { item ->
+                    if (save { r -> r.copy(stockItems = r.stockItems.filterNot { it.name == item.name } + item) }) addOpen = false }
+                if (receiveOpen) StockReceiveDialog(hindi, cat, onDismiss = { receiveOpen = false }) { txn ->
+                    if (save { r -> r.copy(stock = r.stock + txn) }) receiveOpen = false }
+                if (adjustOpen) StockAdjustDialog(hindi, cat, bal, onDismiss = { adjustOpen = false }) { txn ->
+                    if (save { r -> r.copy(stock = r.stock + txn) }) adjustOpen = false }
+                if (writeoffOpen) StockWriteoffDialog(hindi, cat, bal, onDismiss = { writeoffOpen = false }) { txn ->
+                    if (save { r -> r.copy(stock = r.stock + txn) }) writeoffOpen = false }
+                if (giveOpen) StockGiveDialog(hindi, data.beneficiaries, cat, bal, onDismiss = { giveOpen = false }) { txn ->
+                    if (save { r -> r.copy(stock = r.stock + txn) }) giveOpen = false }
+                if (historyItem.isNotBlank()) StockHistoryDialog(hindi, historyItem,
+                    ArogyaRegistryLogic.stockHistory(data.stock, historyItem), names, onDismiss = { historyItem = "" })
+                viewer?.let { f -> ArogyaFormViewer(f, hindi, store) { viewer = null } }
             }
             "vitals" -> {
                 Text(tr("Vital events & surveillance", "घटनाएँ और निगरानी"), fontWeight = FontWeight.Bold)
@@ -689,10 +713,8 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
     }
     if (samOpen) SamCountDialog(hindi, ArogyaRegistryLogic.stockBalance(data.stock), onRecord = { item, counted, note ->
         val diff = counted - (ArogyaRegistryLogic.stockBalance(data.stock)[item] ?: 0)
-        if (diff == 0 || save { r -> r.copy(stock = r.stock + StockTxn(item = item, qty = diff, note = "$note: counted $counted")) }) samOpen = false
+        if (diff == 0 || save { r -> r.copy(stock = r.stock + StockTxn(item = item, qty = diff, note = "$note: counted $counted", kind = "adjust", reason = note)) }) samOpen = false
     }, onDismiss = { samOpen = false })
-    if (receiveOpen) StockDialog(hindi, tr("Stock received", "स्टॉक मिला"), give = false, onDismiss = { receiveOpen = false }) { item, qty, note ->
-        if (save { r -> r.copy(stock = r.stock + StockTxn(item = item, qty = qty, note = note)) }) receiveOpen = false }
     if (eventOpen) EventDialog(hindi, onDismiss = { eventOpen = false }) { kind, place, note ->
         if (save { r -> r.copy(vitals = r.vitals + VitalEvent(kind = kind, place = place, note = note)) }) eventOpen = false }
 }

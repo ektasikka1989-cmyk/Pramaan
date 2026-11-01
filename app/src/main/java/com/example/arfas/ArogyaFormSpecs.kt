@@ -337,7 +337,7 @@ object ArogyaOfficialForms {
         val next = nextDue(spec, b, column, today)?.toString().orEmpty()
         val entry = FormEntry(beneficiaryId = b.id, formId = spec.id, column = column, date = d, values = values.filterValues { it.isNotBlank() } + ("_next" to next), sources = sources)
         val forms = r.forms.filterNot { it.beneficiaryId == b.id && it.formId == spec.id && it.column == column } + entry
-        val stock = STOCK.mapNotNull { (k, item) -> values[k]?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }?.let { StockTxn(date = d, item = item, qty = -it, beneficiaryId = b.id, note = stockNote(spec, column)) } }
+        val stock = STOCK.mapNotNull { (k, item) -> values[k]?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }?.let { StockTxn(date = d, item = item, qty = -it, beneficiaryId = b.id, note = stockNote(spec, column), kind = "give") } }
         // Re-saving a column replaces only that column's stock lines (keyed by form + column),
         // and clears them when the re-save drops the item — the card and the kit stay consistent.
         // Pre-key lines migrate on re-save: same label + same item is replaced, never doubled.

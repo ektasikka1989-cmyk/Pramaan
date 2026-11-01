@@ -51,6 +51,8 @@ fun ArogyaRegisterTable(
     statusFilter: Boolean = false,
     monthCol: Int = -1,
     onOpenPerson: ((String) -> Unit)? = null,
+    /** Row tap with the row key (used by the stock register for per-item history). */
+    onRowKey: ((String) -> Unit)? = null,
     colWidths: List<Dp>? = null,
     maxHeight: Dp = 360.dp,
     note: String = ""
@@ -91,8 +93,8 @@ fun ArogyaRegisterTable(
     val good = MaterialTheme.colorScheme.primary
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
     fun statusColor(s: String): Color? = when (s) {
-        "OVERDUE", "HIGH_RISK" -> err
-        "DUE_NOW" -> warn
+        "OVERDUE", "HIGH_RISK", "OUT", "EXPIRED" -> err
+        "DUE_NOW", "LOW", "EXPIRING" -> warn
         "DONE" -> good
         "UPCOMING", "OK" -> dim
         else -> null
@@ -128,10 +130,15 @@ fun ArogyaRegisterTable(
                 maxHeight = maxHeight,
                 sortCol = sortCol, sortAsc = sortAsc,
                 onHeaderTap = { c -> if (sortCol == c) sortAsc = !sortAsc else { sortCol = c; sortAsc = true } },
-                onRowTap = if (onOpenPerson == null) null else { i -> shown.getOrNull(i)?.beneficiaryId?.takeIf { it.isNotBlank() }?.let(onOpenPerson) },
+                onRowTap = if (onOpenPerson == null && onRowKey == null) null else { i ->
+                    shown.getOrNull(i)?.let { r ->
+                        val ben = r.beneficiaryId.takeIf { it.isNotBlank() }
+                        if (ben != null && onOpenPerson != null) onOpenPerson(ben) else onRowKey?.invoke(r.key)
+                    }
+                },
                 rowBg = { i ->
                     val s = shown.getOrNull(i)?.status.orEmpty()
-                    if (s == "OVERDUE" || s == "HIGH_RISK") errBg.copy(alpha = 0.45f) else null
+                    if (s == "OVERDUE" || s == "HIGH_RISK" || s == "OUT" || s == "EXPIRED") errBg.copy(alpha = 0.45f) else null
                 },
                 chipColumns = if (statusCol >= 0) setOf(statusCol) else emptySet(),
                 chipColor = { row, _, _ -> statusColor(shown.getOrNull(row)?.status.orEmpty()) }

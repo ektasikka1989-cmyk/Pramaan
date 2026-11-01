@@ -47,13 +47,16 @@ data class Beneficiary(
 )
 data class DiaryEntry(val id: String = java.util.UUID.randomUUID().toString(), val date: String = LocalDate.now().toString(), val kind: DiaryKind = DiaryKind.HOME_VISIT,
     val beneficiaryId: String = "", val note: String = "")
-/** qty > 0 = received into the kit, qty < 0 = given out. */
+/** qty > 0 = received into the kit, qty < 0 = given out. kind: receive | give | adjust | writeoff ("" on old lines = derived). */
 data class StockTxn(val id: String = java.util.UUID.randomUUID().toString(), val date: String = LocalDate.now().toString(), val item: String = "", val qty: Int = 0,
-    val beneficiaryId: String = "", val note: String = "")
+    val beneficiaryId: String = "", val note: String = "",
+    val kind: String = "", val reason: String = "", val batch: String = "", val expiry: String = "", val source: String = "", val unit: String = "")
+/** Stock register catalogue: display unit + minimum level per item. Stored alongside the txns. */
+data class StockItem(val name: String, val unit: String = "", val min: Int = 0)
 data class VitalEvent(val id: String = java.util.UUID.randomUUID().toString(), val date: String = LocalDate.now().toString(), val kind: VitalKind = VitalKind.OTHER,
     val beneficiaryId: String = "", val place: String = "", val note: String = "")
 data class RegistryData(val beneficiaries: List<Beneficiary> = emptyList(), val diary: List<DiaryEntry> = emptyList(), val stock: List<StockTxn> = emptyList(),
-    val vitals: List<VitalEvent> = emptyList(), val forms: List<FormEntry> = emptyList())
+    val vitals: List<VitalEvent> = emptyList(), val forms: List<FormEntry> = emptyList(), val stockItems: List<StockItem> = emptyList())
 
 data class DueItem(val beneficiaryId: String, val name: String, val village: String, val kind: String, val label: String, val due: LocalDate, val windowEnd: LocalDate,
     val done: Boolean, val doneDate: String = "") {
@@ -72,8 +75,23 @@ enum class DueStatus { DONE, OVERDUE, DUE_NOW, UPCOMING }
 private fun d(s: String): LocalDate? = runCatching { if (s.isBlank()) null else LocalDate.parse(s) }.getOrNull()
 
 object ArogyaRegistryLogic {
-    val DRUG_KIT = listOf("ORS", "Zinc tablets", "IFA tablets (adult)", "IFA syrup (child)", "Paracetamol", "Albendazole", "Condoms", "Oral contraceptive pills",
-        "Emergency contraceptive pill", "Sanitary napkins", "Pregnancy test kit", "Cotrimoxazole", "Chloroquine / ACT", "Rapid diagnostic test (malaria)", "Cotton / bandage")
+    /** Kit catalogue with realistic units + minimum levels (Annexure 5 drug kit). */
+    val DRUG_KIT_DEFAULTS = listOf(
+        StockItem("ORS", "packets", 20), StockItem("Zinc tablets", "tablets", 30),
+        StockItem("IFA tablets (adult)", "tablets", 100), StockItem("IFA syrup (child)", "bottles", 4),
+        StockItem("Paracetamol", "tablets", 50), StockItem("Albendazole", "tablets", 20),
+        StockItem("Condoms", "pieces", 50), StockItem("Oral contraceptive pills", "strips", 10),
+        StockItem("Emergency contraceptive pill", "tablets", 4), StockItem("Sanitary napkins", "packs", 10),
+        StockItem("Pregnancy test kit", "kits", 5), StockItem("Cotrimoxazole", "tablets", 30),
+        StockItem("Chloroquine / ACT", "tablets", 20), StockItem("Rapid diagnostic test (malaria)", "kits", 10),
+        StockItem("Cotton / bandage", "rolls", 5))
+    val DRUG_KIT = DRUG_KIT_DEFAULTS.map { it.name }
+
+    /** Effective catalogue: stored items win, missing kit items fall back to defaults. */
+    fun catalog(stored: List<StockItem>): List<StockItem> {
+        val byName = stored.associateBy { it.name }
+        return (DRUG_KIT + stored.map { it.name }).distinct().map { n -> byName[n] ?: DRUG_KIT_DEFAULTS.first { it.name == n } }
+    }
 
     fun isHighRisk(b: Beneficiary) = (b.birthWeightKg?.let { it < 2.5 } ?: false) || b.preterm || b.sncuDischarge.isNotBlank()
     fun edd(b: Beneficiary): LocalDate? = d(b.lmp)?.plusDays(280)
@@ -89,6 +107,71 @@ object ArogyaRegistryLogic {
 
     fun stockBalance(stock: List<StockTxn>, upTo: LocalDate? = null): Map<String, Int> =
         stock.filter { upTo == null || (d(it.date)?.let { x -> !x.isAfter(upTo) } ?: true) }.groupBy { it.item }.mapValues { (_, t) -> t.sumOf { it.qty } }
+
+    /** Effective txn kind: explicit wins; old lines derive from qty/beneficiary. */
+    fun txnKind(t: StockTxn): String = t.kind.ifBlank {
+        if (t.qty > 0) "receive" else if (t.beneficiaryId.isNotBlank()) "give" else "adjust"
+    }
+
+    fun stockStatusText(status: String, hindi: Boolean): String = when (status) {
+        "OUT" -> if (hindi) "ख़त्म" else "Out of stock"
+        "LOW" -> if (hindi) "कम" else "Low"
+        "EXPIRING" -> if (hindi) "जल्द एक्सपायर" else "Expiring soon"
+        "EXPIRED" -> if (hindi) "एक्सपायर" else "Expired"
+        else -> "OK"
+    }
+
+    /**
+     * Drug kit stock register for [month]: item, unit, opening (before the month), received,
+     * given, balance, minimum, earliest batch expiry, status. Adjustments/write-offs move the
+     * balance (visible in history) but are not counted as received/given.
+     */
+    fun stockRegister(stock: List<StockTxn>, storedItems: List<StockItem>, month: YearMonth, today: LocalDate, hindi: Boolean): RegTable {
+        val h = if (hindi) listOf("दवा", "इकाई", "शुरुआत", "मिला", "दिया", "बचा", "कम से कम", "एक्सपायरी", "स्थिति")
+        else listOf("Item", "Unit", "Opening", "Received", "Given", "Balance", "Minimum", "Expiry", "Status")
+        val start = month.atDay(1)
+        val items = (catalog(storedItems).map { it.name } + stock.map { it.item }).distinct().filter { it.isNotBlank() }
+        val cat = catalog(storedItems).associateBy { it.name }
+        val rows = items.map { item ->
+            val txns = stock.filter { it.item == item }
+            val opening = txns.filter { (d(it.date)?.isBefore(start) ?: true) }.sumOf { it.qty }
+            val inMonth = txns.filter { d(it.date)?.let { dt -> YearMonth.from(dt) == month } ?: false }
+            val received = inMonth.filter { txnKind(it) == "receive" && it.qty > 0 }.sumOf { it.qty }
+            val given = -inMonth.filter { txnKind(it) == "give" }.sumOf { it.qty }
+            val balance = txns.sumOf { it.qty }
+            val min = cat[item]?.min ?: 0
+            val expiry = txns.filter { txnKind(it) == "receive" }.mapNotNull { it.expiry.takeIf { e -> e.isNotBlank() } }.minOrNull().orEmpty()
+            val expDate = d(expiry)
+            val status = when {
+                expDate != null && expDate < today && balance > 0 -> "EXPIRED"
+                balance <= 0 -> "OUT"
+                min > 0 && balance <= min -> "LOW"
+                expDate != null && expDate <= today.plusDays(90) && balance > 0 -> "EXPIRING"
+                else -> "OK"
+            }
+            RegRow(listOf(item, cat[item]?.unit.orEmpty(), opening.toString(), received.toString(), given.toString(),
+                balance.toString(), min.toString(), expiry, stockStatusText(status, hindi)), item, "", status)
+        }
+        fun rank(s: String) = when (s) { "EXPIRED" -> 0; "OUT" -> 1; "LOW" -> 2; "EXPIRING" -> 3; else -> 4 }
+        return RegTable(h, rows.sortedWith(compareBy({ rank(it.status) }, { it.cells[0] })))
+    }
+
+    fun stockHistory(stock: List<StockTxn>, item: String): List<StockTxn> =
+        stock.filter { it.item == item }.sortedByDescending { it.date + it.id }
+
+    /** Refill request text for the ANM: out/low/expired/expiring items with balances. */
+    fun refillRequest(stock: List<StockTxn>, storedItems: List<StockItem>, today: LocalDate, hindi: Boolean): String {
+        val cat = catalog(storedItems).associateBy { it.name }
+        val lines = stockRegister(stock, storedItems, YearMonth.from(today), today, hindi).rows
+            .filter { it.status == "OUT" || it.status == "LOW" || it.status == "EXPIRED" || it.status == "EXPIRING" }
+            .map { r ->
+                val unit = cat[r.cells[0]]?.unit.orEmpty()
+                "- ${r.cells[0]}: ${r.cells[5]} $unit ${if (hindi) "(कम से कम ${r.cells[6]})" else "(min ${r.cells[6]})"} — ${r.cells[8]}" +
+                    (if (r.cells[7].isNotBlank()) if (hindi) " · एक्सपायरी ${r.cells[7]}" else " · expiry ${r.cells[7]}" else "")
+            }
+        if (lines.isEmpty()) return if (hindi) "दवा किट में सब कुछ पर्याप्त है।" else "Drug kit stock is sufficient."
+        return (if (hindi) "दवा किट रिफिल का अनुरोध:\n" else "Request: drug kit refill:\n") + lines.joinToString("\n")
+    }
 
     data class MonthlyReport(val month: YearMonth, val homeVisits: Int, val scheduledDone: Map<String, Int>, val diary: Map<DiaryKind, Int>, val received: Map<String, Int>,
         val distributed: Map<String, Int>, val closing: Map<String, Int>, val vitals: Map<VitalKind, Int>, val newRegistrations: Int, val text: String)
@@ -424,7 +507,9 @@ object ArogyaRegistryCodec {
     fun encode(r: RegistryData): String = JSONObject().put("version", 1)
         .put("beneficiaries", JSONArray().also { a -> r.beneficiaries.forEach { a.put(ben(it)) } })
         .put("diary", JSONArray().also { a -> r.diary.forEach { a.put(JSONObject().put("id", it.id).put("date", it.date).put("kind", it.kind.name).put("ben", it.beneficiaryId).put("note", it.note)) } })
-        .put("stock", JSONArray().also { a -> r.stock.forEach { a.put(JSONObject().put("id", it.id).put("date", it.date).put("item", it.item).put("qty", it.qty).put("ben", it.beneficiaryId).put("note", it.note)) } })
+        .put("stock", JSONArray().also { a -> r.stock.forEach { a.put(JSONObject().put("id", it.id).put("date", it.date).put("item", it.item).put("qty", it.qty).put("ben", it.beneficiaryId).put("note", it.note)
+            .put("kind", it.kind).put("reason", it.reason).put("batch", it.batch).put("expiry", it.expiry).put("source", it.source).put("unit", it.unit)) } })
+        .put("stockItems", JSONArray().also { a -> r.stockItems.forEach { a.put(JSONObject().put("name", it.name).put("unit", it.unit).put("min", it.min)) } })
         .put("vitals", JSONArray().also { a -> r.vitals.forEach { a.put(JSONObject().put("id", it.id).put("date", it.date).put("kind", it.kind.name).put("ben", it.beneficiaryId).put("place", it.place).put("note", it.note)) } })
         .put("forms", JSONArray().also { a -> r.forms.forEach { a.put(JSONObject().put("id", it.id).put("ben", it.beneficiaryId).put("form", it.formId).put("col", it.column).put("date", it.date)
             .put("values", JSONObject(it.values)).put("sources", JSONObject(it.sources))) } })
@@ -460,12 +545,15 @@ object ArogyaRegistryCodec {
         val diary = arr("diary").let { a -> (0 until a.length()).map { i -> val j = a.getJSONObject(i)
             DiaryEntry(j.getString("id"), j.getString("date"), runCatching { DiaryKind.valueOf(j.getString("kind")) }.getOrDefault(DiaryKind.OTHER), j.optString("ben"), j.optString("note")) } }
         val stock = arr("stock").let { a -> (0 until a.length()).map { i -> val j = a.getJSONObject(i)
-            StockTxn(j.getString("id"), j.getString("date"), j.getString("item"), j.getInt("qty"), j.optString("ben"), j.optString("note")) } }
+            StockTxn(j.getString("id"), j.getString("date"), j.getString("item"), j.getInt("qty"), j.optString("ben"), j.optString("note"),
+                j.optString("kind"), j.optString("reason"), j.optString("batch"), j.optString("expiry"), j.optString("source"), j.optString("unit")) } }
+        val stockItems = arr("stockItems").let { a -> (0 until a.length()).map { i -> val j = a.getJSONObject(i)
+            StockItem(j.optString("name"), j.optString("unit"), j.optInt("min")) } }.filter { it.name.isNotBlank() }
         val vitals = arr("vitals").let { a -> (0 until a.length()).map { i -> val j = a.getJSONObject(i)
             VitalEvent(j.getString("id"), j.getString("date"), runCatching { VitalKind.valueOf(j.getString("kind")) }.getOrDefault(VitalKind.OTHER), j.optString("ben"), j.optString("place"), j.optString("note")) } }
         val forms = arr("forms").let { a -> (0 until a.length()).map { i -> val j = a.getJSONObject(i)
             FormEntry(j.getString("id"), j.optString("ben"), j.optString("form"), j.optInt("col"), j.optString("date"), strMap(j.optJSONObject("values")), strMap(j.optJSONObject("sources"))) } }
-        return RegistryData(bens, diary, stock, vitals, forms)
+        return RegistryData(bens, diary, stock, vitals, forms, stockItems)
     }
 }
 
@@ -592,15 +680,29 @@ object ArogyaSampleVillage {
             DiaryEntry("demo-d3", today.minusMonths(1).withDayOfMonth(10).toString(), DiaryKind.PHC_MEETING, "", "Monthly PHC meeting (demo)"),
             DiaryEntry("demo-d4", today.withDayOfMonth(minOf(3, today.dayOfMonth)).toString(), DiaryKind.VHSNC_MEETING, "", "VHSNC meeting (demo)"),
             DiaryEntry("demo-d5", today.minusDays(4).toString(), DiaryKind.ESCORT, ids[3], "Escorted to PHC for ANC (demo)"))
+        // Realistic opening stock for every kit item (received last month, so this month's
+        // opening column is full): zinc runs low and the RDT batch expires soon on purpose.
+        val rcv = today.minusMonths(1).withDayOfMonth(5).toString()
+        fun rcvTxn(i: Int, item: String, qty: Int, exp: String) =
+            StockTxn("demo-s$i", rcv, item, qty, "", "Opening stock (demo)", "receive", "", "B-26%02d".format(i), exp, "Sub-centre")
         val stock = listOf(
-            StockTxn("demo-s1", today.minusMonths(13).toString(), "ORS", 50, "", "Received from sub-centre"), StockTxn("demo-s2", today.minusMonths(13).toString(), "IFA tablets (adult)", 500, "", "Received"),
-            StockTxn("demo-s3", today.minusMonths(13).toString(), "Zinc tablets", 60, "", "Received"), StockTxn("demo-s4", today.minusMonths(13).toString(), "Condoms", 100, "", "Received"),
-            StockTxn("demo-s5", today.minusMonths(13).toString(), "Sanitary napkins", 40, "", "Received"), StockTxn("demo-s10", today.minusMonths(13).toString(), "IFA syrup (child)", 10, "", "Received"))
+            rcvTxn(1, "ORS", 50, "2027-09-30"), rcvTxn(2, "Zinc tablets", 100, "2027-06-30"),
+            rcvTxn(3, "IFA tablets (adult)", 500, "2027-12-31"), rcvTxn(4, "IFA syrup (child)", 20, "2027-08-31"),
+            rcvTxn(5, "Paracetamol", 100, "2027-10-31"), rcvTxn(6, "Albendazole", 50, "2027-07-31"),
+            rcvTxn(7, "Condoms", 200, "2028-01-31"), rcvTxn(8, "Oral contraceptive pills", 30, "2027-05-31"),
+            rcvTxn(9, "Emergency contraceptive pill", 10, "2027-04-30"), rcvTxn(10, "Sanitary napkins", 60, "2028-06-30"),
+            rcvTxn(11, "Pregnancy test kit", 20, "2027-11-30"), rcvTxn(12, "Cotrimoxazole", 60, "2027-03-31"),
+            rcvTxn(13, "Chloroquine / ACT", 30, "2027-02-28"),
+            rcvTxn(14, "Rapid diagnostic test (malaria)", 25, today.plusMonths(2).toString()),
+            rcvTxn(15, "Cotton / bandage", 15, "2029-12-31"),
+            StockTxn("demo-g1", today.minusDays(6).toString(), "Zinc tablets", -85, ids[3], "Given (demo)", "give"),
+            StockTxn("demo-g2", today.minusDays(3).toString(), "Paracetamol", -10, ids[5], "Given (demo)", "give"),
+            StockTxn("demo-g3", today.minusDays(2).toString(), "Sanitary napkins", -5, ids[7], "Given (demo)", "give"))
         val vitals = nbs.mapIndexed { i, nb -> VitalEvent("demo-e$i", today.minusDays(nb.days).toString(), VitalKind.BIRTH, "", if (nb.home) "Home" else "PHC", nb.name + " (demo)") } + listOf(
             VitalEvent("demo-e10", today.minusDays(10).toString(), VitalKind.DIARRHOEA, bens.firstOrNull { it.category == BenCategory.CHILD && ArogyaOfficialForms.formFor(it, emptyList(), today).first.id == "sick" }?.id.orEmpty(), "Home", "ORS + zinc given (demo)"),
             VitalEvent("demo-e11", today.minusDays(8).toString(), VitalKind.AEFI, ids[25], "Home", "Mild fever after Penta, resolved (demo)"),
             VitalEvent("demo-e12", today.minusDays(5).toString(), VitalKind.TB_SUSPECT, ids.last(), "Home", "Referred for sputum test (demo)"))
-        val (reg, allVisits) = ArogyaOfficialForms.seedDemo(RegistryData(bens, diary, stock, vitals), visits, today)
+        val (reg, allVisits) = ArogyaOfficialForms.seedDemo(RegistryData(bens, diary, stock, vitals, emptyList(), ArogyaRegistryLogic.DRUG_KIT_DEFAULTS), visits, today)
         return Sample(reg, allVisits)
     }
 }
@@ -670,12 +772,13 @@ object ArogyaForms {
 
     /** Annexure 5: for each refill date, the balance left before the refill and the refill given. */
     fun drugKitCard(stock: List<StockTxn>): FormTable {
-        val refills = stock.filter { it.qty > 0 }.map { it.date }.distinct().sorted().take(6)
+        // Corrections are not refills: only receive lines open a refill column.
+        val refills = stock.filter { it.qty > 0 && ArogyaRegistryLogic.txnKind(it) == "receive" }.map { it.date }.distinct().sorted().take(6)
         val items = (ArogyaRegistryLogic.DRUG_KIT + stock.map { it.item }).distinct().filter { i -> stock.any { it.item == i } }
         val rows = items.mapIndexed { i, item ->
             listOf("${i + 1}", item) + refills.flatMap { date ->
                 val before = stock.filter { it.item == item && it.date < date }.sumOf { it.qty }
-                val given = stock.filter { it.item == item && it.date == date && it.qty > 0 }.sumOf { it.qty }
+                val given = stock.filter { it.item == item && it.date == date && it.qty > 0 && ArogyaRegistryLogic.txnKind(it) == "receive" }.sumOf { it.qty }
                 listOf("$before", if (given > 0) "$given" else "")
             } + listOf("${stock.filter { it.item == item }.sumOf { it.qty }}")
         }
