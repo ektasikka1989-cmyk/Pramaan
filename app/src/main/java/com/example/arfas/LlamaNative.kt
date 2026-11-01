@@ -72,7 +72,11 @@ internal object LlamaNative {
     external fun nativeInit(nativeLibDir: String)
     external fun nativeSystemInfo(): String
     external fun nativeLastError(): String
-    external fun nativeLoad(path: String, nCtx: Int, nThreads: Int, nBatch: Int): Long
+    /**
+     * [nUbatch] is the physical batch (512 is the ARM sweet spot); [flashAttn] is
+     * -1 = llama.cpp AUTO, 0 = off, 1 = on.
+     */
+    external fun nativeLoad(path: String, nCtx: Int, nThreads: Int, nBatch: Int, nUbatch: Int, flashAttn: Int): Long
     external fun nativeContextSize(handle: Long): Int
     external fun nativeCancel(handle: Long)
     external fun nativeFree(handle: Long)

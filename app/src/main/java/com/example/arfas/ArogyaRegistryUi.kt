@@ -79,6 +79,42 @@ fun ArogyaAiPage(hindi: Boolean, modelStatus: String, onlineStatus: String, onDi
                     }
                 }, modifier = Modifier.fillMaxWidth()) { Text(if (benchBusy) tr("Stop benchmark", "बेंचमार्क रोकें") else tr("Run M1 benchmark (19 questions, test aid)", "M1 बेंचमार्क चलाएँ (19 सवाल)")) }
                 if (benchLog.isNotBlank()) Text(benchLog.trim(), style = MaterialTheme.typography.bodySmall)
+                // Item 2: evidence profile + speed switches (test aid). Evidence/salvage/context apply
+                // to the next question; llama batch/FA apply when the model next loads (restart the app).
+                var prof by remember { mutableStateOf(ArogyaFlags.r1Profile) }
+                var fuCtx by remember { mutableStateOf(ArogyaFlags.sopFollowUpContext) }
+                var salvFirst by remember { mutableStateOf(ArogyaFlags.salvageBeforeRecovery) }
+                var b2048 by remember { mutableStateOf(ArogyaFlags.llamaBatch2048) }
+                var faOn by remember { mutableStateOf(ArogyaFlags.llamaFlashAttn) }
+                Text(tr("Evidence size (next question)", "साक्ष्य आकार (अगला सवाल)"), style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0 to "4×900", 1 to "6×1100", 2 to "5×900").forEach { (p, l) ->
+                        FilterChip(selected = prof == p, onClick = { prof = p; ArogyaFlags.r1Profile = p }, label = { Text(l) })
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = fuCtx, onClick = { fuCtx = !fuCtx; ArogyaFlags.sopFollowUpContext = fuCtx }, label = { Text(tr("Follow-up ctx", "फ़ॉलो-अप")) })
+                    FilterChip(selected = salvFirst, onClick = { salvFirst = !salvFirst; ArogyaFlags.salvageBeforeRecovery = salvFirst }, label = { Text(tr("Salvage 1st", "सैल्वेज पहले")) })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = b2048, onClick = { b2048 = !b2048; ArogyaFlags.llamaBatch2048 = b2048 }, label = { Text(tr("Batch 2048*", "बैच 2048*")) })
+                    FilterChip(selected = faOn, onClick = { faOn = !faOn; ArogyaFlags.llamaFlashAttn = faOn }, label = { Text(tr("FlashAttn*", "फ़्लैश*")) })
+                }
+                Text(tr("* needs app restart", "* ऐप दोबारा खोलें"), style = MaterialTheme.typography.bodySmall)
+                var spBusy by remember { mutableStateOf(false) }
+                var spLog by remember { mutableStateOf("") }
+                OutlinedButton(onClick = {
+                    if (spBusy) { ai.cancel(); return@OutlinedButton }
+                    spBusy = true; spLog = ""
+                    benchScope.launch {
+                        try {
+                            ArogyaBenchmark.runSpeedCheck(ai) { line -> spLog = (spLog + "\n" + line).takeLast(2000) }
+                            spLog += "\nDone — pull logs with _claude_work\\run\\logs.bat"
+                        } catch (e: CancellationException) { spLog += "\nCancelled" }
+                        finally { spBusy = false }
+                    }
+                }, modifier = Modifier.fillMaxWidth(), enabled = !benchBusy) { Text(if (spBusy) tr("Stop speed check", "स्पीड जाँच रोकें") else tr("Run 3-question speed check (this mode)", "3-सवाल स्पीड जाँच (यही मोड)")) }
+                if (spLog.isNotBlank()) Text(spLog.trim(), style = MaterialTheme.typography.bodySmall)
             }
             ArogyaAiCatalog.features.forEach { f ->
                 Column {

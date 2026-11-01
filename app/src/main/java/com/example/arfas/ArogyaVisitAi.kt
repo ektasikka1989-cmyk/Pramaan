@@ -103,10 +103,13 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     /** R9 marker of the installed guide pack (2 = v2, 0 = v1, -1 = none). */
     fun guideVersion(): Int = runCatching { features.guideVersion() }.getOrDefault(-1)
 
-    /** R1-lite: wider phone evidence (6 x ~1100 chars) when the switch is on, else 4 x 900. */
+    /** Evidence size from the profile switch (1 = R1 6 x 1100, 2 = 5 x 900 candidate, 0 = legacy 4 x 900). */
     private fun applyEvidenceSize() {
-        GenericKbKeyFacts.WINDOW_PASSAGES = if (ArogyaFlags.r1WideEvidence) 6 else 4
-        GenericKbKeyFacts.WINDOW_CHARS = if (ArogyaFlags.r1WideEvidence) 1_100 else 900
+        when (ArogyaFlags.r1Profile) {
+            2 -> { GenericKbKeyFacts.WINDOW_PASSAGES = 5; GenericKbKeyFacts.WINDOW_CHARS = 900 }
+            0 -> { GenericKbKeyFacts.WINDOW_PASSAGES = 4; GenericKbKeyFacts.WINDOW_CHARS = 900 }
+            else -> { GenericKbKeyFacts.WINDOW_PASSAGES = 6; GenericKbKeyFacts.WINDOW_CHARS = 1_100 }
+        }
     }
 
     suspend fun warmUp() {
@@ -185,9 +188,12 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         request.onProgress?.invoke(ArogyaProgress("search"))
         val draft = StringBuilder()
         var answered = false
+        var firstWordsMs = -1L
         suspend fun doChat(): AndroBaselineRuntime.TurnResult = withTimeout(ASK_TIMEOUT_MS) {
             runtime.chat(if (online) ArogyaOnlinePolicy.scrub(asked, request.visit) else asked, forceExternalInformation = online, turnAttachments = turnFiles,
-                onLocalDelta = { d -> synchronized(draft) { draft.append(d) }; request.onProgress?.invoke(ArogyaProgress("write", synchronized(draft) { draft.toString() })) },
+                onLocalDelta = { d ->
+                    if (firstWordsMs < 0 && d.isNotBlank()) firstWordsMs = System.currentTimeMillis() - t0
+                    synchronized(draft) { draft.append(d) }; request.onProgress?.invoke(ArogyaProgress("write", synchronized(draft) { draft.toString() })) },
                 // Review fix: when the checker rejects a streamed draft (cloud or local), clear it
                 // so the next answer never appends to rejected text; the card shows "checking…".
                 onLocalAbort = { synchronized(draft) { draft.setLength(0) }; request.onProgress?.invoke(ArogyaProgress("checking")) })
@@ -212,6 +218,10 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             attachments?.releaseTurnAttachments(turnFiles.map { it.id }, consumed = answered)
         }
         val elapsed = System.currentTimeMillis() - t0
+        // Joined offline with the stage lines by timestamp: POCKET_RAG_SEARCH_MS (search/rerank),
+        // POCKET_RAG_EVIDENCE_MS, POCKET_RAG_LOCAL_GEN_MS / POCKET_RAG_CLOUD_MS (first words),
+        // LLAMA_GENERATE (prompt/prefill/generation), POCKET_RAG_GATE_MS (checker), recovery lines.
+        Log.i(TAG, "AROGYA_ASK_BREAKDOWN online=${turn.provider == AndroBaselineRuntime.Provider.CLOUD} totalMs=$elapsed firstWordsMs=$firstWordsMs sources=${turn.sourceIds.size} profile=${ArogyaFlags.r1Profile} chars=${turn.text.length}")
         // R8 guideline-only mode (Ask SOP): a live-web or general answer — recognised by the
         // kbnotfound:/freshness: markers, never by verification:optional — becomes the ANM
         // message with the closest guide topics. Grounded and "Check online" answers pass through.

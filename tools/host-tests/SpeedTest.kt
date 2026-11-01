@@ -6,7 +6,11 @@ fun main() {
     check("flags on", ArogyaFlags.r1WideEvidence && ArogyaFlags.r2LengthPrompt && ArogyaFlags.r9NewDatabase &&
         ArogyaFlags.r8GuidelineOnly && ArogyaFlags.r3Salvage && ArogyaFlags.coverageFuzzy &&
         ArogyaFlags.r10WideCloud && ArogyaFlags.r11LowReasoning && ArogyaFlags.speedStreamCloud &&
-        ArogyaFlags.speedFastRerank && ArogyaFlags.speedSkipSecondPass && ArogyaFlags.speedWarmSearch)
+        ArogyaFlags.speedFastRerank && ArogyaFlags.speedSkipSecondPass && ArogyaFlags.speedWarmSearch &&
+        ArogyaFlags.sopFollowUpContext)
+    // Item 2 switches default to current behaviour until the phone baseline is reported.
+    check("item2 defaults", ArogyaFlags.r1Profile == 1 && !ArogyaFlags.llamaBatch2048 &&
+        !ArogyaFlags.llamaFlashAttn && !ArogyaFlags.salvageBeforeRecovery)
     // Fast re-rank decision (pure logic; the phone behaviour is guarded by M1).
     check("fast decisive", GenericKbPhase14Engine.fastRerankSkipped(20, floatArrayOf(9.0f, 5.0f, 4.0f, 3.0f, 2.0f, 1.0f, 0.5f, 0.1f)) == 12)
     check("fast close", GenericKbPhase14Engine.fastRerankSkipped(20, floatArrayOf(9.0f, 8.0f, 4.0f, 3.0f, 2.0f, 1.0f, 0.5f, 0.1f)) == 0)

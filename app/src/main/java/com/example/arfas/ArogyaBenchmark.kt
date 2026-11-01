@@ -14,7 +14,19 @@ import kotlinx.coroutines.CancellationException
 object ArogyaBenchmark {
     private const val TAG = "ArogyaDemo" // captured by _claude_work/run/logs.bat
     data class Question(val id: Int, val lang: String, val text: String, val expected: String)
-    data class Row(val id: Int, val provider: String, val ms: Long, val chars: Int, val sources: String, val safety: Boolean, val error: String)
+    data class Row(val id: Int, val provider: String, val ms: Long, val chars: Int, val sources: String, val safety: Boolean, val error: String, val firstWordsMs: Long = -1)
+
+    /**
+     * Item 2 speed check: 3 questions asked as one foreground chat (same visit, so Q2 is a
+     * real follow-up using session context, Q3 an independent question testing no-hijack).
+     * Run once per mode (Cloud first / offline); each question logs AROGYA_SPEEDCHECK_END
+     * with first-words + total, joined with the AROGYA_ASK_BREAKDOWN + stage lines.
+     */
+    val SPEEDCHECK_QUESTIONS: List<Question> = listOf(
+        Question(101, "en", "What is the zinc dose for a 4-month-old baby with diarrhoea, and for how many days?", "hbyc p72 / idcf p48"),
+        Question(102, "en", "And how should the mother prepare ORS for the same baby?", "hbyc p68-69, follow-up"),
+        Question(103, "en", "What should be applied to the umbilical cord stump of a newborn?", "int_b p18, independent")
+    )
 
     val QUESTIONS: List<Question> = listOf(
         Question(1, "en", "How many home visits should an ASHA make for a home-delivered newborn, and on which days?", "incentives p2 / asha_fac p7"),
@@ -47,18 +59,50 @@ object ArogyaBenchmark {
             onEvent("Q${q.id} (${i + 1}/${QUESTIONS.size})…")
             Log.i(TAG, "AROGYA_BENCH_START id=${q.id} lang=${q.lang}")
             val row = try {
-                val r = ai.run(ArogyaAiRequest(ArogyaAiTask.EXPLAIN, ArogyaVisit(name = "Benchmark", kind = ArogyaKind.FOLLOW_UP), question = q.text, afterSafetyPrompt = true))
+                var firstWords = -1L
+                val t = System.currentTimeMillis()
+                val r = ai.run(ArogyaAiRequest(ArogyaAiTask.EXPLAIN, ArogyaVisit(name = "Benchmark", kind = ArogyaKind.FOLLOW_UP), question = q.text, afterSafetyPrompt = true,
+                    onProgress = { p -> if (firstWords < 0 && p.stage == "write" && p.draft.isNotBlank()) firstWords = System.currentTimeMillis() - t }))
                 val srcs = r.sources.joinToString(";") { it.title + "," + it.locator }.take(400)
-                Log.i(TAG, "AROGYA_BENCH_END id=${q.id} online=${r.online} ms=${r.elapsedMs} chars=${r.text.length} safety=${r.safetyPrompt} sources=$srcs")
-                Row(q.id, r.provider, r.elapsedMs, r.text.length, srcs, r.safetyPrompt, "")
+                Log.i(TAG, "AROGYA_BENCH_END id=${q.id} online=${r.online} ms=${r.elapsedMs} firstWordsMs=$firstWords chars=${r.text.length} safety=${r.safetyPrompt} sources=$srcs")
+                Row(q.id, r.provider, r.elapsedMs, r.text.length, srcs, r.safetyPrompt, "", firstWords)
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
                 Log.w(TAG, "AROGYA_BENCH_END id=${q.id} error=${e.message?.take(120)}")
                 Row(q.id, "error", 0, 0, "", false, e.message?.take(120).orEmpty())
             }
             rows += row
-            onEvent("Q${q.id}: ${row.provider.take(24)} ${row.ms}ms ${row.chars}ch ${row.error}")
+            onEvent("Q${q.id}: ${row.provider.take(24)} ${row.ms}ms first=${row.firstWordsMs}ms ${row.chars}ch ${row.error}")
         }
         Log.i(TAG, "AROGYA_BENCH_DONE rows=${rows.size}")
+        return rows
+    }
+
+    /** 3-question foreground speed check (one chat, same visit). See [SPEEDCHECK_QUESTIONS]. */
+    suspend fun runSpeedCheck(ai: ArogyaVisitAi, onEvent: (String) -> Unit): List<Row> {
+        onEvent("Warming up…")
+        runCatching { ai.warmUp() }
+        Log.i(TAG, "AROGYA_SPEEDCHECK_GUIDE v=${ai.guideVersion()} profile=${ArogyaFlags.r1Profile}")
+        val visit = ArogyaVisit(name = "SpeedCheck", kind = ArogyaKind.FOLLOW_UP)
+        val rows = mutableListOf<Row>()
+        SPEEDCHECK_QUESTIONS.forEachIndexed { i, q ->
+            onEvent("Q${q.id} (${i + 1}/${SPEEDCHECK_QUESTIONS.size})…")
+            Log.i(TAG, "AROGYA_SPEEDCHECK_START id=${q.id}")
+            val row = try {
+                var firstWords = -1L
+                val t = System.currentTimeMillis()
+                val r = ai.run(ArogyaAiRequest(ArogyaAiTask.EXPLAIN, visit, question = q.text, afterSafetyPrompt = true,
+                    onProgress = { p -> if (firstWords < 0 && p.stage == "write" && p.draft.isNotBlank()) firstWords = System.currentTimeMillis() - t }))
+                val srcs = r.sources.joinToString(";") { it.title + "," + it.locator }.take(400)
+                Log.i(TAG, "AROGYA_SPEEDCHECK_END id=${q.id} online=${r.online} ms=${r.elapsedMs} firstWordsMs=$firstWords chars=${r.text.length} safety=${r.safetyPrompt} sources=$srcs")
+                Row(q.id, r.provider, r.elapsedMs, r.text.length, srcs, r.safetyPrompt, "", firstWords)
+            } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                Log.w(TAG, "AROGYA_SPEEDCHECK_END id=${q.id} error=${e.message?.take(120)}")
+                Row(q.id, "error", 0, 0, "", false, e.message?.take(120).orEmpty())
+            }
+            rows += row
+            onEvent("Q${q.id}: ${row.provider.take(24)} ${row.ms}ms first=${row.firstWordsMs}ms ${row.chars}ch ${row.error}")
+        }
+        Log.i(TAG, "AROGYA_SPEEDCHECK_DONE rows=${rows.size}")
         return rows
     }
 }

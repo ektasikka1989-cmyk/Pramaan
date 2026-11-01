@@ -7,7 +7,9 @@ package com.example.arfas
  */
 object ArogyaFlags {
     // Batch 2 answer quality.
-    @Volatile var r1WideEvidence = true      // 6 passages x ~1100 chars (else 4 x 900)
+    @Volatile var r1WideEvidence = true      // R1 window shaping (else legacy shaping)
+    /** Evidence size: 0 = 4 x 900 (legacy), 1 = 6 x 1100 (R1), 2 = 5 x 900 (candidate). */
+    @Volatile var r1Profile = 1
     @Volatile var r2LengthPrompt = true      // type-aware COMPLETE_ANSWER (else legacy line)
     @Volatile var r9NewDatabase = true       // v2 guide DB: precedence + URLs (else old file)
     @Volatile var r8GuidelineOnly = true     // Ask SOP: not-in-guides -> ANM message (R8)
@@ -26,4 +28,8 @@ object ArogyaFlags {
     @Volatile var speedFastRerank = true     // fewer rerank candidates when the top is clearly ahead
     @Volatile var speedSkipSecondPass = true // skip the lexical retry when the first pass is confident
     @Volatile var speedWarmSearch = true     // warm E5 + reranker sessions at startup (else first-question cost)
+    // Item 2 llama/RAG speed (defaults = current behaviour until the baseline is reported).
+    @Volatile var llamaBatch2048 = false     // n_batch 2048 / n_ubatch 512 (else 512 / 512)
+    @Volatile var llamaFlashAttn = false     // force flash attention on (else llama.cpp AUTO)
+    @Volatile var salvageBeforeRecovery = false // R3-lite salvage before the recovery regeneration
 }

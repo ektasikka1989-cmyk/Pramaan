@@ -249,6 +249,27 @@ class PocketRagEngine(
             }
         }
 
+        // R3-lite statement salvage as a function: with salvageBeforeRecovery it runs here on
+        // the first draft (no second full generation on rejection); otherwise it keeps its old
+        // place after the recovery pass.
+        fun tryStatementSalvage(draft: String, reason: String, stage: String): String? {
+            if (!ArogyaFlags.r3Salvage || !reason.startsWith("low_evidence_support") || draft.isBlank()) return null
+            val salvaged = qualityGate.salvageUnsupportedStatements(draft, packet.evidenceText)
+            if (salvaged.isNullOrBlank() || salvaged == draft) return null
+            val salvageDecision = evalGate(packet.query, salvaged, packet, stage)
+            if (salvageDecision.acceptLocal) {
+                Log.i(TAG, "POCKET_RAG_STATEMENT_SALVAGE_ACCEPT removedUnsupported=true stage=$stage")
+                return salvaged
+            }
+            Log.w(TAG, "POCKET_RAG_STATEMENT_SALVAGE_REJECT reason=${salvageDecision.reason} stage=$stage")
+            return null
+        }
+        if (ArogyaFlags.salvageBeforeRecovery) {
+            tryStatementSalvage(localDraft, decision.reason, "statement_salvage_early")?.let {
+                return acceptLocal(key, packet, it, "statement_salvage_early", cloudAttempted = false)
+            }
+        }
+
         // A model refusal is not the same thing as missing KB evidence. When retrieval
         // produced a complete, query-related packet, give the local model one bounded
         // recovery pass before considering Cloud. This is especially important offline.
@@ -344,15 +365,9 @@ class PocketRagEngine(
 
         // R3-lite: an answer rejected only for weak evidence support keeps its supported
         // sentences (at least 2 must remain) instead of falling back to copied key points.
-        if (ArogyaFlags.r3Salvage && decision.reason.startsWith("low_evidence_support") && bestLocalDraft.isNotBlank()) {
-            val salvaged = qualityGate.salvageUnsupportedStatements(bestLocalDraft, packet.evidenceText)
-            if (!salvaged.isNullOrBlank() && salvaged != bestLocalDraft) {
-                val salvageDecision = evalGate(packet.query, salvaged, packet, "statement_salvage")
-                if (salvageDecision.acceptLocal) {
-                    Log.i(TAG, "POCKET_RAG_STATEMENT_SALVAGE_ACCEPT removedUnsupported=true")
-                    return acceptLocal(key, packet, salvaged, "local_recovery:statement_salvage", cloudAttempted = false)
-                }
-                Log.w(TAG, "POCKET_RAG_STATEMENT_SALVAGE_REJECT reason=${salvageDecision.reason}")
+        if (!ArogyaFlags.salvageBeforeRecovery) {
+            tryStatementSalvage(bestLocalDraft, decision.reason, "statement_salvage")?.let {
+                return acceptLocal(key, packet, it, "local_recovery:statement_salvage", cloudAttempted = false)
             }
         }
 

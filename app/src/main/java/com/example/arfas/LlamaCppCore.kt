@@ -124,14 +124,18 @@ internal class LlamaCppCore(private val context: Context) : LocalInferenceCore {
             val ram = totalRamMb()
             val nCtx = contextTokensFor(ram)
             val threads = threadsFor(Runtime.getRuntime().availableProcessors(), coreMaxFreqs())
+            // Item 2 switches (defaults = current behaviour): bigger logical batch for prefill,
+            // physical batch fixed at the ARM sweet spot, flash attention AUTO unless forced on.
+            val batch = if (ArogyaFlags.llamaBatch2048) 2048 else 512
+            val fa = if (ArogyaFlags.llamaFlashAttn) 1 else -1
             val started = System.currentTimeMillis()
-            var h = LlamaNative.nativeLoad(file.absolutePath, nCtx, threads, 512)
+            var h = LlamaNative.nativeLoad(file.absolutePath, nCtx, threads, batch, 512, fa)
             if (h == 0L && LlamaNative.nativeLastError().contains("context")) {
                 // Not enough free RAM for the KV cache: retry smaller before giving up.
                 for (smaller in intArrayOf(2_048, 1_024).filter { it < nCtx }) {
                     Log.w(TAG, "LLAMA_RETRY_SMALLER_CTX ctx=$smaller ramMb=$ram")
                     onProgress("Low memory - retrying Llama with a smaller context ($smaller)…")
-                    h = LlamaNative.nativeLoad(file.absolutePath, smaller, threads, 256)
+                    h = LlamaNative.nativeLoad(file.absolutePath, smaller, threads, 256, 256, fa)
                     if (h != 0L) break
                 }
             }
@@ -141,7 +145,7 @@ internal class LlamaCppCore(private val context: Context) : LocalInferenceCore {
             handle.set(h)
             this@LlamaCppCore.modelPath = file.absolutePath
             contextTokens = LlamaNative.nativeContextSize(h)
-            Log.i(TAG, "LLAMA_LOADED file=${file.name} ctx=$contextTokens threads=$threads ramMb=$ram ms=${System.currentTimeMillis() - started}")
+            Log.i(TAG, "LLAMA_LOADED file=${file.name} ctx=$contextTokens threads=$threads batch=$batch ubatch=512 flashAttn=$fa ramMb=$ram ms=${System.currentTimeMillis() - started}")
             onProgress("Warming up Llama…")
             // A real generation proves the weights, template and sampler work before READY.
             val warm = generateInternal(
@@ -326,10 +330,13 @@ internal class LlamaCppCore(private val context: Context) : LocalInferenceCore {
             guardStopped -> "ephemeral_loop_guard"
             else -> "llama_" + LlamaNative.returnCodeName(rc)
         }
+        val prefillTps = (timings.promptTokens - timings.reusedTokens).coerceAtLeast(0) * 1000.0 /
+            timings.prefillMs.coerceAtLeast(1)
         Log.i(
             TAG,
             "LLAMA_GENERATE stop=$stopReason prompt=${timings.promptTokens} reused=${timings.reusedTokens} " +
                 "gen=${timings.generatedTokens} ttftMs=${timings.timeToFirstTokenMs} prefillMs=${timings.prefillMs} " +
+                "prefillTps=${"%.1f".format(prefillTps)} " +
                 "totalMs=${timings.totalMs} tokPerSec=${"%.1f".format(timings.decodeTokensPerSecond)}"
         )
         runCatching { onTimings?.invoke(timings, stopReason) }

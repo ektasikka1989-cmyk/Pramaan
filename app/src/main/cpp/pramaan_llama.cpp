@@ -280,7 +280,8 @@ Java_com_example_arfas_LlamaNative_nativeLastError(JNIEnv *env, jobject) {
 
 JNIEXPORT jlong JNICALL
 Java_com_example_arfas_LlamaNative_nativeLoad(JNIEnv *env, jobject, jstring jpath, jint n_ctx,
-                                               jint n_threads, jint n_batch) {
+                                               jint n_threads, jint n_batch, jint n_ubatch,
+                                               jint flash_attn) {
     const std::string path = jstring_to_utf8(env, jpath);
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = 0;
@@ -305,9 +306,12 @@ Java_com_example_arfas_LlamaNative_nativeLoad(JNIEnv *env, jobject, jstring jpat
     const int wanted = n_ctx > 0 ? n_ctx : 4096;
     ctx_params.n_ctx = static_cast<uint32_t>(trained > 0 ? std::min(wanted, trained) : wanted);
     ctx_params.n_batch = static_cast<uint32_t>(n_batch > 0 ? n_batch : 512);
-    ctx_params.n_ubatch = ctx_params.n_batch;
+    ctx_params.n_ubatch = static_cast<uint32_t>(n_ubatch > 0 ? std::min(n_ubatch, static_cast<int>(ctx_params.n_batch)) : ctx_params.n_batch);
     ctx_params.n_threads = n_threads > 0 ? n_threads : 4;
     ctx_params.n_threads_batch = ctx_params.n_threads;
+    // -1 keeps llama.cpp AUTO (current behaviour); 0/1 force flash attention off/on.
+    if (flash_attn == 0) ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    else if (flash_attn == 1) ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
     ctx_params.abort_callback = abort_requested;
     ctx_params.abort_callback_data = session;
     session->ctx = llama_init_from_model(model, ctx_params);
@@ -320,8 +324,9 @@ Java_com_example_arfas_LlamaNative_nativeLoad(JNIEnv *env, jobject, jstring jpat
     }
     session->n_ctx = static_cast<int>(llama_n_ctx(session->ctx));
     session->n_batch = static_cast<int>(llama_n_batch(session->ctx));
-    LOGI("loaded %s ctx=%d batch=%d threads=%d", path.c_str(), session->n_ctx, session->n_batch,
-         ctx_params.n_threads);
+    const int ubatch = static_cast<int>(llama_n_ubatch(session->ctx));
+    LOGI("loaded %s ctx=%d batch=%d ubatch=%d threads=%d flash_attn=%d", path.c_str(), session->n_ctx,
+         session->n_batch, ubatch, ctx_params.n_threads, static_cast<int>(ctx_params.flash_attn_type));
     return reinterpret_cast<jlong>(session);
 }
 
