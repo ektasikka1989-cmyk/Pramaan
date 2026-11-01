@@ -59,7 +59,7 @@ class PocketRagCloudResolver(
                 }
             }
         }
-        val messages = PocketRagPromptBuilder.continuityMemory(packet.query, memory).flatMap { turn ->
+        val messages = PocketRagPromptBuilder.continuityMemory(packet.query, memory, packet.followUpOf.isNotBlank()).flatMap { turn ->
             listOf("user" to turn.user, "assistant" to turn.assistant)
         }
         val t0 = System.currentTimeMillis()

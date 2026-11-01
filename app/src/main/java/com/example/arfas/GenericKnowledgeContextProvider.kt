@@ -445,7 +445,13 @@ class GenericKnowledgeContextProvider(
             val shortElliptical = query.trim().split(Regex("\\s+")).size <= FOLLOW_UP_SHORT_WORDS
             val dependent = runCatching { isContextDependent(query, acceptedHistory) }.getOrDefault(false)
             if (dependent || (weak && shortElliptical)) {
-                val contextual = listOf(query.trim(), basis, previousAnswer.take(FOLLOW_UP_ANSWER_CHARS))
+                // Ask SOP conversation: chained follow-ups ("and for a newborn?", "what dose?") are
+                // rewritten from the last 2 exchanges, not just the last question (behind the flag).
+                val prevPrev = if (ArogyaFlags.sopFollowUpContext)
+                    acceptedHistory.filter { it.role == "user" }.map { it.content.trim() }
+                        .filter { it.isNotBlank() && !it.equals(query.trim(), ignoreCase = true) }
+                        .takeLast(2).firstOrNull().orEmpty() else ""
+                val contextual = listOf(query.trim(), basis, prevPrev, previousAnswer.take(FOLLOW_UP_ANSWER_CHARS))
                     .filter { it.isNotBlank() }.joinToString(" ")
                 val second = runCatching { repository.searchPhase14(contextual, queryPlan.clauses, candidateWork, denseEnabled) }.getOrNull()
                 val secondBest = second?.bestRerank

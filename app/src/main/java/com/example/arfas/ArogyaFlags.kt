@@ -19,6 +19,8 @@ object ArogyaFlags {
     // Batch 3 cloud.
     @Volatile var r10WideCloud = true        // Cloud first uses the 12 x 1600 set (else narrow)
     @Volatile var r11LowReasoning = true     // Spark KB answers: minimal reasoning + type-fit ceiling
+    // Ask SOP conversation (item 1): follow-ups carry the last 2 exchanges.
+    @Volatile var sopFollowUpContext = true  // retrieval + answer context for evidence-gated follow-ups
     // Speed work.
     @Volatile var speedStreamCloud = true    // stream Spark drafts into the card while checking
     @Volatile var speedFastRerank = true     // fewer rerank candidates when the top is clearly ahead

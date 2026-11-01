@@ -84,7 +84,7 @@ object PocketRagPromptBuilder {
         memory: List<PocketRagTurnMemory>,
         recoveryMode: Boolean = false
     ): PocketRagPrompt {
-        val continuity = continuityMemory(packet.query, memory).let { relevantMemory ->
+        val continuity = continuityMemory(packet.query, memory, packet.followUpOf.isNotBlank()).let { relevantMemory ->
             relevantMemory.fold(StringBuilder()) { out, turn ->
                 val next = "User: ${turn.user}\nAssistant: ${turn.assistant}\n"
                 if (out.length + next.length <= 24_000) out.append(next) else out
@@ -150,11 +150,17 @@ object PocketRagPromptBuilder {
     }
 
     /**
-     * Phase 1 intentionally keeps retrieval and generation history-free. A future
-     * TurnAct/topic-frame phase will provide bounded, containment-checked continuity;
-     * replaying raw history here can reintroduce the topic-hijack bug.
+     * Bounded conversation context for the answer: only when retrieval already resolved this
+     * turn as a follow-up ([followUp] = evidence-gated, never merely short), the last 2
+     * exchanges go in, trimmed. Self-contained questions stay isolated (no topic hijack).
+     * Behind [ArogyaFlags.sopFollowUpContext]; the cloud resolver uses the same window.
      */
-    fun continuityMemory(query: String, memory: List<PocketRagTurnMemory>): List<PocketRagTurnMemory> = emptyList()
+    fun continuityMemory(query: String, memory: List<PocketRagTurnMemory>, followUp: Boolean = false): List<PocketRagTurnMemory> {
+        if (!ArogyaFlags.sopFollowUpContext || !followUp) return emptyList()
+        return memory.takeLast(2).map { t ->
+            t.copy(user = t.user.take(400), assistant = t.assistant.replace(Regex("\\s+"), " ").trim().take(800))
+        }
+    }
 
     /**
      * The start of the answer given to [followUpOf] in this KB session, or null. Used only when

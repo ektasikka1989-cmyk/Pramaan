@@ -80,6 +80,16 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     }
     fun cancel() { runtime.requestCancelActiveGeneration("arogya_user_cancel"); runtime.localModelManager?.requestCancelActiveGeneration("arogya_user_cancel") }
 
+    /**
+     * Ask SOP "New conversation": drops this visit's runtime session context (pocketRagSessions
+     * + saved turns) so the next question starts fresh. lastVisitId is kept: the cleared
+     * session belongs to this visit, and the next answer re-seeds it.
+     */
+    fun newConversation() {
+        runCatching { runtime.startNewChat(clearHistory = true, mode = "NORMAL") }
+        Log.i(TAG, "AROGYA_SOP_NEW_CONVERSATION visit=$lastVisitId")
+    }
+
     /** One line for the AI page: which model file is loaded and whether the guide is selected. */
     fun modelStatus(): String {
         val m = runtime.localModelManager

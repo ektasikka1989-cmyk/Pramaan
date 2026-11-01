@@ -20,6 +20,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.item
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -92,6 +95,8 @@ fun ArogyaVisitScreen(
     var aiTopic by remember { mutableStateOf("") }
     var aiPrevious by remember { mutableStateOf("") }
     var aiResult by remember { mutableStateOf<ArogyaAiResult?>(null) }
+    // Ask SOP chat thread per visit: survives the window closing and reopening within the visit.
+    var sopThreads by remember { mutableStateOf(mapOf<String, List<SopChatMsg>>()) }
     var aiOnline by remember { mutableStateOf(false) }
     var aiError by remember { mutableStateOf("") }
     var aiBusy by remember { mutableStateOf(false) }
@@ -683,34 +688,12 @@ fun ArogyaVisitScreen(
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     Text(when(aiTask) { ArogyaAiTask.EXPLAIN->tr("Ask the ASHA guide","ASHA गाइड से पूछें");ArogyaAiTask.ORGANISE_NOTES->tr("Your AI visit draft","AI का विज़िट ड्राफ़्ट");ArogyaAiTask.HANDOVER->tr("Prepare ANM handover","ANM के लिए विवरण") },style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
                     AiBadge(if(aiTask==ArogyaAiTask.EXPLAIN) "Ask SOP" else "Organise notes")
+                    if(aiTask==ArogyaAiTask.EXPLAIN) TextButton(onClick={
+                        sopThreads=sopThreads-gv.id;aiResult=null;aiQuestion="";aiError="";familyText="";ai?.newConversation()
+                    },enabled=!aiBusy) {Text(tr("↺ New","↺ नई"))}
                 }
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 // Warning appears after "Ask", not while typing (it used to push the text out of view).
                 val warningNow = if(aiTask==ArogyaAiTask.EXPLAIN && askedQuestionForWarning.isNotBlank()) ArogyaUrgentTriage.assess(askedQuestionForWarning,gv) else null
-                if(aiTask==ArogyaAiTask.EXPLAIN) {
-                    ArogyaField(tr("Your question","आपका सवाल"),aiQuestion,!aiBusy,2) {aiQuestion=it.take(700)}
-                    Row(horizontalArrangement=Arrangement.spacedBy(4.dp),modifier=Modifier.horizontalScroll(rememberScrollState())) {
-                        TextButton(onClick={questionDictation=true;if(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED) voice=true else mic.launch(Manifest.permission.RECORD_AUDIO)},enabled=!aiBusy) {Text(tr("🎤 Speak","🎤 बोलें"))}
-                        TextButton(onClick={startPhoto("question")},enabled=!aiBusy && !qFileBusy && ai!=null && qFiles.size<3) {Text(tr("📷 Photo","📷 फ़ोटो"))}
-                        TextButton(onClick={questionFilePicker.launch(arrayOf("image/*","application/pdf"))},enabled=!aiBusy && !qFileBusy && ai!=null && qFiles.size<3) {Text(tr("📎 Photo / PDF","📎 फ़ोटो / PDF"))}
-                        AiBadge("Photo / PDF with a question")
-                    }
-                    if(qFileBusy) Text(tr("Reading the attachment on this phone…","फ़ोन पर अटैचमेंट पढ़ा जा रहा है…"),style=MaterialTheme.typography.bodySmall)
-                    if(qFiles.isNotEmpty()) Row(verticalAlignment=Alignment.CenterVertically) {
-                        Text("📎 "+qFiles.joinToString(", "),style=MaterialTheme.typography.bodySmall,modifier=Modifier.weight(1f),maxLines=2)
-                        TextButton(onClick={ai?.clearAttachments();qFiles=emptyList()},enabled=!aiBusy) {Text(tr("Remove","हटाएँ"))}
-                    }
-                    if(qFiles.isNotEmpty()) Text(tr("A photo is added to your question. A PDF is answered from that PDF itself.","फ़ोटो सवाल के साथ गाइड में खोजी जाती है। PDF का उत्तर उसी PDF से आता है।"),style=MaterialTheme.typography.bodySmall)
-                    // Danger signs: shown instantly, once, short. Never repeated in the answer.
-                    warningNow?.let { warning ->
-                        Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer),modifier=Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(12.dp)) {
-                                Text(warning,fontWeight=FontWeight.Medium)
-                                if(gv.id!=SOP_VISIT_ID) Button(onClick={escalate(aiQuestion)},colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(tr("Escalate to ANM","ANM को सूचित करें")) }
-                            }
-                        }
-                    }
-                }
                 fun runVisitAi(forceOnline:Boolean,afterSafety:Boolean=false) {
                     val snapshot=gv
                     val askedQuestion=aiQuestion.ifBlank { tr("About the attached file","अटैच की गई फ़ाइल के बारे में") }+(if(qFiles.isNotEmpty()) "  [📎 ${qFiles.joinToString(", ")}]" else "")
@@ -730,6 +713,12 @@ fun ArogyaVisitScreen(
                                 val current=queue.state.value.visits.firstOrNull {it.id==snapshot.id}
                                 if(current!=null && !current.completed) edit(snapshot.id,false) {row->row.copy(guideLog=(row.guideLog+entry).takeLast(30))}
                             }
+                            // Chat thread: every answer stays visible; a repeated question (online check) replaces its answer.
+                            if(aiTask==ArogyaAiTask.EXPLAIN) {
+                                val msg=SopChatMsg(System.currentTimeMillis(),askedQuestion,result)
+                                val cur=sopThreads[snapshot.id].orEmpty()
+                                sopThreads=sopThreads+(snapshot.id to if(cur.lastOrNull()?.question==askedQuestion) cur.dropLast(1)+msg else cur+msg)
+                            }
                             aiPrevious="Previous question: $aiQuestion\nPrevious draft explanation: ${result.text.take(800)}"
                         } catch(e:CancellationException) {aiError="Cancelled or timed out. Any previous answer remains unchanged; no freshness check was accepted.";throw e}
                         catch(e:Exception) {aiError=e.message ?: "AI unavailable. Your visit is unchanged."}
@@ -739,28 +728,67 @@ fun ArogyaVisitScreen(
                 LaunchedEffect(aiOpen,pending) {
                     if(autoRunDraft && pending==0 && !aiBusy) {autoRunDraft=false;runVisitAi(false)}
                 }
-                Button(onClick={askedQuestionForWarning=aiQuestion;runVisitAi(false,afterSafety=ArogyaUrgentTriage.assess(aiQuestion,gv)!=null)},enabled=!aiBusy && !qFileBusy && pending==0 && (aiTask!=ArogyaAiTask.EXPLAIN || aiQuestion.isNotBlank() || qFiles.isNotEmpty()),modifier=Modifier.fillMaxWidth()) {
-                    Text(if(aiBusy) tr("Working on your phone…","फ़ोन पर काम हो रहा है…") else if(aiTask!=ArogyaAiTask.EXPLAIN) tr("Create my visit draft","मेरा विज़िट ड्राफ़्ट बनाएँ") else tr("Ask the guide","गाइड से पूछें"))
-                }
                 LaunchedEffect(aiBusy) { while(aiBusy) { nowMs=System.currentTimeMillis(); delay(500) } }
-                if(aiBusy) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    val secs=((nowMs-aiStartedAt).coerceAtLeast(0))/1000
-                    val stage=when {
-                        aiOnline -> tr("Checking online…","ऑनलाइन जाँच हो रही है…")
-                        aiChecking -> tr("Checking against the guide…","गाइड से मिलाया जा रहा है…")
-                        aiTask!=ArogyaAiTask.EXPLAIN -> tr("Organising your notes on this phone…","फ़ोन पर नोट्स व्यवस्थित हो रहे हैं…")
-                        aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500 -> tr("Step 3 of 3 · Checking every statement against the guide…","चरण 3/3 · हर बात गाइड से मिलाई जा रही है…")
-                        aiDraft.isNotBlank() || secs>=20 -> tr("Step 2 of 3 · Writing the answer…","चरण 2/3 · उत्तर लिखा जा रहा है…")
-                        else -> tr("Step 1 of 3 · Searching the ASHA guide…","चरण 1/3 · ASHA गाइड में खोज…")
+                if(aiTask==ArogyaAiTask.EXPLAIN) {
+                    val thread=sopThreads[gv.id].orEmpty()
+                    val chatState=rememberLazyListState()
+                    // The window closed and reopened: restore the latest answer's full card.
+                    LaunchedEffect(aiOpen,aiVisitId) {
+                        if(aiResult==null) thread.lastOrNull()?.result?.let { aiResult=it;aiCopy=it.text;aiCapture=it.captureItems }
                     }
-                    Text("$stage  ${secs}s",fontWeight=FontWeight.Medium)
-                    if(aiDraft.isNotBlank()) Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp)) {
-                        Text(tr("Draft — checked against the guide before it is shown as the answer","ड्राफ़्ट — उत्तर बनने से पहले गाइड से जाँचा जाएगा"),style=MaterialTheme.typography.labelSmall)
-                        Text(aiDraft,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    } }
-                    TextButton(onClick={onCancelAi();aiJob?.cancel()}) {Text(tr("Cancel","रद्द करें"))}
+                    LaunchedEffect(thread.size,aiBusy,aiDraft.length,aiError) {
+                        runCatching { val n=chatState.layoutInfo.totalItemsCount; if(n>0) chatState.animateScrollToItem(n-1) }
+                    }
+                    LazyColumn(Modifier.weight(1f),state=chatState,verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                        val history=if(aiResult!=null) thread.dropLast(1) else thread
+                        items(history,key={it.id}) { msg -> SopChatHistoryCard(msg,hindi,onOpenSource={source=it},onSpeak={speak(it)}) }
+                        aiResult?.let { result ->
+                            item(key="latest") {
+                                Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                    val q=thread.lastOrNull()?.question ?: aiQuestion
+                                    if(q.isNotBlank()) Text(q,fontWeight=FontWeight.Bold)
+                                    fun family(h:Boolean) { val engine=ai ?: return; familyBusy=true; scope.launch { try { familyText=engine.familyExplain(result.text,result.quote,h) } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
+                                    SopAnswerCard(result,q,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,showPassages,{showPassages=!showPassages},{source=it},
+                                        { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
+                                        {speak(it)},{tts.stop()},familyText,familyBusy,{family(it)},{runVisitAi(true,afterSafety=true)},{escalate(it)},context,hindi)
+                                }
+                            }
+                        }
+                        if(aiBusy) item(key="progress") {
+                            SopBusyCard(hindi,aiOnline,aiChecking,true,aiDraft,((nowMs-aiStartedAt).coerceAtLeast(0))/1000,aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500) {onCancelAi();aiJob?.cancel()}
+                        }
+                        if(aiError.isNotBlank()) item(key="error") { Text(aiError,color=MaterialTheme.colorScheme.error) }
+                    }
+                    warningNow?.let { warning ->
+                        Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer),modifier=Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text(warning,fontWeight=FontWeight.Medium)
+                                if(gv.id!=SOP_VISIT_ID) Button(onClick={escalate(aiQuestion)},colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(tr("Escalate to ANM","ANM को सूचित करें")) }
+                            }
+                        }
+                    }
+                    ArogyaField(tr("Your question","आपका सवाल"),aiQuestion,!aiBusy,2) {aiQuestion=it.take(700)}
+                    Row(horizontalArrangement=Arrangement.spacedBy(4.dp),modifier=Modifier.horizontalScroll(rememberScrollState())) {
+                        TextButton(onClick={questionDictation=true;if(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED) voice=true else mic.launch(Manifest.permission.RECORD_AUDIO)},enabled=!aiBusy) {Text(tr("🎤 Speak","🎤 बोलें"))}
+                        TextButton(onClick={startPhoto("question")},enabled=!aiBusy && !qFileBusy && ai!=null && qFiles.size<3) {Text(tr("📷 Photo","📷 फ़ोटो"))}
+                        TextButton(onClick={questionFilePicker.launch(arrayOf("image/*","application/pdf"))},enabled=!aiBusy && !qFileBusy && ai!=null && qFiles.size<3) {Text(tr("📎 Photo / PDF","📎 फ़ोटो / PDF"))}
+                        AiBadge("Photo / PDF with a question")
+                    }
+                    if(qFileBusy) Text(tr("Reading the attachment on this phone…","फ़ोन पर अटैचमेंट पढ़ा जा रहा है…"),style=MaterialTheme.typography.bodySmall)
+                    if(qFiles.isNotEmpty()) Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text("📎 "+qFiles.joinToString(", "),style=MaterialTheme.typography.bodySmall,modifier=Modifier.weight(1f),maxLines=2)
+                        TextButton(onClick={ai?.clearAttachments();qFiles=emptyList()},enabled=!aiBusy) {Text(tr("Remove","हटाएँ"))}
+                    }
+                    if(qFiles.isNotEmpty()) Text(tr("A photo is added to your question. A PDF is answered from that PDF itself.","फ़ोटो सवाल के साथ गाइड में खोजी जाती है। PDF का उत्तर उसी PDF से आता है।"),style=MaterialTheme.typography.bodySmall)
+                    Button(onClick={askedQuestionForWarning=aiQuestion;runVisitAi(false,afterSafety=ArogyaUrgentTriage.assess(aiQuestion,gv)!=null)},enabled=!aiBusy && !qFileBusy && pending==0 && (aiQuestion.isNotBlank() || qFiles.isNotEmpty()),modifier=Modifier.fillMaxWidth()) {
+                        Text(if(aiBusy) tr("Working on your phone…","फ़ोन पर काम हो रहा है…") else tr("Ask the guide","गाइड से पूछें"))
+                    }
+                    TextButton(onClick={aiOpen=false},enabled=!aiBusy) {Text(if(aiVisitId==SOP_VISIT_ID) tr("Close","बंद करें") else tr("Back to visit","विज़िट पर वापस"))}
+                } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                Button(onClick={askedQuestionForWarning=aiQuestion;runVisitAi(false,afterSafety=ArogyaUrgentTriage.assess(aiQuestion,gv)!=null)},enabled=!aiBusy && !qFileBusy && pending==0,modifier=Modifier.fillMaxWidth()) {
+                    Text(if(aiBusy) tr("Working on your phone…","फ़ोन पर काम हो रहा है…") else tr("Create my visit draft","मेरा विज़िट ड्राफ़्ट बनाएँ"))
                 }
+                if(aiBusy) SopBusyCard(hindi,aiOnline,aiChecking,aiTask==ArogyaAiTask.EXPLAIN,aiDraft,((nowMs-aiStartedAt).coerceAtLeast(0))/1000,aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500) {onCancelAi();aiJob?.cancel()}
                 if(aiError.isNotBlank()) Text(aiError,color=MaterialTheme.colorScheme.error)
                 aiResult?.let { result ->
                     Text("${result.provider} • ${result.elapsedMs/1000.0}s",style=MaterialTheme.typography.bodySmall)
@@ -791,61 +819,12 @@ fun ArogyaVisitScreen(
                             else if(edit(current.id) {row->ArogyaCapture.applyReviewed(row,aiOriginalNotes,aiCapture)}) {aiOpen=false;stage=1}
                         },enabled=!gv.completed && !locked,modifier=Modifier.fillMaxWidth()) {Text(tr("Confirm reviewed record","जाँचा हुआ रिकॉर्ड सहेजें"))}
                     } else {
-                        if(result.quote.isNotBlank()) Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.secondaryContainer)) {
-                            Column(Modifier.padding(12.dp)) {
-                                Text(tr("The guide says","गाइड में लिखा है"),style=MaterialTheme.typography.labelMedium,fontWeight=FontWeight.Bold)
-                                Text("“${result.quote}”")
-                                if(result.quoteSource.isNotBlank()) Text("— "+result.quoteSource,style=MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                        Text(ArogyaMarkdown.strip(result.text))
-                        if(ArogyaFlags.r7SourceLine && aiTask==ArogyaAiTask.EXPLAIN && result.sources.isNotEmpty()) {
-                            val s0 = result.sources.first()
-                            Text(tr("Source: ","स्रोत: ")+s0.title+(if(s0.locator.isNotBlank()) ", ${s0.locator}" else ""),fontWeight=FontWeight.Medium,style=MaterialTheme.typography.bodySmall)
-                        }
-                        if(result.r8Blocked) {
-                            Button(onClick={
-                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(android.content.Intent.EXTRA_TEXT, tr("Please advise: ","कृपया बताएँ: ")+aiQuestion.trim())
-                                }
-                                runCatching { context.startActivity(android.content.Intent.createChooser(send, tr("Ask ANM","ANM से पूछें"))) }
-                            },modifier=Modifier.fillMaxWidth()) { Text(tr("Ask ANM","ANM से पूछें")) }
-                        }
-                        if(result.sources.isNotEmpty()) {
-                            Text(tr("Sources — tap to read","स्रोत — पढ़ने के लिए दबाएँ"),fontWeight=FontWeight.Bold)
-                            result.sources.forEach { s -> OutlinedButton(onClick={source=s},modifier=Modifier.fillMaxWidth()) {
-                                Text("📄 [${s.id}] ${s.title}"+(if(s.locator.isNotBlank()) " · ${s.locator}" else ""),style=MaterialTheme.typography.bodySmall,maxLines=2)
-                            } }
-                        }
-                        if(result.sources.any {it.excerpt.isNotBlank()}) {
-                            TextButton(onClick={showPassages=!showPassages}) { Text(if(showPassages) tr("Hide guide text","गाइड का पाठ छिपाएँ") else tr("Show the guide text used for this answer","इस उत्तर के लिए पढ़ा गया गाइड का पाठ")) }
-                            if(showPassages) result.sources.filter {it.excerpt.isNotBlank()}.forEach { s -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
-                                Text("[${s.id}] ${s.title}"+(if(s.locator.isNotBlank()) " · ${s.locator}" else ""),fontWeight=FontWeight.Bold,style=MaterialTheme.typography.bodySmall)
-                                ArogyaPassageText(s)
-                                if(s.url.startsWith("http")) TextButton(onClick={runCatching {uriHandler.openUri(s.url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()}}) { Text(tr("Open guideline","गाइडलाइन खोलें")) }
-                            } } }
-                        }
-                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick={ ArogyaShare.shareText(context,"Guide answer",ArogyaShare.guideEntryText(ArogyaGuideEntry(System.currentTimeMillis(),aiQuestion,result.text,result.quote,result.quoteSource,result.sources,result.provider,result.elapsedMs))) }) { Text(tr("Share answer","उत्तर भेजें")) }
-                            if(warningNow!=null) if(gv.id!=SOP_VISIT_ID) Button(onClick={escalate(aiQuestion)},colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)) { Text(tr("Escalate to ANM","ANM को सूचित करें")) }
-                        }
-                        if(ai!=null && !result.sourceOnly) {
-                            fun family(h:Boolean) { familyBusy=true; scope.launch { try { familyText=ai.familyExplain(result.text,result.quote,h) } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
-                            Row(verticalAlignment=Alignment.CenterVertically) {
-                                Button(onClick={family(true)},enabled=!familyBusy && !aiBusy) { Text(if(familyBusy) tr("Writing…","लिखा जा रहा है…") else tr("👪 Explain to family (हिंदी)","👪 परिवार को समझाएँ")) }
-                                TextButton(onClick={family(false)},enabled=!familyBusy && !aiBusy) { Text(tr("English","English")) }
-                                AiBadge("Explain to family")
-                            }
-                            if(familyText.isNotBlank()) Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(12.dp)) {
-                                Text(tr("For the family","परिवार के लिए"),style=MaterialTheme.typography.labelMedium,fontWeight=FontWeight.Bold)
-                                Text(familyText,style=MaterialTheme.typography.bodyLarge)
-                                TextButton(onClick={speak(familyText)}) { Text(tr("🔊 Read to the family","🔊 परिवार को सुनाएँ")) }
-                                Text(tr("AI rewrite of the guide answer in simple words. No new advice or numbers are added — check before reading out.","गाइड के उत्तर का सरल रूप। कोई नई सलाह या संख्या नहीं जोड़ी गई — सुनाने से पहले देख लें।"),style=MaterialTheme.typography.bodySmall)
-                            } }
-                        }
-                        Text((if(result.online) tr("Online","ऑनलाइन") else tr("Offline on this phone","इस फ़ोन पर ऑफ़लाइन"))+" · ${result.elapsedMs/1000}s · "+tr("Not a diagnosis — ask your ANM if unsure.","यह निदान नहीं है — शंका हो तो ANM से पूछें।"),style=MaterialTheme.typography.bodySmall)
-                        if(!result.online && !ArogyaOnlinePolicy.localOnly(aiQuestion)) TextButton(onClick={runVisitAi(true,afterSafety=true)},enabled=!aiBusy && pending==0 && aiQuestion.isNotBlank()) {Text(tr("Also check online (sends only the question)","ऑनलाइन भी जाँचें (सिर्फ़ सवाल भेजा जाएगा)"),style=MaterialTheme.typography.bodySmall)}
+                        // Unreachable in the draft flow (organise results always carry canCopyToNotes);
+                        // the shared card keeps it correct if that ever changes.
+                        fun familyElse(h:Boolean) { val engine=ai ?: return; familyBusy=true; scope.launch { try { familyText=engine.familyExplain(result.text,result.quote,h) } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
+                        SopAnswerCard(result,aiQuestion,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,showPassages,{showPassages=!showPassages},{source=it},
+                            { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
+                            {speak(it)},{tts.stop()},familyText,familyBusy,{familyElse(it)},{runVisitAi(true,afterSafety=true)},{escalate(it)},context,hindi)
                     }
                     Row {TextButton(onClick={speak(if(result.canCopyToNotes) aiCopy else result.text)}) {Text(tr("🔊 Read aloud","🔊 सुनें"))};TextButton(onClick={tts.stop()}) {Text(tr("Stop","रोकें"))}}
                 }
