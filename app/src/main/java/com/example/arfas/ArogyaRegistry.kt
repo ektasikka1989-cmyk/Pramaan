@@ -58,7 +58,16 @@ data class RegistryData(val beneficiaries: List<Beneficiary> = emptyList(), val 
 data class DueItem(val beneficiaryId: String, val name: String, val village: String, val kind: String, val label: String, val due: LocalDate, val windowEnd: LocalDate,
     val done: Boolean, val doneDate: String = "") {
     fun overdue(today: LocalDate) = !done && windowEnd < today
+    /** Register status: done, window passed (overdue), due date passed but window open (due now), or upcoming. */
+    fun status(today: LocalDate): DueStatus = when {
+        done -> DueStatus.DONE
+        windowEnd < today -> DueStatus.OVERDUE
+        due <= today -> DueStatus.DUE_NOW
+        else -> DueStatus.UPCOMING
+    }
 }
+
+enum class DueStatus { DONE, OVERDUE, DUE_NOW, UPCOMING }
 
 private fun d(s: String): LocalDate? = runCatching { if (s.isBlank()) null else LocalDate.parse(s) }.getOrNull()
 
@@ -122,11 +131,11 @@ object ArogyaRegistryLogic {
     }
 
     // ── Monthly lists the ASHA prepares (national incentive list items 4c–4e) ──
-    /** Children whose vaccine contact is due in [month] or is still pending from before. */
+    /** Children whose vaccine contact is due in [month] or is still pending from before (all pending, overdue first). */
     fun immunizationDueList(bens: List<Beneficiary>, month: YearMonth, today: LocalDate = LocalDate.now()): List<DueItem> =
         bens.filter { it.active && it.category == BenCategory.CHILD }.flatMap { b -> ArogyaSchedule.forBeneficiary(b, emptyList(), today).filter { it.kind == "VACCINE" } }
-            .filter { !it.done && !it.due.isAfter(month.atEndOfMonth()) && !it.windowEnd.isBefore(month.atDay(1).minusMonths(6)) }
-            .sortedWith(compareBy({ it.due }, { it.name }))
+            .filter { !it.done && !it.due.isAfter(month.atEndOfMonth()) }
+            .sortedWith(compareBy<DueItem>({ it.status(today) != DueStatus.OVERDUE }, { it.status(today) != DueStatus.DUE_NOW }, { it.due }, { it.name }))
     /** Pregnant women with EDD and next ANC due. */
     fun ancList(bens: List<Beneficiary>, today: LocalDate = LocalDate.now()): List<Pair<Beneficiary, String>> =
         bens.filter { it.active && it.category == BenCategory.PREGNANT && it.deliveryDate.isBlank() && it.lmp.isNotBlank() }.map { b ->
@@ -245,14 +254,170 @@ object ArogyaSchedule {
         return out
     }
 
-    /** Pending items due within [days] from today (overdue up to 60 days past their window), overdue first. */
+    /**
+     * Pending items due within [days] from today, overdue first. Visit items (HBNC/HBYC) drop
+     * off 60 days past their window (a missed newborn visit years ago is not actionable);
+     * VACCINE and ANC items never drop — catch-up vaccination and ANC are always actionable.
+     */
     fun dueList(bens: List<Beneficiary>, visits: List<ArogyaVisit>, today: LocalDate, days: Long = 7): List<DueItem> {
         val byPerson = visits.filter { it.completed }.groupBy { it.personId }
         val horizon = today.plusDays(days)
         return bens.asSequence().filter { it.active }.flatMap { b -> forBeneficiary(b, byPerson[b.id].orEmpty(), today).asSequence() }
-            .filter { !it.done && !it.due.isAfter(horizon) && !it.windowEnd.isBefore(today.minusDays(60)) }
+            .filter { !it.done && !it.due.isAfter(horizon) && (it.kind == "VACCINE" || it.kind == "ANC" || !it.windowEnd.isBefore(today.minusDays(60))) }
             .sortedWith(compareBy<DueItem>({ !it.overdue(today) }, { it.due }, { it.name })).toList()
     }
+}
+
+/** One row of a register table: display cells, a stable key, and the person it opens (if any). */
+data class RegRow(val cells: List<String>, val key: String = "", val beneficiaryId: String = "", val status: String = "")
+data class RegTable(val headers: List<String>, val rows: List<RegRow>)
+
+/**
+ * Every register and list as a table (item 4): due list, immunization due list, ANC list,
+ * eligible couples, village health register, vital events, diary. Pure logic; the UI renders
+ * [RegTable] with the shared ArogyaGrid and converts it to [FormTable] for PDF/share/print.
+ */
+object ArogyaRegisterTables {
+    fun statusText(status: DueStatus, hindi: Boolean): String = when (status) {
+        DueStatus.DONE -> if (hindi) "हो गया" else "Done"
+        DueStatus.OVERDUE -> if (hindi) "समय निकल गया" else "Overdue"
+        DueStatus.DUE_NOW -> if (hindi) "अभी बाकी" else "Due now"
+        DueStatus.UPCOMING -> if (hindi) "आने वाला" else "Due"
+    }
+
+    /** Mother's name: same-household mother delivered on the child's DOB, else the recorded relative. */
+    fun motherOf(child: Beneficiary, bens: List<Beneficiary>): String {
+        if (child.dob.isNotBlank() && child.household.isNotBlank()) {
+            bens.firstOrNull { it.category == BenCategory.MOTHER && it.household == child.household && it.deliveryDate == child.dob }?.let { return it.name }
+        }
+        return child.relativeName
+    }
+
+    fun ageText(b: Beneficiary, today: LocalDate): String {
+        val days = ArogyaRegistryLogic.ageDays(b, today) ?: return ""
+        if (days < 0) return ""
+        if (days < 60) return "${days}d"
+        if (days < 730) return "${days / 30}m"
+        return "${days / 365}y"
+    }
+
+    fun dueTable(items: List<DueItem>, today: LocalDate, hindi: Boolean): RegTable {
+        val h = if (hindi) listOf("नाम", "गाँव", "क्या", "तारीख़", "स्थिति") else listOf("Name", "Village", "What", "Due", "Status")
+        return RegTable(h, items.map { it ->
+            val st = it.status(today)
+            val due = when {
+                st == DueStatus.OVERDUE -> (if (hindi) "अवधि ख़त्म " else "window ended ") + it.windowEnd
+                st == DueStatus.DUE_NOW -> (if (hindi) "अभी (तक " else "now (until ") + it.windowEnd + ")"
+                it.done -> it.doneDate
+                else -> it.due.toString()
+            }
+            RegRow(listOf(it.name, it.village, it.label, due, statusText(st, hindi)),
+                it.beneficiaryId + it.label + it.due, it.beneficiaryId, st.name)
+        })
+    }
+
+    /** Immunization due register: every pending contact (overdue first) + contacts done in [month]. */
+    fun immunizationTable(bens: List<Beneficiary>, month: YearMonth, today: LocalDate, hindi: Boolean): RegTable {
+        val h = if (hindi) listOf("बच्चा", "माँ", "गाँव", "उम्र", "बाकी टीके", "तारीख़", "स्थिति")
+        else listOf("Child", "Mother", "Village", "Age", "Vaccines due", "Due date", "Status")
+        val rows = ArrayList<RegRow>()
+        bens.filter { it.active && it.category == BenCategory.CHILD }.forEach { b ->
+            val items = ArogyaSchedule.forBeneficiary(b, emptyList(), today).filter { it.kind == "VACCINE" }
+            items.forEach { item ->
+                val st = item.status(today)
+                val inMonth = item.done && runCatching { YearMonth.from(LocalDate.parse(item.doneDate)) == month }.getOrDefault(false)
+                if (!item.done && item.due.isAfter(month.atEndOfMonth())) return@forEach
+                if (item.done && !inMonth) return@forEach
+                val contact = ArogyaSchedule.VACCINE_CONTACTS.firstOrNull { item.label.endsWith(it.label) }
+                val pending = contact?.codes
+                    ?.filter { b.mcp.vaccines[it].isNullOrBlank() }
+                    ?.map { ArogyaSchedule.VACCINE_NAMES[it] ?: it }.orEmpty()
+                rows += RegRow(
+                    listOf(b.name, motherOf(b, bens), b.village, ageText(b, today),
+                        if (item.done) "—" else pending.joinToString(", ").ifBlank { item.label.removePrefix("Vaccines — ") },
+                        if (item.done) item.doneDate else item.due.toString(), statusText(st, hindi)),
+                    b.id + item.label, b.id, st.name)
+            }
+        }
+        fun rank(s: String) = when (s) { "OVERDUE" -> 0; "DUE_NOW" -> 1; "UPCOMING" -> 2; else -> 3 }
+        return RegTable(h, rows.sortedWith(compareBy({ rank(it.status) }, { it.cells[5] }, { it.cells[0] })))
+    }
+
+    fun ancTable(bens: List<Beneficiary>, today: LocalDate, hindi: Boolean): RegTable {
+        val h = if (hindi) listOf("महिला", "गाँव", "प्रसव तिथि", "अगली ANC", "स्थिति") else listOf("Woman", "Village", "EDD", "Next ANC", "Status")
+        val rows = bens.filter { it.active && it.category == BenCategory.PREGNANT && it.deliveryDate.isBlank() && it.lmp.isNotBlank() }.map { b ->
+            val next = ArogyaSchedule.forBeneficiary(b, emptyList(), today).firstOrNull { it.kind == "ANC" && !it.done }
+            val st = next?.status(today) ?: DueStatus.DONE
+            RegRow(listOf(b.name, b.village, ArogyaRegistryLogic.edd(b)?.toString().orEmpty(),
+                next?.let { "${it.label} by ${it.windowEnd}" } ?: if (hindi) "चारों हो गईं" else "all 4 recorded",
+                statusText(st, hindi)), b.id, b.id, st.name)
+        }.sortedWith(compareBy({ it.cells[2] }, { it.cells[0] }))
+        return RegTable(h, rows)
+    }
+
+    fun coupleTable(bens: List<Beneficiary>, hindi: Boolean): RegTable {
+        val h = if (hindi) listOf("नाम", "गाँव", "साधन", "स्थिति") else listOf("Name", "Village", "Method", "Status")
+        val rows = ArogyaRegistryLogic.eligibleCouples(bens).map { b ->
+            val st = if (b.familyPlanning.isBlank()) DueStatus.DUE_NOW else DueStatus.DONE
+            RegRow(listOf(b.name, b.village, b.familyPlanning.ifBlank { if (hindi) "दर्ज नहीं" else "not recorded" },
+                if (b.familyPlanning.isBlank()) (if (hindi) "समझाएँ" else "Counsel") else statusText(st, hindi)), b.id, b.id, st.name)
+        }
+        return RegTable(h, rows)
+    }
+
+    fun villageTable(bens: List<Beneficiary>, today: LocalDate, hindi: Boolean): RegTable {
+        val h = if (hindi) listOf("परिवार", "मुखिया", "सदस्य", "गर्भवती", "2 साल से छोटे", "स्थिति")
+        else listOf("Household", "Head", "Members", "Pregnant", "Under 2", "Status")
+        val rows = ArogyaRegistryLogic.byHousehold(bens.filter { it.active }).entries.sortedBy { it.key }.map { (hh, people) ->
+            val head = people.firstOrNull { it.category != BenCategory.CHILD }?.name ?: people.firstOrNull()?.name.orEmpty()
+            val preg = people.count { it.category == BenCategory.PREGNANT && it.deliveryDate.isBlank() }
+            val under2 = people.count { it.category == BenCategory.CHILD && (ArogyaRegistryLogic.ageDays(it, today) ?: 9999) < 730 }
+            val risk = people.any { ArogyaRegistryLogic.isHighRisk(it) }
+            RegRow(listOf(hh, head, people.size.toString(), preg.toString(), under2.toString(),
+                if (risk) (if (hindi) "जोखिम" else "High risk") else "OK"),
+                hh, people.firstOrNull { it.category != BenCategory.CHILD }?.id ?: people.firstOrNull()?.id.orEmpty(),
+                if (risk) "HIGH_RISK" else "OK")
+        }
+        return RegTable(h, rows)
+    }
+
+    fun vitalTable(vitals: List<VitalEvent>, names: Map<String, String>, hindi: Boolean): RegTable {
+        val h = if (hindi) listOf("तारीख़", "घटना", "व्यक्ति", "जगह", "नोट") else listOf("Date", "Event", "Person", "Place", "Note")
+        val rows = vitals.sortedByDescending { it.date }.map { v ->
+            RegRow(listOf(v.date, if (hindi) v.kind.titleHi else v.kind.title, names[v.beneficiaryId].orEmpty(), v.place, v.note),
+                v.id, v.beneficiaryId)
+        }
+        return RegTable(h, rows)
+    }
+
+    fun diaryTable(visits: List<ArogyaVisit>, diary: List<DiaryEntry>, names: Map<String, String>, hindi: Boolean): RegTable {
+        val h = if (hindi) listOf("तारीख़", "काम", "व्यक्ति", "नोट") else listOf("Date", "Activity", "Person", "Note")
+        val auto = visits.filter { it.completed }.map {
+            RegRow(listOf(it.date, (if (hindi) "घर विज़िट (" else "Home visit (") + it.kind.title + ")", names[it.personId] ?: it.name, ""), "v" + it.id, it.personId)
+        }
+        val manual = diary.map {
+            RegRow(listOf(it.date, if (hindi) it.kind.titleHi else it.kind.title, names[it.beneficiaryId].orEmpty(), it.note), it.id, it.beneficiaryId)
+        }
+        return RegTable(h, (auto + manual).sortedByDescending { it.cells[0] })
+    }
+
+    /** Tap-a-header sorting: dates and numbers compare as values, everything else as text. */
+    fun sortRows(rows: List<RegRow>, col: Int, asc: Boolean): List<RegRow> {
+        fun rank(v: String): Pair<Int, Comparable<*>> {
+            runCatching { LocalDate.parse(v) }.getOrNull()?.let { return 0 to it }
+            v.toDoubleOrNull()?.let { return 1 to it }
+            return 2 to v.lowercase()
+        }
+        val sorted = rows.sortedWith(Comparator { a, b ->
+            val x = rank(a.cells.getOrElse(col) { "" }); val y = rank(b.cells.getOrElse(col) { "" })
+            if (x.first != y.first) x.first.compareTo(y.first)
+            else @Suppress("UNCHECKED_CAST") (x.second as Comparable<Any>).compareTo(y.second as Any)
+        })
+        return if (asc) sorted else sorted.reversed()
+    }
+
+    fun toFormTable(title: String, source: String, table: RegTable, note: String = ""): FormTable =
+        FormTable(title, source, table.headers, table.rows.map { it.cells }, note)
 }
 
 object ArogyaRegistryCodec {

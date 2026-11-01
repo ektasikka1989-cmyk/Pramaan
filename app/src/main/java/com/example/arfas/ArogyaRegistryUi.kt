@@ -244,9 +244,9 @@ fun ArogyaRegistryHub(hindi: Boolean, initial: String, visits: List<ArogyaVisit>
                 if (!store.loaded) { LinearProgressIndicator(Modifier.fillMaxWidth()); if (store.error.isNotBlank()) Text(store.error, color = MaterialTheme.colorScheme.error) }
                 Box(Modifier.weight(1f)) {
                     when (tab) {
-                        "due" -> DueTab(hindi, data, visits, today, onVisit = { id -> data.beneficiaries.firstOrNull { it.id == id }?.let(onStartVisit) }) { openPatient = it }
+                        "due" -> DueTab(hindi, data, visits, today, store) { openPatient = it }
                         "patients" -> PatientsTab(hindi, data, visits, today, onOpen = { openPatient = it }, onAdd = { editPatient = Beneficiary() })
-                        "registers" -> RegistersTab(hindi, data, visits, store, today) { c -> save(c) }
+                        "registers" -> RegistersTab(hindi, data, visits, store, today, onOpen = { openPatient = it }) { c -> save(c) }
                         else -> BackupTab(hindi, store, queue)
                     }
                 }
@@ -264,30 +264,19 @@ fun ArogyaRegistryHub(hindi: Boolean, initial: String, visits: List<ArogyaVisit>
 }
 
 @Composable
-private fun DueTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaVisit>, today: LocalDate, onVisit: (String) -> Unit, onOpen: (String) -> Unit) {
+private fun DueTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaVisit>, today: LocalDate, store: ArogyaRegistryStore, onOpen: (String) -> Unit) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     var days by remember { mutableStateOf(7L) }
     val due = remember(data, visits, days) { ArogyaSchedule.dueList(data.beneficiaries, visits, today, days) }
-    Column {
+    val table = remember(due) { ArogyaRegisterTables.dueTable(due, today, hindi) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(0L to tr("Today", "आज"), 7L to tr("This week", "इस हफ़्ते"), 30L to tr("This month", "इस महीने")).forEach { (d, l) -> FilterChip(selected = days == d, onClick = { days = d }, label = { Text(l) }) }
         }
         if (due.isEmpty()) Text(tr("Nothing due. Add patients with dates of birth or LMP to build the schedule.", "कुछ बाकी नहीं। जन्मतिथि या LMP के साथ लोग जोड़ें ताकि सूची बने।"), Modifier.padding(8.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(due, key = { it.beneficiaryId + it.label }) { item ->
-                Card(Modifier.fillMaxWidth().clickable { onOpen(item.beneficiaryId) },
-                    colors = if (item.overdue(today)) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer) else CardDefaults.cardColors()) {
-                    Column(Modifier.padding(10.dp)) {
-                        Text("${item.name} · ${item.village}", fontWeight = FontWeight.Bold)
-                        Text(item.label)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text((if (item.overdue(today)) tr("OVERDUE — window ended ", "समय निकल गया — अवधि ख़त्म ") + item.windowEnd else if (item.due <= today) tr("Due now (until ", "अभी बाकी (") + item.windowEnd + ")" else tr("Due ", "तारीख़ ") + item.due), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                            Button(onClick = { onVisit(item.beneficiaryId) }) { Text(tr("Start visit", "विज़िट शुरू करें")) }
-                        }
-                    }
-                }
-            }
-        }
+        else ArogyaRegisterTable(hindi, tr("Due visits", "बाकी विज़िट"), table, store, statusCol = 4, villageCol = 1, statusFilter = true,
+            onOpenPerson = onOpen, colWidths = listOf(120.dp, 84.dp, 190.dp, 130.dp, 96.dp), maxHeight = 520.dp,
+            note = tr("Tap a row to open the person, then Start visit. Overdue rows come first.", "पंक्ति दबाकर व्यक्ति खोलें, फिर विज़िट शुरू करें। छूटी पंक्तियाँ पहले।"))
     }
 }
 
@@ -569,7 +558,7 @@ private fun EventDialog(hindi: Boolean, onDismiss: () -> Unit, onSave: (VitalKin
 }
 
 @Composable
-private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaVisit>, store: ArogyaRegistryStore, today: LocalDate, save: ((RegistryData) -> RegistryData) -> Boolean) {
+private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaVisit>, store: ArogyaRegistryStore, today: LocalDate, onOpen: (String) -> Unit, save: ((RegistryData) -> RegistryData) -> Boolean) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
     var sub by remember { mutableStateOf("") }
@@ -618,21 +607,23 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 val births = data.vitals.count { it.kind == VitalKind.BIRTH && it.date.startsWith(YearMonth.from(today).toString()) }
                 val deaths = data.vitals.count { it.kind.name.endsWith("DEATH") && it.date.startsWith(YearMonth.from(today).toString()) }
                 Text(tr("This month: ", "इस महीने: ") + tr("births ", "जन्म ") + births + " · " + tr("deaths ", "मृत्यु ") + deaths + tr(" (record in Vital events)", " (घटना में दर्ज करें)"))
+                val vhr = remember(data) { ArogyaRegisterTables.villageTable(data.beneficiaries, today, hindi) }
+                ArogyaRegisterTable(hindi, tr("Village health register", "गाँव स्वास्थ्य रजिस्टर"), vhr, store, statusCol = 5, onOpenPerson = onOpen)
             }
             "lists" -> {
-                val next = YearMonth.from(today).plusMonths(1)
-                val imm = remember(data, next) { ArogyaRegistryLogic.immunizationDueList(data.beneficiaries, next, today) }
-                val anc = remember(data) { ArogyaRegistryLogic.ancList(data.beneficiaries, today) }
-                val ecs = remember(data) { ArogyaRegistryLogic.eligibleCouples(data.beneficiaries) }
-                Text(tr("Due list of children to be immunized — ", "टीकाकरण बाकी बच्चों की सूची — ") + "$next (${imm.size})", fontWeight = FontWeight.Bold)
-                imm.take(60).forEach { Text("${it.name} (${it.village}) — ${it.label.removePrefix("Vaccines — ")} · " + tr("due ", "तारीख़ ") + it.due + if (it.overdue(today)) tr(" · PENDING", " · बाकी") else "", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = { share("Immunization-due-list-$next.csv", "name,village,vaccines,due,pending\n" + imm.joinToString("\n") { "\"${it.name}\",\"${it.village}\",\"${it.label.removePrefix("Vaccines — ")}\",${it.due},${if (it.overdue(today)) "yes" else ""}" }) }) { Text(tr("Share immunization due list", "टीकाकरण सूची भेजें")) }
-                Text(tr("ANC beneficiaries (", "ANC लाभार्थी (") + anc.size + ")", fontWeight = FontWeight.Bold)
-                anc.forEach { (b, info) -> Text("${b.name} (${b.village}) — $info", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = { share("ANC-list-$today.csv", "name,village,status\n" + anc.joinToString("\n") { "\"${it.first.name}\",\"${it.first.village}\",\"${it.second}\"" }) }) { Text(tr("Share ANC list", "ANC सूची भेजें")) }
-                Text(tr("Eligible couples (", "योग्य दंपति (") + ecs.size + ")", fontWeight = FontWeight.Bold)
-                ecs.take(60).forEach { Text("${it.name} (${it.village}) — " + tr("method: ", "साधन: ") + it.familyPlanning.ifBlank { tr("not recorded", "दर्ज नहीं") }, style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = { share("Eligible-couples-$today.csv", "name,village,method\n" + ecs.joinToString("\n") { "\"${it.name}\",\"${it.village}\",\"${it.familyPlanning}\"" }) }) { Text(tr("Share eligible couple list", "दंपति सूची भेजें")) }
+                var immMonth by remember { mutableStateOf(YearMonth.from(today).plusMonths(1)) }
+                val imm = remember(data, immMonth) { ArogyaRegisterTables.immunizationTable(data.beneficiaries, immMonth, today, hindi) }
+                val anc = remember(data) { ArogyaRegisterTables.ancTable(data.beneficiaries, today, hindi) }
+                val ecs = remember(data) { ArogyaRegisterTables.coupleTable(data.beneficiaries, hindi) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { immMonth = immMonth.minusMonths(1) }) { Text("◀") }
+                    Text(tr("Due list of children to be immunized — ", "टीकाकरण बाकी बच्चों की सूची — ") + "$immMonth", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { immMonth = immMonth.plusMonths(1) }) { Text("▶") }
+                }
+                ArogyaRegisterTable(hindi, tr("Immunization due", "टीकाकरण बाकी") + " $immMonth", imm, store, statusCol = 6, villageCol = 2, statusFilter = true, onOpenPerson = onOpen,
+                    colWidths = listOf(120.dp, 110.dp, 84.dp, 56.dp, 150.dp, 100.dp, 96.dp))
+                ArogyaRegisterTable(hindi, tr("ANC beneficiaries", "ANC लाभार्थी"), anc, store, statusCol = 4, villageCol = 1, statusFilter = true, onOpenPerson = onOpen)
+                ArogyaRegisterTable(hindi, tr("Eligible couples", "योग्य दंपति"), ecs, store, statusCol = 3, villageCol = 1, statusFilter = true, onOpenPerson = onOpen)
                 Text(tr("Share these with your ANM at the monthly meeting.", "मासिक बैठक में ANM को ये भेजें।"), style = MaterialTheme.typography.bodySmall)
             }
             "rch" -> {
@@ -646,13 +637,8 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
             "diary" -> {
                 Text(tr("Activity diary — visits are added automatically from completed visits", "कार्य डायरी — पूरी विज़िट अपने आप जुड़ती हैं"), fontWeight = FontWeight.Bold)
                 Button(onClick = { diaryOpen = true }) { Text(tr("+ Add activity (VHND, meeting, escort…)", "+ काम जोड़ें (VHND, बैठक…)")) }
-                val auto = visits.filter { it.completed }.map { Triple(it.date, tr("Home visit (", "घर विज़िट (") + it.kind.title + ")", it.name) }
-                val manual = data.diary.map { Triple(it.date, if (hindi) it.kind.titleHi else it.kind.title, names[it.beneficiaryId].orEmpty() + if (it.note.isNotBlank()) " — ${it.note}" else "") }
-                (auto + manual).sortedByDescending { it.first }.take(200).forEach { (d, k, n) -> Text("$d · $k · $n", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = {
-                    val visitRows = visits.filter { it.completed }.map { DiaryEntry(id = it.id, date = it.date, kind = DiaryKind.HOME_VISIT, beneficiaryId = it.personId, note = it.kind.title) }
-                    share("Activity-diary-$today.csv", ArogyaRegistryLogic.diaryCsv(data.diary + visitRows, names + visits.associate { it.personId to it.name }))
-                }) { Text(tr("Export diary (CSV)", "डायरी भेजें (CSV)")) }
+                val dt = remember(data, visits) { ArogyaRegisterTables.diaryTable(visits, data.diary, names + visits.associate { it.personId to it.name }, hindi) }
+                ArogyaRegisterTable(hindi, tr("Activity diary", "कार्य डायरी"), dt, store, monthCol = 0, onOpenPerson = onOpen)
             }
             "drugs" -> {
                 Text(tr("Drug kit — current stock", "दवा किट — अभी का स्टॉक"), fontWeight = FontWeight.Bold)
@@ -669,8 +655,8 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
             "vitals" -> {
                 Text(tr("Vital events & surveillance", "घटनाएँ और निगरानी"), fontWeight = FontWeight.Bold)
                 Button(onClick = { eventOpen = true }) { Text(tr("+ Record event", "+ घटना दर्ज करें")) }
-                data.vitals.sortedByDescending { it.date }.take(200).forEach { v -> Text("${v.date} · " + (if (hindi) v.kind.titleHi else v.kind.title) + " · ${names[v.beneficiaryId].orEmpty()} ${v.place} ${v.note}", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = { share("Vital-events-$today.csv", ArogyaRegistryLogic.vitalsCsv(data.vitals, names)) }) { Text(tr("Export (CSV)", "भेजें (CSV)")) }
+                val vt = remember(data) { ArogyaRegisterTables.vitalTable(data.vitals, names, hindi) }
+                ArogyaRegisterTable(hindi, tr("Vital events & surveillance", "घटनाएँ और निगरानी"), vt, store, monthCol = 0, onOpenPerson = onOpen)
             }
             "report" -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
