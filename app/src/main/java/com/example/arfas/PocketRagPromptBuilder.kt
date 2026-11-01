@@ -134,7 +134,7 @@ object PocketRagPromptBuilder {
             // answer, not one copied sentence. The app shows the key quote above the answer already.
             // R2: the line matches the question type (else the legacy one-size line).
             val complete = if (ArogyaFlags.r2LengthPrompt) {
-                runCatching { ArogyaQuestionType.lengthLine(ArogyaQuestionType.kindOf(packet.query)) }
+                runCatching { ArogyaQuestionType.lengthLine(ArogyaQuestionType.kindOf(packet.query), packet.query) }
                     .getOrDefault(COMPLETE_ANSWER)
             } else COMPLETE_ANSWER
             append("\n").append(complete)

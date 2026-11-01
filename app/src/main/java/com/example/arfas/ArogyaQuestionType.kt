@@ -26,19 +26,36 @@ object ArogyaQuestionType {
     )
     private val LIST = listOf(
         " which ", " kaun ", "कौन", "methods", "vidhiyan", "विधियाँ",
-        "type of", "types of", "list", "suchi", "सूची", "kitne prakar", "kaun kaun",
+        "type of", "types of", "list", "suchi", "सूची", "kaun kaun",
         "कौन कौन", "names", "naam bata", "नाम बत", "symptoms", "lakshan", "लक्षण",
         "signs of", "causes", "karan", "कारण", "schedule", "anusoochi", "अनुसूची",
         "kab kab", "कब कब", "visits", "khorak", "phases", "stages", "charan",
         "चरण बत", "kinds of", "kismein"
     )
+    /** "What are the danger signs" asks FOR the signs: a complete list, not action-first. */
+    private val DANGER_SIGNS = listOf(
+        "danger sign", "danger signs", "खतरे के लक्षण", "खतरे के संकेत",
+        "khatre ke lakshan", "khatre ke sanket"
+    )
+    /** "How many/much" asks for one number, never steps ("how to" still means steps). */
+    private val HOW_MANY = listOf(
+        "how many", "how much", "kitna", "kitni", "kitne", "कितना", "कितनी", "कितने"
+    )
 
     fun kindOf(query: String): Kind {
         val q = " ${query.lowercase(java.util.Locale.ROOT)} "
+        // Review order. Three constraints force this exact sequence (dose > list >
+        // procedure > dose would be a cycle): "which methods" is a LIST even though
+        // "methods" contains a procedure word, while "ORS kaise banaye" is steps even
+        // though ORS is a dose word. So list-shaped wins over procedure words, and
+        // procedure verbs win over the generic dose test.
+        if (DANGER_SIGNS.any { it in q }) return Kind.LIST
         if (URGENT.any { it in q }) return Kind.URGENT
-        // The list check comes first: "which methods" asks for items, "use this method" for steps.
+        if (HOW_MANY.any { it in q }) return Kind.FACT
+        if (" which " in q && " for " in q && ArogyaDoseCheck.askedGroup(query) != ArogyaDoseCheck.Group.UNKNOWN) return Kind.FACT
         if (LIST.any { it in q }) return Kind.LIST
         if (PROCEDURE.any { it in q }) return Kind.PROCEDURE
+        if (ArogyaDoseCheck.isDoseQuestion(query)) return Kind.FACT
         return Kind.FACT
     }
 
@@ -54,15 +71,20 @@ object ArogyaQuestionType {
     /**
      * The last line the model reads (replaces COMPLETE_ANSWER when r2LengthPrompt is on).
      * Matches the question type so it no longer contradicts the LENGTH tiers.
+     * [query] adds the dose rule: a dose asked for a named age group must not list others (Q11).
      */
-    fun lengthLine(kind: Kind): String {
+    fun lengthLine(kind: Kind, query: String = ""): String {
         val head = "Answer completely in your own words: cover every point the material gives on this question "
+        val doseForGroup = query.isNotBlank() && ArogyaDoseCheck.isDoseQuestion(query) &&
+            ArogyaDoseCheck.askedGroup(query) != ArogyaDoseCheck.Group.UNKNOWN
         val core = when (kind) {
             Kind.PROCEDURE -> "(this asks HOW to do something: give every numbered step in order, each step " +
                 "as its own numbered line; do not merge steps, do not add steps, do not stop early). "
             Kind.LIST -> "(this asks for ITEMS: give one line per item for every item the material gives; " +
                 "do not stop after the first items). "
-            Kind.FACT -> "(for a \"what is\" question: what it is, its role or purpose, and its key details; " +
+            Kind.FACT -> if (doseForGroup) "(this asks a DOSE for one age group: give only the dose for the asked age group; " +
+                "do not list other age groups. Keep it short: the dose, how to give it, and for how long). "
+            else "(for a \"what is\" question: what it is, its role or purpose, and its key details; " +
                 "for a comparison or a \"difference between\" question: first what each one is, then how they " +
                 "differ). Keep it short: three to five sentences with the conditions and limits the material gives. "
             Kind.URGENT -> "(this is URGENT: start with the most useful action first, then the details). "

@@ -7,8 +7,10 @@ fun main() {
     check("t-procedure-hi", ArogyaQuestionType.kindOf("घर पर ORS कैसे बनाएं?") == ArogyaQuestionType.Kind.PROCEDURE)
     check("t-list", ArogyaQuestionType.kindOf("Which spacing contraceptive methods are available?") == ArogyaQuestionType.Kind.LIST)
     check("t-fact", ArogyaQuestionType.kindOf("What is the zinc dose for a baby?") == ArogyaQuestionType.Kind.FACT)
-    check("t-urgent", ArogyaQuestionType.kindOf("What are the danger signs in a newborn that need immediate referral?") == ArogyaQuestionType.Kind.URGENT)
-    check("t-urgent-hi", ArogyaQuestionType.kindOf("नवजात शिशु में खतरे के लक्षण क्या हैं?") == ArogyaQuestionType.Kind.URGENT)
+    // Review: "what are the danger signs" asks FOR the signs (list every item), even with a referral phrase.
+    check("t-urgent", ArogyaQuestionType.kindOf("What are the danger signs in a newborn that need immediate referral?") == ArogyaQuestionType.Kind.LIST)
+    check("t-urgent-hi", ArogyaQuestionType.kindOf("नवजात शिशु में खतरे के लक्षण क्या हैं?") == ArogyaQuestionType.Kind.LIST)
+    check("t-urgent-kept", ArogyaQuestionType.kindOf("Baby is bleeding heavily, what should I do?") == ArogyaQuestionType.Kind.URGENT)
     check("t-hinglish", ArogyaQuestionType.kindOf("Baby ko diarrhoea ho to ORS kaise dena chahiye?") == ArogyaQuestionType.Kind.PROCEDURE)
     val proc = ArogyaQuestionType.lengthLine(ArogyaQuestionType.Kind.PROCEDURE)
     check("t-line-proc", "numbered step" in proc && "three to six" !in proc)

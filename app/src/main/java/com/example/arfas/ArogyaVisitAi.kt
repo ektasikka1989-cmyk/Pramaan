@@ -31,7 +31,6 @@ data class ArogyaAiRequest(val task:ArogyaAiTask,val visit:ArogyaVisit,val quest
     val afterSafetyPrompt:Boolean=false,
     /** Live progress: stage and the answer text as it is being written (a draft until checked). */
     val onProgress:((ArogyaProgress)->Unit)? = null)
-data class ArogyaProgress(val stage:String,val draft:String="")
 data class ArogyaExtraction(val fields:List<ExtractedField>,val modelLabel:String,val metaModel:Boolean,val ms:Long,val note:String)
 data class ArogyaAiResult(val text:String,val provider:String,val elapsedMs:Long,val sources:List<ArogyaSource> = emptyList(),val canCopyToNotes:Boolean=false,val online:Boolean=false,val checkedAt:String="",val sourceOnly:Boolean=false,val captureItems:List<ArogyaCaptureItem> = emptyList(),val timingsMs:Map<String,Long> = emptyMap(),val safetyPrompt:Boolean=false,
     /** "The guide says": Pramaan's own chosen source sentence for this answer, with its source label. */
@@ -178,7 +177,10 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         var answered = false
         suspend fun doChat(): AndroBaselineRuntime.TurnResult = withTimeout(ASK_TIMEOUT_MS) {
             runtime.chat(if (online) ArogyaOnlinePolicy.scrub(asked, request.visit) else asked, forceExternalInformation = online, turnAttachments = turnFiles,
-                onLocalDelta = { d -> synchronized(draft) { draft.append(d) }; request.onProgress?.invoke(ArogyaProgress("write", synchronized(draft) { draft.toString() })) })
+                onLocalDelta = { d -> synchronized(draft) { draft.append(d) }; request.onProgress?.invoke(ArogyaProgress("write", synchronized(draft) { draft.toString() })) },
+                // Review fix: when the checker rejects a streamed draft (cloud or local), clear it
+                // so the next answer never appends to rejected text; the card shows "checking…".
+                onLocalAbort = { synchronized(draft) { draft.setLength(0) }; request.onProgress?.invoke(ArogyaProgress("checking")) })
         }
         val policyStore = appContext?.let { AnswerPolicyStore(it.applicationContext) }
         val turn = try {

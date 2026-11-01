@@ -58,8 +58,10 @@ class V2VisitFlowTest {
                 "diary=${reg.diary.count { it.beneficiaryId == ritu.id && it.date == today.toString() }}")
             val rituVisits = queue.state.value.visits.filter { it.personId == ritu.id && it.date == today.toString() }
             add("ritu", "one visit record", rituVisits.size == 1, "visits=${rituVisits.size}")
-            add("ritu", "next due = day 21", rituVisits.firstOrNull()?.nextDate == today.plusDays(10).toString(),
-                "next=${rituVisits.firstOrNull()?.nextDate} want=${today.plusDays(10)}")
+            // Day-1 rule: birth = Day 1, so the Day 21 visit is 20 days after the sample DOB (at least tomorrow).
+            val wantNext = LocalDate.parse(ritu.dob).plusDays(20).let { if (it.isBefore(today.plusDays(1))) today.plusDays(1) else it }
+            add("ritu", "next due = day 21", rituVisits.firstOrNull()?.nextDate == wantNext.toString(),
+                "next=${rituVisits.firstOrNull()?.nextDate} want=$wantNext dob=${ritu.dob}")
             val diskVisits = runCatching { ArogyaVisitRepository(c).readVisits() }.getOrDefault(emptyList())
             add("ritu", "reopened from disk", diskVisits.any { v -> rituVisits.any { it.id == v.id } }, "disk=${diskVisits.size}")
             val pdf = runCatching { store.renderFormPdf(ArogyaOfficialForms.table(spec, ritu, reg.forms)) }.getOrNull()

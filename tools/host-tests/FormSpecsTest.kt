@@ -85,7 +85,8 @@ fun main() {
     val sample = ArogyaSampleVillage.build(today).registry
     check("demo history exists", sample.forms.isNotEmpty())
     check("demo history not future", sample.forms.all { !LocalDate.parse(it.date).isAfter(today) })
-    check("demo 20 patients filled", sample.forms.map { it.beneficiaryId }.toSet().size == 20)
+    // Review: all 6 pregnant women with ANC history are seeded now (was take(5)), so 21 people have forms.
+    check("demo 21 patients filled", sample.forms.map { it.beneficiaryId }.toSet().size == 21)
     check("demo all 5 form types", sample.forms.map { it.formId }.toSet() == setOf("annex9", "hbyc", "mcp_anc", "sick", "fp"))
     check("demo stock never negative", ArogyaRegistryLogic.stockBalance(sample.stock).values.all { it >= 0 })
     check("demo ANC card matches form", sample.beneficiaries.filter { b -> sample.forms.any { it.beneficiaryId == b.id && it.formId == "mcp_anc" } }.all { b ->
@@ -96,4 +97,5 @@ fun main() {
     val mom2 = sample.beneficiaries.first { it.category == BenCategory.MOTHER && it.name.startsWith("Asha") }
     check("mother visited on baby's form", ArogyaOfficialForms.subjectFor(mom2, sample.beneficiaries).name.startsWith("Baby of Asha"))
     println("FormSpecs: ${n - fails}/$n passed")
+    if (fails > 0) kotlin.system.exitProcess(1)
 }

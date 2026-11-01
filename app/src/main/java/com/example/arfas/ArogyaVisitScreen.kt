@@ -112,6 +112,7 @@ fun ArogyaVisitScreen(
     var qFiles by remember { mutableStateOf<List<String>>(emptyList()) }
     var qFileBusy by remember { mutableStateOf(false) }
     var aiDraft by remember { mutableStateOf("") }
+    var aiChecking by remember { mutableStateOf(false) }
     var aiStartedAt by remember { mutableStateOf(0L) }
     var lastDeltaAt by remember { mutableStateOf(0L) }
     var nowMs by remember { mutableStateOf(0L) }
@@ -714,11 +715,13 @@ fun ArogyaVisitScreen(
                     val snapshot=gv
                     val askedQuestion=aiQuestion.ifBlank { tr("About the attached file","अटैच की गई फ़ाइल के बारे में") }+(if(qFiles.isNotEmpty()) "  [📎 ${qFiles.joinToString(", ")}]" else "")
                     aiOnline=forceOnline
-                    aiBusy=true;aiError="";aiDraft="";familyText="";aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L
+                    aiBusy=true;aiError="";aiDraft="";aiChecking=false;familyText="";aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L
                     aiJob=scope.launch {
                         try {
                             val result=onRunAi(ArogyaAiRequest(aiTask,snapshot,aiQuestion,hindi,aiTopic,aiPrevious,forceOnline,afterSafetyPrompt=afterSafety,
-                                onProgress={ p -> if(p.draft.isNotBlank()) { aiDraft=p.draft; lastDeltaAt=System.currentTimeMillis() } }))
+                                onProgress={ p -> val u=ArogyaDraftUiReduce.reduce(ArogyaDraftUi(aiDraft,aiChecking),p); aiDraft=u.text; aiChecking=u.checking
+                                    if(u.text.isNotBlank()) lastDeltaAt=System.currentTimeMillis() }))
+                            aiChecking=false
                             qFiles=ai?.attachedNames().orEmpty()
                             aiResult=result;aiCopy=result.text;aiCapture=result.captureItems;showPassages=false
                             // Every guide question is recorded with the gv: question, answer, the guide's sentence and the passages used.
@@ -745,6 +748,7 @@ fun ArogyaVisitScreen(
                     val secs=((nowMs-aiStartedAt).coerceAtLeast(0))/1000
                     val stage=when {
                         aiOnline -> tr("Checking online…","ऑनलाइन जाँच हो रही है…")
+                        aiChecking -> tr("Checking against the guide…","गाइड से मिलाया जा रहा है…")
                         aiTask!=ArogyaAiTask.EXPLAIN -> tr("Organising your notes on this phone…","फ़ोन पर नोट्स व्यवस्थित हो रहे हैं…")
                         aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500 -> tr("Step 3 of 3 · Checking every statement against the guide…","चरण 3/3 · हर बात गाइड से मिलाई जा रही है…")
                         aiDraft.isNotBlank() || secs>=20 -> tr("Step 2 of 3 · Writing the answer…","चरण 2/3 · उत्तर लिखा जा रहा है…")

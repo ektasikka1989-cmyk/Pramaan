@@ -8,6 +8,26 @@ enum class ArogyaKind(val title: String) { NEWBORN("Mother & newborn"), CHILD("Y
 enum class ArogyaAnswer { DONE, CONCERN, UNKNOWN }
 enum class ArogyaReferral { NONE, NEEDED, CONTACTED, ARRANGED, SEEN }
 
+/** Live answer progress: the stage and the answer text as it is being written (a draft until checked). */
+data class ArogyaProgress(val stage: String, val draft: String = "")
+
+/** What the answer card shows while streaming: the draft text, and whether a rejected draft was just cleared. */
+data class ArogyaDraftUi(val text: String = "", val checking: Boolean = false)
+
+/**
+ * Review fix (stream abort): folds progress updates into card state. Pure, host-tested.
+ * A "checking" update (rejected draft cleared) empties the card so the next answer
+ * never appends to rejected text; other blank updates are ignored; deltas accumulate
+ * in the engine's own buffer and arrive here as the full draft so far.
+ */
+object ArogyaDraftUiReduce {
+    fun reduce(s: ArogyaDraftUi, p: ArogyaProgress): ArogyaDraftUi = when {
+        p.stage == "checking" -> ArogyaDraftUi("", true)
+        p.draft.isNotBlank() -> ArogyaDraftUi(p.draft, false)
+        else -> s
+    }
+}
+
 /** Batch 6 (U7): referrals the ASHA has not followed up yet — recorded NEEDED, never contacted. Pure, host-tested. */
 object ArogyaReferralFollowUp {
     fun pending(visits: List<ArogyaVisit>, today: LocalDate, days: Long = 7): List<ArogyaVisit> =

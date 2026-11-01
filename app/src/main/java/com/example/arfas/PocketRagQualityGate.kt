@@ -219,6 +219,33 @@ class PocketRagQualityGate {
      * main script are checked: an answer translated from the evidence (Hindi from English passages)
      * cannot be matched word for word and is not judged here. Null when nothing can be checked.
      */
+    /**
+     * R3-lite (behind ArogyaFlags.r3Salvage): drop only the unsupported statements and
+     * keep the rest when at least 2 supported statements remain; else null (the caller
+     * falls back to copied key points). Support is judged exactly like [evidenceSupport].
+     */
+    fun salvageUnsupportedStatements(answer: String, evidence: String): String? {
+        val evidenceScript = KbReplyText.dominantScript(evidence).takeIf { it != KbReplyText.Script.NONE } ?: return null
+        val evidenceTerms = KnowledgeLexicalText.tokens(evidence.lowercase(), dropStopWords = true, maxTokens = Int.MAX_VALUE).toHashSet()
+        if (evidenceTerms.isEmpty()) return null
+        val evidenceStems = evidenceTerms.filter { it.length >= STEM_CHARS }.mapTo(HashSet()) { it.take(STEM_CHARS) }
+        fun supported(statement: String): Boolean? {
+            if (KbReplyText.dominantScript(statement) != evidenceScript) return null
+            val terms = KnowledgeLexicalText.tokens(statement.lowercase().replace(Regex("\\[[\\d,\\s]+]"), " "), dropStopWords = true)
+                .filter { it.length >= 3 && !it.all(Char::isDigit) }
+                .distinct()
+            if (terms.size < MIN_STATEMENT_TERMS) return null
+            val found = terms.count { it in evidenceTerms || (it.length >= STEM_CHARS && it.take(STEM_CHARS) in evidenceStems) }
+            return found.toDouble() / terms.size >= MIN_STATEMENT_SUPPORT
+        }
+        val pieces = answer.split(KbReplyText.SENTENCE_SPLIT).map { it.trim() }.filter { it.isNotBlank() }
+        if (pieces.size <= 1) return null
+        val kept = pieces.filter { supported(it) != false }
+        if (kept.size == pieces.size) return answer
+        if (kept.count { supported(it) == true } < 2) return null
+        return kept.joinToString(" ").trim().ifBlank { null }
+    }
+
     fun evidenceSupport(answer: String, evidence: String): Pair<Int, Int>? {
         val evidenceScript = KbReplyText.dominantScript(evidence).takeIf { it != KbReplyText.Script.NONE } ?: return null
         val evidenceTerms = KnowledgeLexicalText.tokens(evidence.lowercase(), dropStopWords = true, maxTokens = Int.MAX_VALUE).toHashSet()

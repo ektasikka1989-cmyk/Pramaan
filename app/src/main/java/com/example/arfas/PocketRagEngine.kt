@@ -3,6 +3,10 @@ package com.example.arfas
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -64,8 +68,12 @@ class PocketRagEngine(
          * ~90 characters a second a ceiling-length answer now takes ~15 s.
          */
         const val MAX_ANSWER_TOKENS_PER_PART = 400
-        /** R12: a cloud answer slower than this falls back to the phone (D7's 300 s stays the outer net). */
-        const val CLOUD_TIMEOUT_MS = 120_000L
+        /**
+         * Review: a cloud answer gets 20 s to first words and 60 s total, then falls
+         * back to the phone (D7's 300 s stays the outer net). The log names the limit.
+         */
+        const val CLOUD_FIRST_TOKEN_MS = 20_000L
+        const val CLOUD_TOTAL_MS = 60_000L
         /** Length of an extractive (verbatim key facts) answer. */
         const val EXTRACTIVE_CHARS = 700
 
@@ -124,25 +132,48 @@ class PocketRagEngine(
             if (canUseCloud()) {
                 val reason = if (cloudMode == CloudMode.VERIFY) "check_online" else "cloud_first"
                 val tCloud = System.currentTimeMillis()
+                // The resolver is fresh per turn, so didStream starts false: it marks first words.
+                val streamFlag = cloud as? PocketRagCloudResolver
+                var limitFired: String? = null
                 val cloudAnswer: String? = try {
-                    withTimeout(CLOUD_TIMEOUT_MS) {
-                        try {
-                            cloud.generate(cpacket, memory, localDraftToVerify, reason, maxCloudOutput)?.trim()
-                        } catch (ce: CancellationException) {
-                            throw ce
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "POCKET_RAG_CLOUD_EXCEPTION mode=$cloudMode ${t.javaClass.simpleName}:${t.message}")
-                            null
+                    withTimeout(CLOUD_TOTAL_MS) {
+                        coroutineScope {
+                            val job = async {
+                                try {
+                                    cloud.generate(cpacket, memory, localDraftToVerify, reason, maxCloudOutput)?.trim()
+                                } catch (ce: CancellationException) {
+                                    throw ce
+                                } catch (t: Throwable) {
+                                    Log.w(TAG, "POCKET_RAG_CLOUD_EXCEPTION mode=$cloudMode ${t.javaClass.simpleName}:${t.message}")
+                                    null
+                                }
+                            }
+                            // First-token deadline: streamed words or a finished call within 20 s,
+                            // else cancel and fall back to the phone. (With streaming off, didStream
+                            // stays false and a finished call counts as first tokens.)
+                            val firstOk = withTimeoutOrNull(CLOUD_FIRST_TOKEN_MS) {
+                                while (streamFlag != null && !streamFlag.didStream && job.isActive) delay(50)
+                                true
+                            } != null
+                            if (!firstOk) {
+                                limitFired = "first_token"
+                                withTimeoutOrNull(5_000) { job.cancelAndJoin() }
+                                null
+                            } else job.await()
                         }
                     }
                 } catch (ce: CancellationException) {
                     // Our own deadline falls back to the phone; an outer deadline or a real
                     // cancellation propagates (a real cancel never falls back).
-                    if (ce is TimeoutCancellationException && System.currentTimeMillis() - tCloud >= CLOUD_TIMEOUT_MS) {
-                        Log.w(TAG, "POCKET_RAG_CLOUD_TIMEOUT mode=$cloudMode ms=$CLOUD_TIMEOUT_MS fallback=local")
-                        if ((cloud as? PocketRagCloudResolver)?.didStream == true) runCatching { onDraftRejected?.invoke() }
+                    if (ce is TimeoutCancellationException && System.currentTimeMillis() - tCloud >= CLOUD_TOTAL_MS) {
+                        limitFired = "total"
+                        if (streamFlag?.didStream == true) runCatching { onDraftRejected?.invoke() }
                         null
                     } else throw ce
+                }
+                if (limitFired != null) {
+                    Log.w(TAG, "POCKET_RAG_CLOUD_TIMEOUT mode=$cloudMode limit=$limitFired ms=${if (limitFired == "first_token") CLOUD_FIRST_TOKEN_MS else CLOUD_TOTAL_MS} fallback=local")
+                    if (limitFired == "first_token" && streamFlag?.didStream == true) runCatching { onDraftRejected?.invoke() }
                 }
                 if (cloudMode == CloudMode.VERIFY && cloudAnswer?.contains(NOT_IN_EVIDENCE) == true) {
                     // The KB evidence does not answer it: the caller runs a live web search (labelled).
@@ -308,6 +339,20 @@ class PocketRagEngine(
             }
             if (!cloudAnswer.isNullOrBlank()) {
                 Log.w(TAG, "POCKET_RAG_CLOUD_REJECT reason=${cloudDecision.reason}")
+            }
+        }
+
+        // R3-lite: an answer rejected only for weak evidence support keeps its supported
+        // sentences (at least 2 must remain) instead of falling back to copied key points.
+        if (ArogyaFlags.r3Salvage && decision.reason.startsWith("low_evidence_support") && bestLocalDraft.isNotBlank()) {
+            val salvaged = qualityGate.salvageUnsupportedStatements(bestLocalDraft, packet.evidenceText)
+            if (!salvaged.isNullOrBlank() && salvaged != bestLocalDraft) {
+                val salvageDecision = evalGate(packet.query, salvaged, packet, "statement_salvage")
+                if (salvageDecision.acceptLocal) {
+                    Log.i(TAG, "POCKET_RAG_STATEMENT_SALVAGE_ACCEPT removedUnsupported=true")
+                    return acceptLocal(key, packet, salvaged, "local_recovery:statement_salvage", cloudAttempted = false)
+                }
+                Log.w(TAG, "POCKET_RAG_STATEMENT_SALVAGE_REJECT reason=${salvageDecision.reason}")
             }
         }
 

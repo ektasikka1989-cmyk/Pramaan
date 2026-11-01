@@ -128,7 +128,10 @@ object ArogyaOfficialForms {
     private fun nextFree(spec: FormSpec, b: Beneficiary, entries: List<FormEntry>, today: LocalDate, alsoUsed: Set<Int> = emptySet()): Int {
         val mine = entries.filter { it.beneficiaryId == b.id && it.formId == spec.id }
         mine.firstOrNull { it.date == today.toString() }?.let { return it.column }
-        val used = mine.map { it.column }.toSet() + alsoUsed
+        // Review fix: both form entries and the MCP ANC card count as used columns
+        // (ANC key k occupies column k-1; today's card entry means today's work continues).
+        val ancUsed = if (spec.id == "mcp_anc") b.mcp.anc.filterValues { it != today.toString() }.keys.map { it - 1 }.toSet() else emptySet()
+        val used = mine.map { it.column }.toSet() + alsoUsed + ancUsed
         return spec.columns.indices.firstOrNull { it !in used } ?: spec.columns.lastIndex
     }
 
@@ -155,7 +158,7 @@ object ArogyaOfficialForms {
             if (days in 1..60) return ANNEX9 to scheduled(ANNEX9, b, entries, today, ANNEX9_DAYS.indexOfLast { it <= days }.coerceAtLeast(0))
         }
         if (b.category == BenCategory.PREGNANT && b.deliveryDate.isBlank())
-            return MCP_ANC to nextFree(MCP_ANC, b, entries, today, b.mcp.anc.filterValues { it != today.toString() }.keys.map { it - 1 }.toSet())
+            return MCP_ANC to nextFree(MCP_ANC, b, entries, today)
         return FP to nextFree(FP, b, entries, today)
     }
 
@@ -313,6 +316,20 @@ object ArogyaOfficialForms {
     private val STOCK = listOf("ors" to "ORS", "zinc" to "Zinc tablets", "ifa" to "IFA tablets (adult)", "ifa_syrup" to "IFA syrup (child)",
         "condoms" to "Condoms", "ocp" to "Oral contraceptive pills", "napkins" to "Sanitary napkins")
 
+    /**
+     * Review fix: every visit stock line carries its form + column key, so re-saving
+     * replaces only that column's lines. Column labels alone collide across forms
+     * ("Visit 1" exists in both sick and fp) and silently break idempotency.
+     */
+    fun stockNote(spec: FormSpec, column: Int): String =
+        "Given at home visit (${spec.columns.getOrElse(column) { "" }}) [${spec.id}#$column]"
+
+    private val STOCK_KEY = Regex("\\[([A-Za-z0-9_]+)#(\\d+)\\]\\s*$")
+
+    /** The (form id, column) key of a visit stock line, or null for pre-key lines. */
+    fun stockKey(note: String): Pair<String, Int>? =
+        STOCK_KEY.find(note)?.let { it.groupValues[1] to it.groupValues[2].toInt() }
+
     /** Save one visit column: the form entry (replacing the same column), the MCP card, the drug kit and the diary — together. */
     fun apply(r: RegistryData, b: Beneficiary, spec: FormSpec, column: Int, values: Map<String, String>, sources: Map<String, String>,
               vaccinesGiven: Set<String>, today: LocalDate = LocalDate.now()): RegistryData {
@@ -320,9 +337,18 @@ object ArogyaOfficialForms {
         val next = nextDue(spec, b, column, today)?.toString().orEmpty()
         val entry = FormEntry(beneficiaryId = b.id, formId = spec.id, column = column, date = d, values = values.filterValues { it.isNotBlank() } + ("_next" to next), sources = sources)
         val forms = r.forms.filterNot { it.beneficiaryId == b.id && it.formId == spec.id && it.column == column } + entry
-        val stock = STOCK.mapNotNull { (k, item) -> values[k]?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }?.let { StockTxn(date = d, item = item, qty = -it, beneficiaryId = b.id, note = "Given at home visit (${spec.columns.getOrElse(column) { "" }})") } }
-        // Re-saving a column replaces its stock lines instead of appending them again.
-        val keptStock = r.stock.filterNot { old -> stock.any { it.beneficiaryId == old.beneficiaryId && it.item == old.item && it.note == old.note } }
+        val stock = STOCK.mapNotNull { (k, item) -> values[k]?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }?.let { StockTxn(date = d, item = item, qty = -it, beneficiaryId = b.id, note = stockNote(spec, column)) } }
+        // Re-saving a column replaces only that column's stock lines (keyed by form + column),
+        // and clears them when the re-save drops the item — the card and the kit stay consistent.
+        // Pre-key lines migrate on re-save: same label + same item is replaced, never doubled.
+        val legacyNote = "Given at home visit (${spec.columns.getOrElse(column) { "" }})"
+        val newItems = stock.map { it.item }.toSet()
+        val keptStock = r.stock.filterNot { old ->
+            if (old.beneficiaryId != b.id) return@filterNot false
+            val k = stockKey(old.note)
+            if (k != null) k.first == spec.id && k.second == column
+            else old.note == legacyNote && old.item in newItems
+        }
         val bens = r.beneficiaries.map { x ->
             if (x.id != b.id) x else {
                 var m = x.mcp
@@ -375,10 +401,10 @@ object ArogyaOfficialForms {
     }
 
     /**
-     * Sample village only: 20 people get earlier visits filled through the same save path the app uses
+     * Sample village only: 21 people get earlier visits filled through the same save path the app uses
      * (form + MCP card + drug kit + diary + visit list), so every register can be checked against the forms.
      * 5 newborns (Annexure 9, from their recorded HBNC visits — missed days stay blank), 8 young children (HBYC),
-     * 5 pregnant women (ANC from their MCP card), 1 sick child, 1 eligible couple.
+     * 6 pregnant women (ANC from their MCP card), 1 sick child, 1 eligible couple.
      */
     fun seedDemo(r0: RegistryData, visits0: List<ArogyaVisit>, today: LocalDate): Pair<RegistryData, List<ArogyaVisit>> {
         var r = r0; var visits = visits0
@@ -412,7 +438,8 @@ object ArogyaOfficialForms {
                 save(b, HBYC, c, dob.plusMonths(HBYC_MONTHS[c]).plusDays(2), v.filterValues { it.isNotBlank() }) }
         }
         // Pregnant women: their MCP card ANC entries become the form's ANC columns.
-        r0.beneficiaries.filter { it.category == BenCategory.PREGNANT && it.mcp.anc.isNotEmpty() }.take(5).forEach { b0 ->
+        // All of them: a skipped woman would keep ifaTablets with no columns or stock lines.
+        r0.beneficiaries.filter { it.category == BenCategory.PREGNANT && it.mcp.anc.isNotEmpty() }.forEach { b0 ->
             val old = b0.mcp
             r = r.copy(beneficiaries = r.beneficiaries.map { if (it.id == b0.id) it.copy(mcp = it.mcp.copy(anc = emptyMap(), ancDetails = emptyMap(), tdDates = emptyList(), ifaTablets = 0)) else it })
             old.anc.toSortedMap().forEach { (k, d) ->
