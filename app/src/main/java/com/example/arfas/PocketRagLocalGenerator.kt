@@ -24,6 +24,14 @@ class PocketRagLocalGenerator(
         }
         val prompt = PocketRagPromptBuilder.buildParts(packet, memory, recoveryMode)
         var completed: BaselineGenerationResult? = null
+        val t0 = System.currentTimeMillis()
+        var firstTokenMs = -1L
+        val timedDelta = onDelta?.let { cb ->
+            { piece: String ->
+                if (firstTokenMs < 0 && piece.isNotBlank()) firstTokenMs = System.currentTimeMillis() - t0
+                cb(piece)
+            }
+        }
         lm.inferTextGrounded(
             evidence = packet.modelEvidenceText,
             userQueryOnly = prompt.userMessage,
@@ -33,12 +41,13 @@ class PocketRagLocalGenerator(
             knowledgePackGrounding = true,
             maxOutputTokenOverride = maxOutputTokens.coerceAtLeast(256),
             systemPromptAddon = prompt.systemAddon,
-            onToken = onDelta,
+            onToken = timedDelta,
             onComplete = { completed = it }
         ).collect { }
         val result = completed ?: return null
         val clean = KbReplyText.normalizeCitations(FixSightOutputSanitizer.sanitize(result.text).trim())
         Log.i(TAG, "POCKET_RAG_LOCAL_END completed=${result.completed} raw=${result.text.length} clean=${clean.length} stop=${result.stopReason} error=${result.error}")
+        Log.i(TAG, "POCKET_RAG_LOCAL_GEN_MS total=${System.currentTimeMillis() - t0} firstToken=$firstTokenMs chars=${clean.length} recovery=$recoveryMode")
         // The decoder's loop guard stopped a repeating generation. Its text is broken, not a
         // shorter answer: it is never shown; the engine retries once and otherwise fails safely.
         if (result.stopReason.contains("loop_guard")) throw PocketRagDegenerateOutput("decoder_loop_guard")

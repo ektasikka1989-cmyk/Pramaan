@@ -42,6 +42,31 @@ class GenericKbPhase14Engine<T>(
          * start receiving unrelated rule-book pages. No effect when the pack declares no precedence.
          */
         const val PRECEDENCE_STEP_LOGITS = 2.0f
+        /**
+         * Fast re-rank (speedFastRerank): the pool's first FAST_RERANK_HEAD pairs (dense-best
+         * first) are scored first; when the best is at least FAST_RERANK_MIN_BEST and leads the
+         * second by FAST_RERANK_MIN_MARGIN, the rest (~0.5 s per pair on the phone) is skipped
+         * and admitted with the head's lowest score, keeping head order exact and the evidence
+         * set intact. Otherwise the whole pool is scored as before.
+         */
+        const val FAST_RERANK_HEAD = 8
+        const val FAST_RERANK_MIN_BEST = 7.0f
+        const val FAST_RERANK_MIN_MARGIN = 2.5f
+
+        /**
+         * Pure fast-path decision for host tests: how many tail pairs can be skipped (0 = score all).
+         * [headScores] are the head's logits in pool order.
+         */
+        fun fastRerankSkipped(poolSize: Int, headScores: FloatArray): Int {
+            if (poolSize <= FAST_RERANK_HEAD || headScores.size != FAST_RERANK_HEAD) return 0
+            var top1 = Float.NEGATIVE_INFINITY
+            var top2 = Float.NEGATIVE_INFINITY
+            for (s in headScores) {
+                if (s > top1) { top2 = top1; top1 = s } else if (s > top2) { top2 = s }
+            }
+            if (top1 < FAST_RERANK_MIN_BEST || top1 - top2 < FAST_RERANK_MIN_MARGIN) return 0
+            return poolSize - FAST_RERANK_HEAD
+        }
         /** [PRECEDENCE_STEP_LOGITS] and the most levels it counts, adjustable by the measurement harness. */
         @Volatile var precedenceStep = PRECEDENCE_STEP_LOGITS
         @Volatile var precedenceMaxLevels = Int.MAX_VALUE
@@ -446,19 +471,40 @@ class GenericKbPhase14Engine<T>(
                 lead = denseTop,
                 lanes = listOf(admissionsForRerank(rows.values, precedenceOf, describe), lexicalTop, denseDiverse, primaryReserved, viewTop)
             )
-            var scores = runCatching { rerank(rerankQuestion, poolForRerank.map { textOf(it) }) }.getOrNull()
-            val expanded = expandedRerankQuestion
-            if (scores != null && scores.size == poolForRerank.size && expanded != null && (scores.maxOrNull() ?: 0f) < ALIAS_RERANK_BELOW) {
-                // Weak match for the user's own words: read the question again with the long forms of
-                // its abbreviations; each passage keeps its better score.
-                val second = runCatching { rerank(expanded, poolForRerank.map { textOf(it) }) }.getOrNull()
-                if (second != null && second.size == scores.size) {
-                    val first = scores
-                    scores = FloatArray(first.size) { maxOf(first[it], second[it]) }
-                    if ((second.maxOrNull() ?: Float.NEGATIVE_INFINITY) > (first.maxOrNull() ?: Float.NEGATIVE_INFINITY)) rerankQuestion = expanded
+            var scores: FloatArray? = null
+            var fastSkipped = 0
+            if (ArogyaFlags.speedFastRerank && poolForRerank.size > FAST_RERANK_HEAD) {
+                val head = poolForRerank.take(FAST_RERANK_HEAD)
+                val headScores = runCatching { rerank(rerankQuestion, head.map { textOf(it) }) }.getOrNull()
+                if (headScores != null && headScores.size == head.size &&
+                    fastRerankSkipped(poolForRerank.size, headScores) > 0
+                ) {
+                    // Decisive top: the head keeps its exact scores; the unscored tail is admitted
+                    // with the head's lowest score (order after the head, evidence set intact).
+                    val floor = headScores.minOrNull() ?: 0f
+                    poolForRerank.forEachIndexed { i, c -> c.rerankScore = if (i < head.size) headScores[i] else floor }
+                    fastSkipped = poolForRerank.size - head.size
                 }
             }
-            if (scores != null && scores.size == poolForRerank.size) {
+            if (fastSkipped == 0) {
+                scores = runCatching { rerank(rerankQuestion, poolForRerank.map { textOf(it) }) }.getOrNull()
+                val expanded = expandedRerankQuestion
+                if (scores != null && scores.size == poolForRerank.size && expanded != null && (scores.maxOrNull() ?: 0f) < ALIAS_RERANK_BELOW) {
+                    // Weak match for the user's own words: read the question again with the long forms of
+                    // its abbreviations; each passage keeps its better score.
+                    val second = runCatching { rerank(expanded, poolForRerank.map { textOf(it) }) }.getOrNull()
+                    if (second != null && second.size == scores.size) {
+                        val first = scores
+                        scores = FloatArray(first.size) { maxOf(first[it], second[it]) }
+                        if ((second.maxOrNull() ?: Float.NEGATIVE_INFINITY) > (first.maxOrNull() ?: Float.NEGATIVE_INFINITY)) rerankQuestion = expanded
+                    }
+                }
+            }
+            if (fastSkipped > 0) {
+                applyPrecedence(poolForRerank, precedenceOf, literalText)
+                reranked = true
+                rerankInfo = "rr=fast:n=${poolForRerank.size}:scored=$FAST_RERANK_HEAD:skipped=$fastSkipped:best=${"%.2f".format(Locale.US, poolForRerank.maxOfOrNull { it.rerankScore ?: Float.NaN } ?: Float.NaN)}"
+            } else if (scores != null && scores.size == poolForRerank.size) {
                 poolForRerank.forEachIndexed { i, c -> c.rerankScore = scores[i] }
                 applyPrecedence(poolForRerank, precedenceOf, literalText)
                 reranked = true

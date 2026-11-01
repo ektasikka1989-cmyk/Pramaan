@@ -234,6 +234,18 @@ class Phase1FeatureBundle(private val context: Context) {
         return semanticReady
     }
 
+    /**
+     * Warms the KB search sessions (E5 first embedding + re-ranker verification) so the
+     * first question does not pay for them. Best-effort; never fails warm-up.
+     */
+    suspend fun warmKnowledgeSearch(): Boolean = withContext(Dispatchers.IO) {
+        val t = System.currentTimeMillis()
+        val e5 = runCatching { semanticEngine.embed("query: warmup") != null }.getOrDefault(false)
+        runCatching { genericKnowledgeDb.warmSearchSessions() }
+        Log.i(TAG, "KB_SEARCH_WARM ms=${System.currentTimeMillis() - t} e5=$e5")
+        e5
+    }
+
     suspend fun ensureKnowledgeReady(): Boolean = withContext(Dispatchers.IO) {
         knowledgeMutex.withLock {
             if (!ensureSemanticReadyLocked()) {

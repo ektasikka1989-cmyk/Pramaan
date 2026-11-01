@@ -1606,6 +1606,14 @@ class GenericKnowledgePackRepository(
     private val reranker by lazy { GenericKbReranker(context, semanticEngine) }
 
     /**
+     * Starts the re-ranker's background verification early (warming): the first question
+     * otherwise pays for it. Never waits; safe to call before the pack is selected.
+     */
+    fun warmSearchSessions() {
+        runCatching { reranker.ready() }
+    }
+
+    /**
      * Optional build-time enrichment (tools/kb_enrich.py): likely questions per passage and their
      * centroid vector. Searchable only; answers and sources always come from the passage row.
      */
@@ -1852,25 +1860,43 @@ class GenericKnowledgePackRepository(
         }
 
         val engine = GenericKbPhase14Engine<Hit>(profile, calibration?.gateZ ?: Float.MAX_VALUE)
+        var ftsMs = 0L
+        var embedMs = 0L
+        var rerankMs = 0L
+        var rerankPairs = 0
+        var rerankCalls = 0
+        val tEngine = System.currentTimeMillis()
         val result = engine.search(
             literal = literal,
             clauses = clauses,
             pool = candidatePool,
             scanRows = ::rows,
-            embed = { text -> semanticEngine.embed(text)?.takeIf { it.size == 384 } },
-            lexicalRanks = { text -> lexicalRetriever.search(text, candidatePool.coerceAtLeast(16)).associate { it.id to it.rank } },
+            embed = { text ->
+                val t = System.currentTimeMillis()
+                semanticEngine.embed(text)?.takeIf { it.size == 384 }.also { embedMs += System.currentTimeMillis() - t }
+            },
+            lexicalRanks = { text ->
+                val t = System.currentTimeMillis()
+                lexicalRetriever.search(text, candidatePool.coerceAtLeast(16)).associate { it.id to it.rank }.also { ftsMs += System.currentTimeMillis() - t }
+            },
             metadataCos = { hit, admission ->
                 val meta = hit.sourceName?.let { catalog[it] }
                 sourceIdentityAdjustment(hit, sourceHint) +
                     lifecycleAdjustment(meta?.documentStatus, literal, admission != null) + dateAdjustment(meta, literal)
             },
             describe = { hit -> (hit.sourceTitle ?: hit.sourceName ?: hit.docId) + (hit.pageNumber?.let { "@p$it" } ?: "") },
-            rerank = if (semanticEngine.isReady && reranker.ready()) { question, passages -> reranker.score(question, passages) } else null,
+            rerank = if (semanticEngine.isReady && reranker.ready()) { question, passages ->
+                val t = System.currentTimeMillis()
+                rerankCalls++
+                rerankPairs += passages.size
+                reranker.score(question, passages).also { rerankMs += System.currentTimeMillis() - t }
+            } else null,
             denseEnabled = dense && calibration != null,
             precedenceOf = { hit -> hit.sourceName?.let { catalog[it]?.precedence } },
             extraViews = extraViews
         ) ?: return@withContext null
         Log.i(TAG, "KB_PHASE14_TRACE ${result.trace} cal=${phase14Calibration?.encode() ?: "-"}")
+        Log.i(TAG, "POCKET_RAG_SEARCH_MS fts=$ftsMs embed=$embedMs rerank=$rerankMs pairs=$rerankPairs calls=$rerankCalls engine=${System.currentTimeMillis() - tEngine}")
 
         // Each of the first three passages that comes from a fragmentary document carries the start
         // of its following pages; every other short passage gets its own page's context.

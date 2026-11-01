@@ -93,7 +93,9 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val t = System.currentTimeMillis()
         val model = runCatching { ensureLocalModel() }.getOrDefault(false)
         val kb = runCatching { features.ensureKnowledgeReady() && (features.isKnowledgeEnabled() || features.setKnowledgeEnabled(true)) }.getOrDefault(false)
+        val search = kb && ArogyaFlags.speedWarmSearch && runCatching { features.warmKnowledgeSearch() }.getOrDefault(false)
         Log.i(TAG, "AROGYA_WARMUP model=$model kb=$kb ms=${System.currentTimeMillis() - t}")
+        Log.i(TAG, "AROGYA_WARMUP_SEARCH warmed=$search")
     }
 
     // ── Attachments for a guide question (Pramaan's pending-attachment path, unchanged) ──

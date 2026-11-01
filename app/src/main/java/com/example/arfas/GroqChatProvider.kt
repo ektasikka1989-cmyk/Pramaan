@@ -5,11 +5,14 @@ import android.graphics.Bitmap
 import android.util.Base64
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -832,7 +835,9 @@ $candidateText
         messages: List<Pair<String, String>>,
         currentQuery: String,
         safetyCritical: Boolean = false,
-        maxOutputTokens: Int = 896
+        maxOutputTokens: Int = 896,
+        /** Receives the draft while it arrives (on-screen preview); null = wait for the full reply. */
+        onDelta: ((String) -> Unit)? = null
     ): String {
         if (apiKey.isBlank()) {
             providerStatus = GroqProviderStatus.NO_KEY
@@ -875,6 +880,21 @@ $candidateText
             put("temperature", 0.12)
             put("top_p", 0.35)
             put("reasoning_effort", "none")
+        }
+        if (onDelta != null && ArogyaFlags.speedStreamCloud) {
+            val streamed: Pair<String?, Long> = try {
+                requestStreamText(body, onDelta)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                Log.w(TAG, "KB_STREAM_FAILED ${t.javaClass.simpleName}:${t.message}")
+                null to -1L
+            }
+            if (!streamed.first.isNullOrBlank()) {
+                Log.i(TAG, "KB_STREAM_OK firstWordsMs=${streamed.second} chars=${streamed.first!!.length}")
+                return streamed.first!!
+            }
+            Log.w(TAG, "KB_STREAM_FALLBACK")
         }
         val raw = requestWithRetry(body, maxAttempts = 3).first ?: return ""
         return parseText(raw)
@@ -1585,6 +1605,97 @@ $candidateText
             if (total > 0L) return total.coerceAtMost(30L * 60L * 1000L) + 1_500L
         }
         return 30_000L
+    }
+
+    /**
+     * One OpenAI-compatible SSE stream for a chat body (same endpoint and model mapping as
+     * [attemptRequest]). Each content piece goes to [onDelta] as it arrives. Returns the full
+     * text plus the first-words latency, or null text when streaming is unavailable (the
+     * caller falls back to a normal request). A real cancellation is rethrown, never
+     * converted to null, so it never triggers a fallback request.
+     */
+    private suspend fun requestStreamText(
+        body: JSONObject,
+        onDelta: (String) -> Unit
+    ): Pair<String?, Long> = withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        fun cancelled(): Boolean = coroutineContext[Job]?.isActive == false
+        // The Responses-API web-search shape is not an SSE chat stream; the caller retries normally.
+        if (!isGroqKey && body.optString("model", "") in GROQ_ONLY_MODELS) return@withContext null to -1L
+        val sendBody = JSONObject(if (isGroqKey) groqChatBody(body).toString() else metaChatBody(body).toString())
+        sendBody.put("stream", true)
+        val request = Request.Builder()
+            .url(endpoint)
+            .addHeader("Authorization", "Bearer $apiKey")
+            .post(sendBody.toString().toRequestBody(jsonMediaType))
+            .build()
+        val streamClient = client.newBuilder()
+            .readTimeout(90L, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        val call = streamClient.newCall(request)
+        activeCall.set(call)
+        val hook = coroutineContext[Job]?.invokeOnCompletion {
+            activeCall.compareAndSet(call, null)
+            runCatching { call.cancel() }
+        }
+        try {
+            val response = try {
+                call.execute()
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: IOException) {
+                if (cancelled()) throw CancellationException("stream cancelled")
+                Log.w(TAG, "KB_STREAM_NET ${e.javaClass.simpleName}:${e.message}")
+                return@withContext null to -1L
+            }
+            response.use { r ->
+                if (!r.isSuccessful) {
+                    val err = runCatching { r.body?.string() }.getOrNull().orEmpty()
+                    val detail = "HTTP_${r.code}:" + err.replace(Regex("\\s+"), " ").take(240)
+                    if (r.code == 401 || r.code == 403) {
+                        authFailed = true
+                        providerStatus = GroqProviderStatus.AUTH_FAILED
+                        lastErrorDetail = detail
+                    } else if (r.code == 429) {
+                        providerStatus = GroqProviderStatus.RATE_LIMITED
+                        rateLimitedUntilMs = System.currentTimeMillis() + parseRateLimitCooldownMs(err)
+                        lastErrorDetail = detail
+                    }
+                    Log.w(TAG, "KB_STREAM_HTTP code=${r.code}")
+                    return@withContext null to -1L
+                }
+                val src = r.body?.source() ?: return@withContext null to -1L
+                val full = StringBuilder()
+                var firstMs = -1L
+                while (true) {
+                    val line = try {
+                        src.readUtf8Line()
+                    } catch (e: IOException) {
+                        if (cancelled()) throw CancellationException("stream cancelled")
+                        Log.w(TAG, "KB_STREAM_BREAK chars=${full.length}")
+                        return@withContext null to -1L
+                    } ?: break
+                    val piece = SseStreamParser.contentOf(line) ?: continue
+                    if (piece.isEmpty()) continue
+                    if (firstMs < 0 && piece.isNotBlank()) firstMs = System.currentTimeMillis() - t0
+                    full.append(piece)
+                    runCatching { onDelta(piece) }
+                    if (cancelled()) throw CancellationException("stream cancelled")
+                }
+                val text = full.toString()
+                if (text.isBlank()) return@withContext null to -1L
+                authFailed = false
+                providerStatus = GroqProviderStatus.READY
+                rateLimitedUntilMs = 0L
+                lastSuccessAtMs = System.currentTimeMillis()
+                lastErrorDetail = ""
+                lastRequestLatencyMs = (System.currentTimeMillis() - t0).coerceAtLeast(0L)
+                return@withContext text to firstMs
+            }
+        } finally {
+            runCatching { hook?.dispose() }
+            activeCall.compareAndSet(call, null)
+        }
     }
 
     private suspend fun requestWithRetry(

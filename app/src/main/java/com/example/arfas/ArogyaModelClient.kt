@@ -29,14 +29,18 @@ object ArogyaModelEndpoints {
 class OpenAiCompatibleClient(private val endpoint: ArogyaModelEndpoint, private val key: () -> String, private val timeoutMs: Int = 60_000) {
     class HttpError(val code: Int, msg: String) : Exception(msg)
 
-    fun requestBody(system: String, user: String, maxTokens: Int): String = JSONObject()
-        .put("model", endpoint.model)
-        .put("messages", JSONArray()
-            .put(JSONObject().put("role", "system").put("content", system))
-            .put(JSONObject().put("role", "user").put("content", user)))
-        .put("max_tokens", maxTokens)
-        .put("temperature", 0)
-        .toString()
+    fun requestBody(system: String, user: String, maxTokens: Int): String {
+        val b = JSONObject()
+            .put("model", endpoint.model)
+            .put("messages", JSONArray()
+                .put(JSONObject().put("role", "system").put("content", system))
+                .put(JSONObject().put("role", "user").put("content", user)))
+            .put("max_tokens", maxTokens)
+            .put("temperature", 0)
+        // Muse Spark reasons by default; visit AI needs the fastest answer (V1 proved minimal works).
+        if (ArogyaFlags.r11LowReasoning && endpoint.model.startsWith("muse-spark")) b.put("reasoning_effort", "minimal")
+        return b.toString()
+    }
 
     fun complete(system: String, user: String, maxTokens: Int = 600): String {
         val k = key().trim()

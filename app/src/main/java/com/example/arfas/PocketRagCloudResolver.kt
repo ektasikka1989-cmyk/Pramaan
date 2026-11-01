@@ -4,13 +4,19 @@ import android.util.Log
 
 /** Grounded Cloud resolver. It receives only selected-KB evidence and KB-only continuity. */
 class PocketRagCloudResolver(
-    private val provider: GroqChatProvider
+    private val provider: GroqChatProvider,
+    /** Receives the draft while it arrives (on-screen preview); null = wait for the full reply. */
+    private val onDelta: ((String) -> Unit)? = null
 ) : PocketRagCloudAnswerer {
     companion object {
         private const val TAG = "PocketRagCloudResolver"
         /** Cloud's reply when the KB evidence does not answer a "Check online" question. */
         const val NOT_IN_EVIDENCE = PocketRagEngine.NOT_IN_EVIDENCE
     }
+
+    /** True once any streamed text reached the UI (the engine clears it when the draft is rejected). */
+    @Volatile var didStream = false
+        private set
 
     override suspend fun generate(
         packet: PocketRagPacket,
@@ -53,12 +59,22 @@ class PocketRagCloudResolver(
         val messages = PocketRagPromptBuilder.continuityMemory(packet.query, memory).flatMap { turn ->
             listOf("user" to turn.user, "assistant" to turn.assistant)
         }
+        val t0 = System.currentTimeMillis()
+        var firstMs = -1L
         val raw = provider.chatGenericKnowledgeText(
             messages = messages,
             currentQuery = current,
-            maxOutputTokens = maxOutputTokens.coerceAtLeast(256)
+            maxOutputTokens = maxOutputTokens.coerceAtLeast(256),
+            onDelta = onDelta?.let { cb ->
+                { piece: String ->
+                    if (firstMs < 0 && piece.isNotBlank()) firstMs = System.currentTimeMillis() - t0
+                    didStream = true
+                    runCatching { cb(piece) }
+                }
+            }
         ).trim()
         Log.i(TAG, "POCKET_RAG_CLOUD_END reason=$reason chars=${raw.length} evidenceChars=${packet.evidenceText.length}")
+        Log.i(TAG, "POCKET_RAG_CLOUD_MS total=${System.currentTimeMillis() - t0} firstWords=$firstMs chars=${raw.length} stream=$didStream")
         // Cloud is intentionally not rewritten or revalidated by the local model.
         return raw.takeIf { it.isNotBlank() }
     }

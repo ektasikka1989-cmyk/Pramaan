@@ -92,6 +92,14 @@ class PocketRagEngine(
         VERIFY
     }
 
+    /** The quality check with its own timing line (the per-question breakdown reads these). */
+    private fun evalGate(query: String, text: String?, packet: PocketRagPacket, stage: String): PocketRagQualityDecision {
+        val t = System.currentTimeMillis()
+        val d = qualityGate.evaluate(query, text, packet)
+        Log.i(TAG, "POCKET_RAG_GATE_MS stage=$stage ms=${System.currentTimeMillis() - t} accept=${d.acceptLocal} reason=${d.reason}")
+        return d
+    }
+
     suspend fun answer(packet: PocketRagPacket, cloudMode: CloudMode = CloudMode.NONE, localDraftToVerify: String? = null): PocketRagResult {
         val key = packet.selection.sessionKey
         val memory = sessions.context(key)
@@ -106,6 +114,7 @@ class PocketRagEngine(
                 if (cloudMode == CloudMode.VERIFY && cloudAnswer?.contains(NOT_IN_EVIDENCE) == true) {
                     // The KB evidence does not answer it: the caller runs a live web search (labelled).
                     Log.i(TAG, "POCKET_RAG_CHECK_ONLINE_NOT_IN_KB")
+                    if ((cloud as? PocketRagCloudResolver)?.didStream == true) runCatching { onDraftRejected?.invoke() }
                     return PocketRagResult(
                         "", AndroBaselineRuntime.Provider.LOCAL, emptyList(),
                         localAttempted = false, cloudAttempted = true, escalationReason = CHECK_ONLINE_NOT_IN_KB, accepted = false
@@ -114,10 +123,11 @@ class PocketRagEngine(
                 if (!cloudAnswer.isNullOrBlank()) {
                     // Cloud First is grounded like a local answer (same checks). A "Check online" answer
                     // may add newer information the KB does not have; the prompt makes Cloud label it.
-                    val decision = if (cloudMode == CloudMode.CLOUD_FIRST) qualityGate.evaluate(packet.query, cloudAnswer, packet)
+                    val decision = if (cloudMode == CloudMode.CLOUD_FIRST) evalGate(packet.query, cloudAnswer, packet, "cloud_first")
                     else PocketRagQualityDecision(true, "cloud_verified")
                     if (decision.acceptLocal) return acceptCloud(key, packet, cloudAnswer, "$reason:${decision.reason}")
                     Log.w(TAG, "POCKET_RAG_CLOUD_REJECT mode=$cloudMode reason=${decision.reason}")
+                    if ((cloud as? PocketRagCloudResolver)?.didStream == true) runCatching { onDraftRejected?.invoke() }
                 }
             } else {
                 Log.w(TAG, "POCKET_RAG_CLOUD_UNAVAILABLE mode=$cloudMode fallback=local")
@@ -139,7 +149,7 @@ class PocketRagEngine(
         } else if (initialMarker.markerOnly) {
             PocketRagQualityDecision(false, "local_declared_insufficient")
         } else {
-            qualityGate.evaluate(packet.query, localDraft, packet)
+            evalGate(packet.query, localDraft, packet, "local_first")
         }
         Log.i(TAG, "POCKET_RAG_LOCAL_GATE reason=${decision.reason} accepted=${decision.acceptLocal} draftChars=${localDraft.length} coverage=${packet.coverageComplete}")
         if (!decision.acceptLocal) runCatching { onDraftRejected?.invoke() }
@@ -154,7 +164,7 @@ class PocketRagEngine(
         if (decision.reason.startsWith("unsupported_numeric_claim") && localDraft.isNotBlank()) {
             val salvaged = qualityGate.salvageUnsupportedNumericSentences(packet.query, localDraft, packet)
             if (!salvaged.isNullOrBlank() && salvaged != localDraft) {
-                val salvageDecision = qualityGate.evaluate(packet.query, salvaged, packet)
+                val salvageDecision = evalGate(packet.query, salvaged, packet, "numeric_salvage")
                 if (salvageDecision.acceptLocal) {
                     Log.i(TAG, "POCKET_RAG_LOCAL_NUMERIC_SALVAGE_ACCEPT removedUnsupported=true stage=first_draft")
                     return acceptLocal(key, packet, salvaged, "local_recovery:numeric_salvage", cloudAttempted = false)
@@ -167,7 +177,7 @@ class PocketRagEngine(
         if (decision.reason.startsWith("term_swap") && localDraft.isNotBlank()) {
             val salvaged = qualityGate.salvageSwappedTerms(localDraft, packet)
             if (!salvaged.isNullOrBlank() && salvaged != localDraft) {
-                val salvageDecision = qualityGate.evaluate(packet.query, salvaged, packet)
+                val salvageDecision = evalGate(packet.query, salvaged, packet, "term_swap_salvage")
                 if (salvageDecision.acceptLocal) {
                     Log.i(TAG, "POCKET_RAG_LOCAL_TERM_SWAP_SALVAGE_ACCEPT stage=first_draft")
                     return acceptLocal(key, packet, salvaged, "local_recovery:term_swap_salvage", cloudAttempted = false)
@@ -195,7 +205,7 @@ class PocketRagEngine(
             } else if (recoveryMarker.markerOnly) {
                 PocketRagQualityDecision(false, "local_declared_insufficient")
             } else {
-                qualityGate.evaluate(packet.query, recoveryDraft, packet)
+                evalGate(packet.query, recoveryDraft, packet, "local_recovery")
             }
             if (recoveryDecision.acceptLocal && recoveryDraft.isNotBlank()) {
                 return acceptLocal(key, packet, recoveryDraft, "local_recovery:${recoveryDecision.reason}", cloudAttempted = false)
@@ -248,7 +258,7 @@ class PocketRagEngine(
                 cloud.generate(packet, memory, bestLocalDraft, decision.reason, maxOutput)
             }.onFailure { Log.w(TAG, "POCKET_RAG_CLOUD_EXCEPTION ${it.javaClass.simpleName}:${it.message}") }
                 .getOrNull()
-            val cloudDecision = qualityGate.evaluate(packet.query, cloudAnswer, packet)
+            val cloudDecision = evalGate(packet.query, cloudAnswer, packet, "cloud_escalation")
             if (cloudDecision.acceptLocal && !cloudAnswer.isNullOrBlank()) {
                 val citedSources = packet.citedSourceIds(cloudAnswer)
                 val disclosedCloud = KnowledgeSourcePresentation.renumberCitations(discloseUnsupportedClauses(packet, cloudAnswer), citedSources)

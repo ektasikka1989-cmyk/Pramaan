@@ -825,7 +825,7 @@ class AndroBaselineRuntime(
 
         val kbEngine = PocketRagEngine(
             local = PocketRagLocalGenerator(localModelManager, onAnswerDelta),
-            cloud = PocketRagCloudResolver(groqProvider),
+            cloud = PocketRagCloudResolver(groqProvider, if (ArogyaFlags.speedStreamCloud) onAnswerDelta else null),
             qualityGate = PocketRagQualityGate(),
             sessions = pocketRagSessions,
             canUseCloud = { canAttemptCloud() },

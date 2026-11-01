@@ -51,6 +51,8 @@ class GenericKnowledgeContextProvider(
         const val REWRITE_BELOW_RERANK = 2.0f
         /** A rewrite search is not used when its best relevance falls this far below the literal one. */
         const val REWRITE_MAX_LOSS = 1.0f
+        /** Best re-ranker relevance at or above which no second search pass runs (speedSkipSecondPass). */
+        const val SKIP_SECOND_PASS_RERANK = 8.0f
         /** Passages whose sentences compete for key facts. */
         const val KEY_FACT_PASSAGES = 5
         /** "Check online": passages (and characters per passage) sent to the online model. */
@@ -411,6 +413,10 @@ class GenericKnowledgeContextProvider(
         // previous answer from the same evidence; it is never searched on its own words (it matched
         // a slide saying "Click on 'Continue' to proceed").
         val continuation = hasPrevious && KbReplyText.isContinuationReply(query, previousAnswer)
+        // Confident first pass: skip the embedding classifier and the contextual second search.
+        val skipSecondPass = ArogyaFlags.speedSkipSecondPass && !continuation &&
+            phase14 != null && (literalBest ?: 0f) >= SKIP_SECOND_PASS_RERANK
+        if (skipSecondPass) Log.i(TAG, "KB_FOLLOW_UP skipped=confident literalBest=${"%.2f".format(Locale.US, literalBest ?: 0f)}")
         if (continuation) {
             val again = runCatching { repository.searchPhase14(basis, queryPlan.clauses, candidateWork, denseEnabled) }.getOrNull()
             if (again != null && again.hits.isNotEmpty()) {
@@ -418,7 +424,7 @@ class GenericKnowledgeContextProvider(
                 followUpOf = previousUser
             }
             Log.i(TAG, "KB_FOLLOW_UP continuation=true used=${followUpOf != null} previous=${previousUser.take(80)}")
-        } else if (phase14 != null && literalBest != null && hasPrevious) {
+        } else if (phase14 != null && literalBest != null && hasPrevious && !skipSecondPass) {
             // Follow-up resolution, decided by evidence: (a) the literal question finds nothing
             // convincing, or (b) the question reads as dependent on the conversation (embedding
             // classifier; a complete question that names its own subject never is). The question is
@@ -453,7 +459,13 @@ class GenericKnowledgeContextProvider(
             }
         }
         lastResolution = query.trim() to (followUpOf?.let { "${lastResolution?.takeIf { r -> r.first == it }?.second ?: it} ${query.trim()}".take(400) } ?: query.trim())
-        if (phase14 != null) return phase14Attachment(query, queryPlan, phase14, evidenceCharBudget, started, followUpOf)
+        if (phase14 != null) {
+            val tEv = System.currentTimeMillis()
+            val found = phase14
+            return phase14Attachment(query, queryPlan, found, evidenceCharBudget, started, followUpOf).also {
+                Log.i(TAG, "POCKET_RAG_EVIDENCE_MS total=${System.currentTimeMillis() - tEv} hits=${found.hits.size}")
+            }
+        }
 
         // The Phase 1.4 search failed with an error. Retry once in its full-text-only mode (same
         // generic engine, no semantic lane). There is no older pattern-based fallback path: if this
