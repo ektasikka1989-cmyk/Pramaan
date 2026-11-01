@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ========================================================= -->
+    <!-- Core permissions -->
+    <!-- ========================================================= -->
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Required for persistent voice foreground service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- Required for microphone foreground service on Android 14+ -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <!-- Foreground service without the microphone (troubleshooting, photo/file picking) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- Notification permission for foreground-service notification on Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Legacy storage permission -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+
+    <!-- ========================================================= -->
+    <!-- Device features -->
+    <!-- ========================================================= -->
+
+    <uses-feature
+        android:name="android.hardware.camera.ar"
+        android:required="false" />
+    <!-- ARCore is optional: phones without it use the Camera2 path (ARHUD -> Camera2FrameController). -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
+
+
+    <!-- ========================================================= -->
+    <!-- Package visibility -->
+    <!-- ========================================================= -->
+
+    <queries>
+
+        <!-- ARCore -->
+        <package android:name="com.google.ar.core" />
+
+        <!-- Android SpeechRecognizer fallback -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+
+    </queries>
+
+
+    <!-- ========================================================= -->
+    <!-- Application -->
+    <!-- ========================================================= -->
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ArogyaDoot"
+        android:largeHeap="true">
+
+
+        <!-- ===================================================== -->
+        <!-- LiteRT-LM native-library support -->
+        <!-- ===================================================== -->
+
+        <uses-native-library
+            android:name="libvndksupport.so"
+            android:required="false" />
+
+        <uses-native-library
+            android:name="libOpenCL.so"
+            android:required="false" />
+
+
+        <!-- ===================================================== -->
+        <!-- ARCore -->
+        <!-- ===================================================== -->
+
+        <meta-data
+            android:name="com.google.ar.core"
+            android:value="optional"
+            tools:replace="android:value" />
+
+
+        <!-- ===================================================== -->
+        <!-- persistent voice runtime -->
+        <!-- ===================================================== -->
+
+        <service
+            android:name=".AndroVoiceForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone|dataSync" />
+
+
+        <!-- ===================================================== -->
+        <!-- Main activity -->
+        <!-- ===================================================== -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.ArogyaDoot">
+
+            <intent-filter>
+
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+
+            </intent-filter>
+
+        </activity>
+
+    </application>
+
+</manifest>

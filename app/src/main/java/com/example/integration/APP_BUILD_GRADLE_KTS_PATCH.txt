@@ -1,0 +1,105 @@
+// Add to app/build.gradle.kts
+
+dependencies {
+    implementation("com.github.k2-fsa:sherpa-onnx:1.13.4")
+}
+
+android {
+    defaultConfig {
+        ndk { abiFilters += listOf("arm64-v8a") }
+    }
+    packaging {
+        resources { excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE,NOTICE}" }
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts += "**/libonnxruntime.so"
+            pickFirsts += "**/libsherpa-onnx-jni.so"
+            pickFirsts += "**/libsherpa-onnx-c-api.so"
+            pickFirsts += "**/libsherpa-onnx-cxx-api.so"
+        }
+    }
+}
+
+// Phase-1 local ASR/TTS assets. Requires curl + tar on the build machine.
+val voiceAssetsDir = file("src/main/assets/voice")
+val voiceAsrDir = file("$voiceAssetsDir/asr")
+val voiceTtsDir = file("$voiceAssetsDir/tts")
+
+tasks.register("downloadFixSightVoiceModels") {
+    group = "voice"
+    description = "Downloads the local sherpa streaming ASR and VITS TTS models used by Phase 1"
+    onlyIf {
+        !file("$voiceAsrDir/encoder.onnx").exists() ||
+        !file("$voiceTtsDir/model.onnx").exists()
+    }
+    doLast {
+        val tmp = layout.buildDirectory.get().asFile.resolve("fixsight-voice-models")
+        tmp.mkdirs(); voiceAsrDir.mkdirs(); voiceTtsDir.mkdirs()
+        fun download(url: String, target: File) {
+            if (target.exists() && target.length() > 1000) return
+            providers.exec { commandLine("curl", "-sL", "--retry", "3", "-o", target.absolutePath, url) }
+        }
+        fun copy(src: File, dst: File, name: String, outName: String = name) {
+            val f = File(src, name)
+            check(f.exists()) { "Missing $name in ${src.absolutePath}" }
+            f.copyTo(File(dst, outName), overwrite = true)
+        }
+
+        val asrUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2"
+        val asrTar = File(tmp, "asr.tar.bz2")
+        download(asrUrl, asrTar)
+        providers.exec { commandLine("tar", "-xjf", asrTar.absolutePath, "-C", tmp.absolutePath) }
+        val asr = File(tmp, "sherpa-onnx-streaming-zipformer-en-2023-06-26")
+        copy(asr, voiceAsrDir, "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx", "encoder.onnx")
+        copy(asr, voiceAsrDir, "decoder-epoch-99-avg-1-chunk-16-left-128.onnx", "decoder.onnx")
+        copy(asr, voiceAsrDir, "joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx", "joiner.onnx")
+        copy(asr, voiceAsrDir, "tokens.txt")
+
+        val ttsUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-ljs.tar.bz2"
+        val ttsTar = File(tmp, "tts.tar.bz2")
+        download(ttsUrl, ttsTar)
+        providers.exec { commandLine("tar", "-xjf", ttsTar.absolutePath, "-C", tmp.absolutePath) }
+        val tts = File(tmp, "vits-ljs")
+        copy(tts, voiceTtsDir, "vits-ljs.onnx", "model.onnx")
+        copy(tts, voiceTtsDir, "tokens.txt")
+        copy(tts, voiceTtsDir, "lexicon.txt")
+    }
+}
+
+// Current AndroLLM Oryon/Snapdragon voice native override.
+// The sherpa AAR's bundled ORT can silently miscompute streaming Zipformer on
+// Snapdragon 8 Elite / 8s Gen4. Pull the same current AndroLLM arm64 overrides
+// into app/src/main/jniLibs so packaging selects these files via pickFirsts above.
+val androVoiceJniDir = file("src/main/jniLibs/arm64-v8a")
+val androVoiceNativeFiles = listOf(
+    "libonnxruntime.so",
+    "libsherpa-onnx-jni.so",
+    "libsherpa-onnx-c-api.so",
+    "libsherpa-onnx-cxx-api.so"
+)
+
+tasks.register("downloadAndroLlmVoiceNativeOverrides") {
+    group = "voice"
+    description = "Downloads AndroLLM's current Oryon-safe ORT/sherpa arm64 native overrides"
+    onlyIf { androVoiceNativeFiles.any { !file("$androVoiceJniDir/$it").exists() } }
+    doLast {
+        androVoiceJniDir.mkdirs()
+        androVoiceNativeFiles.forEach { name ->
+            val target = File(androVoiceJniDir, name)
+            if (!target.exists() || target.length() < 4096L) {
+                val url = "https://raw.githubusercontent.com/ShadowSafin/AndroLLM/main/app/src/main/jniLibs/arm64-v8a/$name"
+                providers.exec {
+                    commandLine("curl", "-fL", "--retry", "3", "-o", target.absolutePath, url)
+                }
+                check(target.exists() && target.length() >= 4096L) {
+                    "Failed to obtain AndroLLM native override: $name"
+                }
+            }
+        }
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("downloadFixSightVoiceModels")
+    dependsOn("downloadAndroLlmVoiceNativeOverrides")
+}

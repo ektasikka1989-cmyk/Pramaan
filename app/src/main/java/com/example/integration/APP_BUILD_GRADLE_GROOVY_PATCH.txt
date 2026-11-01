@@ -1,0 +1,16 @@
+// Equivalent essentials for app/build.gradle (Groovy)
+dependencies {
+    implementation 'com.github.k2-fsa:sherpa-onnx:1.13.4'
+}
+android {
+    defaultConfig { ndk { abiFilters 'arm64-v8a' } }
+    packagingOptions {
+        jniLibs { useLegacyPackaging true }
+        pickFirst '**/libonnxruntime.so'
+        pickFirst '**/libsherpa-onnx-jni.so'
+        pickFirst '**/libsherpa-onnx-c-api.so'
+        pickFirst '**/libsherpa-onnx-cxx-api.so'
+    }
+}
+// Prefer the KTS patch's downloadFixSightVoiceModels task, translated to Groovy,
+// or download the ASR/TTS archives manually into app/src/main/assets/voice/.

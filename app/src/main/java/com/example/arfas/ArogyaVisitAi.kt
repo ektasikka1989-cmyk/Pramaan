@@ -1,0 +1,359 @@
+package com.example.arfas
+
+import android.content.Context
+import android.util.Log
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.Dispatchers
+
+/**
+ * ArogyaDoot is a WRAPPER over Pramaan. Guide questions go through Pramaan's own turn
+ * (AndroBaselineRuntime.chat with the installed knowledge base selected): the same AndroLLM,
+ * PocketSage RAG, semantic search, re-ranking and grounding the Pramaan chat uses, unchanged.
+ * ArogyaDoot adds only:
+ *  - deterministic newborn / postnatal danger-sign alert BEFORE any model (ArogyaDangerSigns);
+ *  - visit context in the question (age group) so retrieval finds the right population;
+ *  - visit-note organisation using Pramaan's generateDetached + ArogyaCapture (labels only).
+ */
+enum class ArogyaAiTask { EXPLAIN, ORGANISE_NOTES, HANDOVER }
+data class ArogyaAiRequest(val task:ArogyaAiTask,val visit:ArogyaVisit,val question:String="",val hindi:Boolean=false,val topic:String="",val previousExchange:String="",val onlineCheck:Boolean=false,
+    /** Worker already saw the urgent alert and asked for the guide's guidance: alert is prepended, not repeated alone. */
+    val afterSafetyPrompt:Boolean=false,
+    /** Live progress: stage and the answer text as it is being written (a draft until checked). */
+    val onProgress:((ArogyaProgress)->Unit)? = null)
+data class ArogyaProgress(val stage:String,val draft:String="")
+data class ArogyaExtraction(val fields:List<ExtractedField>,val modelLabel:String,val metaModel:Boolean,val ms:Long,val note:String)
+data class ArogyaAiResult(val text:String,val provider:String,val elapsedMs:Long,val sources:List<ArogyaSource> = emptyList(),val canCopyToNotes:Boolean=false,val online:Boolean=false,val checkedAt:String="",val sourceOnly:Boolean=false,val captureItems:List<ArogyaCaptureItem> = emptyList(),val timingsMs:Map<String,Long> = emptyMap(),val safetyPrompt:Boolean=false,
+    /** "The guide says": Pramaan's own chosen source sentence for this answer, with its source label. */
+    val quote:String="",val quoteSource:String="")
+
+class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val features:Phase1FeatureBundle,private val onlineKey:()->String = {""},
+    /** Pramaan's own attachment manager: photo/PDF text is read on the phone (ML Kit OCR, PDF text). */
+    private val attachments: Phase1AttachmentManager? = null,
+    /** Same model-load boundary Pramaan's chat service waits on before every turn. */
+    private val ensureLocalModel: suspend () -> Boolean = { true },
+    /** App context for the Cloud-first → phone retry (policy flip, restored after). Null = no retry. */
+    private val appContext: Context? = null) {
+    private val mutex=Mutex()
+    @Volatile private var lastVisitId: String? = null
+
+    /** Set by the screen: which cloud model/key to use and the Settings order (Cloud first / Local first). */
+    @Volatile var cloudChoice: (() -> ArogyaCloudChoice)? = null
+
+    /**
+     * Every ArogyaDoot AI action goes through here. Cloud first: cloud model, then the phone if there is no signal,
+     * no key, a slow network or an unusable reply. Local first: the phone, then the cloud if the phone model is not
+     * ready or its reply is unusable. [accept] checks each reply (grounding etc.); returns the result and who made it.
+     */
+    private suspend fun <T> route(feature: String, prompt: String, maxTokens: Int, cloudPrompt: String = prompt,
+                                  system: String = "Follow the instructions exactly.", accept: (String) -> T?): Pair<T?, String> {
+        val c = runCatching { withContext(Dispatchers.IO) { cloudChoice?.invoke() } }.getOrNull()
+        val ep = c?.endpoint; val key = c?.key.orEmpty()
+        suspend fun cloud(): Pair<T?, String>? {
+            if (ep == null || key.isBlank()) return null
+            val t = System.currentTimeMillis()
+            val raw = ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS) { OpenAiCompatibleClient(ep, { key }, CLOUD_DEADLINE_MS.toInt()).complete(system, cloudPrompt, maxTokens) }
+            Log.i(TAG, "AROGYA_ROUTE feature=$feature engine=cloud model=${ep.model} ok=${raw != null} ms=${System.currentTimeMillis() - t}")
+            return raw?.let { r -> accept(r)?.let { it to ep.label } }
+        }
+        suspend fun phone(): Pair<T?, String>? = try {
+            val model = readyModel(); val t = System.currentTimeMillis()
+            val raw = generate(prompt, model, maxTokens).orEmpty()
+            Log.i(TAG, "AROGYA_ROUTE feature=$feature engine=phone ms=${System.currentTimeMillis() - t} chars=${raw.length}")
+            accept(raw)?.let { it to "On-phone model (offline): " + (model.loadedModelFileName?.substringBeforeLast('.') ?: "local") }
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.w(TAG, "AROGYA_ROUTE feature=$feature engine=phone failed ${e.message?.take(120)}"); null }
+        for (engine in ArogyaRouting.order(c?.cloudFirst == true, ep != null && key.isNotBlank())) {
+            (if (engine == "cloud") cloud() else phone())?.let { return it }
+        }
+        return null to ""
+    }
+    fun cancel() { runtime.requestCancelActiveGeneration("arogya_user_cancel"); runtime.localModelManager?.requestCancelActiveGeneration("arogya_user_cancel") }
+
+    /** One line for the AI page: which model file is loaded and whether the guide is selected. */
+    fun modelStatus(): String {
+        val m = runtime.localModelManager
+        val name = m?.loadedModelFileName?.substringBeforeLast('.') ?: "not loaded yet"
+        val state = when { m == null -> "no local model"; m.permanentlyDisabled -> "disabled"; m.isReady -> "ready"; else -> "loading" }
+        val kb = runCatching { features.isKnowledgeEnabled() }.getOrDefault(false)
+        return "Language model: $name ($state) · Meta Llama, runs offline\nASHA guide: " + (if (kb) "selected, searchable offline" else "not selected yet")
+    }
+
+    /** Loads the model and selects the ASHA guide as soon as ArogyaDoot opens, so the first question does not wait ~30 s. */
+    suspend fun warmUp() {
+        val t = System.currentTimeMillis()
+        val model = runCatching { ensureLocalModel() }.getOrDefault(false)
+        val kb = runCatching { features.ensureKnowledgeReady() && (features.isKnowledgeEnabled() || features.setKnowledgeEnabled(true)) }.getOrDefault(false)
+        Log.i(TAG, "AROGYA_WARMUP model=$model kb=$kb ms=${System.currentTimeMillis() - t}")
+    }
+
+    // ── Attachments for a guide question (Pramaan's pending-attachment path, unchanged) ──
+    /** Reads a photo or PDF on the phone and holds it for the next question. Returns its name, or null if unreadable. */
+    suspend fun attach(uri: android.net.Uri): String? = attachments?.stageUri(uri)?.displayName
+    fun attachedNames(): List<String> = attachments?.peekPendingAll()?.map { it.displayName }.orEmpty()
+    fun clearAttachments() { attachments?.clearPending() }
+
+    suspend fun run(request:ArogyaAiRequest):ArogyaAiResult {
+        val started = System.nanoTime()
+        // 1. Danger-sign rules: instant, no model. URGENT stops here unless the worker asked for guidance after it.
+        val danger = ArogyaDangerSigns.evaluate(request.question, request.visit)
+        val alert = ArogyaDangerSigns.message(danger)
+        if (danger.urgent && !request.afterSafetyPrompt && alert != null) {
+            val ms = (System.nanoTime()-started)/1_000_000
+            Log.i(TAG, "AROGYA_TIMING event=urgent_warning ms=$ms")
+            return ArogyaAiResult(alert, "Immediate safety rules • no model used", ms, safetyPrompt=true)
+        }
+        val result = mutex.withLock {
+            when (request.task) {
+                ArogyaAiTask.EXPLAIN -> askPramaan(request)
+                else -> organiseNotes(request)
+            }
+        }
+        Log.i(TAG, "AROGYA_TIMING event=ai_result task=${request.task} total_ms=${result.elapsedMs} accepted=${!result.sourceOnly}")
+        // The warning was already shown on screen; the answer carries only a one-line reminder, never the full warning again.
+        // The short warning stays on screen above the answer; it is never repeated inside the answer.
+        return result
+    }
+
+    /** The visit's age group in plain words, so Pramaan retrieves guidance for the right population. */
+    private fun visitContext(v: ArogyaVisit): String {
+        val days = ArogyaWorkflow.parseDate(v.birthDate)?.let { b -> ArogyaWorkflow.parseDate(v.date)?.let { java.time.temporal.ChronoUnit.DAYS.between(b, it) } }
+        return when {
+            days != null && days in 0..28 -> "newborn, $days days old"
+            days != null && days in 29..59 -> "young infant, $days days old"
+            days != null && days < 365 * 5 -> "child, ${days / 30} months old"
+            v.kind == ArogyaKind.NEWBORN -> "newborn"
+            v.kind == ArogyaKind.CHILD -> "young child"
+            else -> ""
+        }
+    }
+
+    private suspend fun askPramaan(request: ArogyaAiRequest): ArogyaAiResult {
+        val t0 = System.currentTimeMillis()
+        val question = request.question.trim()
+        check(question.length <= 700) { "Shorten the question to 700 characters." }
+        check(question.isNotEmpty() || attachments?.peekPendingAll().orEmpty().isNotEmpty()) { "Type or speak a question first." }
+        // Load / warm the local model first, exactly like Pramaan's chat service does before a turn.
+        val modelReady = runCatching { ensureLocalModel() }.getOrDefault(false)
+        Log.i(TAG, "AROGYA_LOCAL_MODEL_READY $modelReady")
+        // Select the installed knowledge base exactly as Pramaan's own KB mode does.
+        check(features.ensureKnowledgeReady()) { "The ASHA guide is not ready. Open Setup → Install ASHA guide. Your visit is saved." }
+        if (!features.isKnowledgeEnabled()) check(features.setKnowledgeEnabled(true)) { "Could not select the ASHA guide. Open Setup and select it. Your visit is saved." }
+        // One Pramaan conversation per visit: follow-ups stay within this visit, never another household's.
+        if (lastVisitId != request.visit.id) { runCatching { runtime.startNewChat(clearHistory = true, mode = "NORMAL") }; lastVisitId = request.visit.id }
+        runCatching { runtime.ensureConversationOpen() }
+        // The question goes to Pramaan as the worker wrote it (an appended age phrase split retrieval
+        // into two clauses on the phone: 30 s instead of 15 s).
+        val asked = question.ifBlank { "What does this attachment show, and what should the ASHA do?" }
+        val online = request.onlineCheck && !ArogyaOnlinePolicy.localOnly(question)
+        // Pramaan's own turn: AndroLLM + PocketSage + semantic search + grounding, unchanged.
+        val turnFiles = attachments?.claimPendingAttachmentsForTurn().orEmpty()
+        if (turnFiles.isNotEmpty()) Log.i(TAG, "AROGYA_ATTACHMENTS count=${turnFiles.size} kinds=${turnFiles.joinToString { it.kind.name }}")
+        request.onProgress?.invoke(ArogyaProgress("search"))
+        val draft = StringBuilder()
+        var answered = false
+        suspend fun doChat(): AndroBaselineRuntime.TurnResult = withTimeout(ASK_TIMEOUT_MS) {
+            runtime.chat(if (online) ArogyaOnlinePolicy.scrub(asked, request.visit) else asked, forceExternalInformation = online, turnAttachments = turnFiles,
+                onLocalDelta = { d -> synchronized(draft) { draft.append(d) }; request.onProgress?.invoke(ArogyaProgress("write", synchronized(draft) { draft.toString() })) })
+        }
+        val policyStore = appContext?.let { AnswerPolicyStore(it.applicationContext) }
+        val turn = try {
+            try {
+                doChat()
+            } catch (e: Exception) {
+                // A real cancel (back button, Stop) must never trigger a retry.
+                if (e is CancellationException && e !is TimeoutCancellationException) throw e
+                if (policyStore?.get() != AnswerPolicy.CLOUD_FIRST || policyStore == null) throw e
+                Log.w(TAG, "AROGYA_ASK_FALLBACK cloud failed (${e.message?.take(100)}), retrying on the phone")
+                policyStore.set(AnswerPolicy.LOCAL_FIRST)
+                try { doChat() } finally { policyStore.set(AnswerPolicy.CLOUD_FIRST) }
+            }.also { answered = true }
+        } catch (e: TimeoutCancellationException) {
+            Log.w(TAG, "AROGYA_ASK_TIMEOUT after ${ASK_TIMEOUT_MS / 1000}s")
+            error("The answer is taking too long. Try again, or ask a shorter question — your visit is saved.")
+        } finally {
+            // Used attachments are released; on failure they stay attached for a retry.
+            attachments?.releaseTurnAttachments(turnFiles.map { it.id }, consumed = answered)
+        }
+        val elapsed = System.currentTimeMillis() - t0
+        val text = turn.text.trim()
+        val hasAnswer = text.isNotBlank()
+        val provider = when (turn.provider) {
+            AndroBaselineRuntime.Provider.LOCAL -> "ArogyaDoot • offline (${runtime.localModelManager?.loadedModelFileName?.substringBeforeLast('.') ?: "local model"})"
+            AndroBaselineRuntime.Provider.CLOUD -> "ArogyaDoot • online"
+            else -> "ArogyaDoot"
+        }
+        // Sources exactly as Pramaan presents them: document rows (title, pages, official link) and the
+        // passages behind each row with the sentences the answer came from.
+        val rows = runCatching { KnowledgeSourcePresentation.visibleSources(turn.sourceIds) }.getOrDefault(emptyList())
+        val passages = runCatching { KnowledgeSourcePresentation.passagesForRows(turn.sourceIds) }.getOrDefault(emptyList())
+        val sources = rows.mapIndexed { i, row ->
+            val url = KnowledgeSourcePresentation.openTarget(row).orEmpty()
+            val label = row.substringBefore(" | ").trim()
+            val title = KnowledgeSourcePresentation.cleanTitle(label.substringBefore(" — ").trim())
+            val pages = label.substringAfter(" — ", "").trim()
+            val used = passages.getOrNull(i).orEmpty()
+            ArogyaSource("${i + 1}", title, pages, used.joinToString("\n\n") { it.text }, url, used.flatMap { it.highlights }.distinct())
+        }
+        val quote = runCatching { KnowledgeSourcePresentation.quoteOf(turn.sourceIds) }.getOrNull()
+        return ArogyaAiResult(
+            if (hasAnswer) text else "No answer came back from the guide. Rephrase the question or ask your ANM. Your visit is unchanged.",
+            provider, elapsed, sources = sources, online = turn.provider == AndroBaselineRuntime.Provider.CLOUD,
+            checkedAt = if (turn.provider == AndroBaselineRuntime.Provider.CLOUD) java.time.Instant.now().toString() else "",
+            sourceOnly = !hasAnswer, timingsMs = mapOf("pramaan_turn" to elapsed),
+            quote = quote?.takeIf { !it.mismatch }?.text.orEmpty(), quoteSource = quote?.source.orEmpty()
+        )
+    }
+
+    private suspend fun organiseNotes(request: ArogyaAiRequest): ArogyaAiResult {
+        val start = System.currentTimeMillis()
+        val notes = (if (request.task == ArogyaAiTask.HANDOVER) request.visit.notes + "\n" + request.visit.referralNote else request.visit.notes).trim()
+        check(notes.isNotBlank()) { "Speak or type your visit observations first." }
+        check(notes.length <= 6500) { "This recording is too long for one AI review. Keep the original notes and review them manually." }
+        val (items, by) = route("organise_notes", ArogyaCapture.prompt(notes), 420, ArogyaCapture.prompt(ArogyaOnlinePolicy.scrub(notes, request.visit))) { ArogyaCapture.parse(it, notes) }
+        items ?: error("The AI could not organise this recording. Your original words are saved; edit them or retry.")
+        return ArogyaAiResult(ArogyaCapture.render(items), "ArogyaDoot • $by", System.currentTimeMillis() - start, canCopyToNotes = true, captureItems = items)
+    }
+
+    private suspend fun generate(prompt: String, model: LocalModelManager, maxTokens: Int = 420): String? = coroutineScope {
+        val expired = AtomicBoolean(false)
+        val watchdog = launch { delay(90000); expired.set(true); model.requestCancelActiveGeneration("arogya_90s_limit") }
+        try {
+            val result = model.generateDetached(prompt, maxTokens, "arogya_visit")
+            check(!expired.get()) { "Local AI exceeded the time limit. No draft was accepted; your visit is unchanged." }
+            result
+        } catch (e: CancellationException) { model.requestCancelActiveGeneration("arogya_cancel"); throw e }
+        finally { withContext(NonCancellable) { watchdog.cancelAndJoin() } }
+    }
+
+    private suspend fun readyModel(): LocalModelManager {
+        runCatching { ensureLocalModel() }
+        val model = runtime.localModelManager
+        check(model != null && model.isReady && !model.permanentlyDisabled) { "The local AI model is not ready. Open Setup and load your installed model." }
+        return model
+    }
+
+    /** Simple words for the family, rewritten from the guide answer only. New numbers are removed; falls back to the guide sentence. */
+    suspend fun familyExplain(answer: String, quote: String, hindi: Boolean): String = mutex.withLock {
+        val t = System.currentTimeMillis()
+        val clean = route("family_explain", ArogyaAiExtras.familyPrompt(answer, quote, hindi), 220) { out ->
+            ArogyaAiExtras.groundedSentences(out, answer + "\n" + quote, max = 4).takeIf { it.isNotBlank() } }.first.orEmpty()
+        Log.i(TAG, "AROGYA_TIMING event=family_explain ms=${System.currentTimeMillis() - t} chars=${clean.length}")
+        check(clean.isNotBlank()) { "Could not make a simple explanation. Read the guide sentence to the family instead." }
+        clean
+    }
+
+    /** A short ANM message drafted from the visit facts only; the worker edits it before sending. */
+    suspend fun anmMessage(facts: String): String = mutex.withLock {
+        val t = System.currentTimeMillis()
+        val clean = route("anm_message", ArogyaAiExtras.anmPrompt(facts), 200) { out ->
+            ArogyaAiExtras.groundedSentences(out, facts, max = 8, lineMode = true).takeIf { it.length >= 30 } }.first.orEmpty()
+        Log.i(TAG, "AROGYA_TIMING event=anm_message ms=${System.currentTimeMillis() - t} chars=${clean.length}")
+        check(clean.length >= 30) { "Could not draft the message. The ready-made message is still there." }
+        clean
+    }
+
+    /** Daily refresher: one question per guide passage, kept only if the right answer is in the passage. */
+    suspend fun refresher(count: Int = 3): List<ArogyaQuizItem> = mutex.withLock {
+        val t = System.currentTimeMillis()
+        val picks = ArogyaSources.all.values.filter { it.excerpt.length > 120 }.shuffled().take(count + 2)
+        val out = ArrayList<ArogyaQuizItem>()
+        for (src in picks) {
+            if (out.size >= count) break
+            route("daily_practice", ArogyaAiExtras.quizPrompt(src.excerpt), 200) { ArogyaAiExtras.parseQuiz(it, src) }.first?.let { out += it }
+        }
+        Log.i(TAG, "AROGYA_TIMING event=refresher ms=${System.currentTimeMillis() - t} items=${out.size}")
+        check(out.isNotEmpty()) { "Could not prepare today's questions. Try again." }
+        out
+    }
+
+    /** Reads an MCP card photo/PDF: text by ML Kit on the phone, fields by Llama, and only fields found in the text are kept. */
+    suspend fun readCard(uri: android.net.Uri): ArogyaCardReading = mutex.withLock {
+        val t = System.currentTimeMillis()
+        val mgr = attachments ?: error("Card reading is not available.")
+        mgr.clearPending()
+        val staged = mgr.stageUri(uri) ?: error("Could not read this file. Use a clear photo or a PDF.")
+        val claimed = mgr.claimPendingAttachmentsForTurn()
+        try {
+            val text = listOf(staged.extractedText, staged.localVisualContext).filter { it.isNotBlank() }.joinToString("\n").trim()
+            check(text.length >= 15) { "No readable text was found. Take a closer photo in good light, card flat." }
+            // Only values found in the card's own text are kept, whichever model reads it.
+            val fields = route("card_read", ArogyaAiExtras.cardPrompt(text.take(3500)), 380) { out ->
+                ArogyaAiExtras.parseCard(out, text).takeIf { it.isNotEmpty() } }.first.orEmpty()
+            Log.i(TAG, "AROGYA_TIMING event=card_read ms=${System.currentTimeMillis() - t} ocrChars=${text.length} fields=${fields.size}")
+            ArogyaCardReading(text, fields)
+        } finally { mgr.releaseTurnAttachments(claimed.map { it.id }, consumed = true) }
+    }
+
+    /**
+     * Finish Visit step 1: notes → structured fields. Uses the chosen hosted Meta model when a key is
+     * saved (notes are scrubbed of the beneficiary's name first); otherwise, or if that call fails,
+     * the phone's own model. Every field is checked against the notes; temperature and weight are
+     * also read by fixed rules. The result is only a proposal for the ASHA to tick.
+     */
+    suspend fun extractFields(visit: ArogyaVisit): ArogyaExtraction = mutex.withLock {
+        val notes = visit.notes.trim()
+        check(notes.isNotBlank()) { "Speak or type your visit observations first." }
+        check(notes.length <= 6000) { "These notes are too long for one review. Shorten them first." }
+        val t = System.currentTimeMillis()
+        val (ai, by) = route("finish_visit", ArogyaFinishVisit.extractionPrompt(notes), 600, ArogyaFinishVisit.extractionPrompt(ArogyaOnlinePolicy.scrub(notes, visit)),
+            "You extract structured fields from health-worker notes. Reply with JSON only.") { raw -> ArogyaFinishVisit.parseExtraction(raw, notes).takeIf { it.isNotEmpty() } }
+        val fields = ai.orEmpty()
+        val rules = ArogyaFinishVisit.ruleFallback(notes).filter { r -> fields.none { it.key == r.key } }
+        val ms = System.currentTimeMillis() - t
+        val label = by.ifBlank { "Fixed patterns only (no model)" }
+        Log.i(TAG, "AROGYA_FINISH_EXTRACT model=\"$label\" ms=$ms aiFields=${fields.size} ruleFields=${rules.size}")
+        ArogyaExtraction(fields + rules, label, !label.startsWith("On-phone") && !label.startsWith("Fixed"), ms, "")
+    }
+
+    /**
+     * Voice note → one column of an official form. Follows the app's Local first / Cloud first setting:
+     * Cloud first tries the cloud model (identifiers removed) and falls back to the phone; Local first uses the
+     * phone model and asks the cloud only if the phone model is unavailable or fills nothing.
+     */
+    suspend fun fillForm(b: Beneficiary, spec: FormSpec, column: Int, note: String): Pair<Map<String, FilledValue>, ArogyaExtraction> = mutex.withLock {
+        val choice = runCatching { withContext(Dispatchers.IO) { cloudChoice?.invoke() } }.getOrNull()
+        val endpoint = choice?.endpoint; val key = choice?.key.orEmpty(); val cloudFirst = choice?.cloudFirst == true
+        val text = note.trim()
+        check(text.isNotBlank()) { "Speak or type what you saw first." }
+        check(text.length <= 6000) { "This note is too long. Shorten it first." }
+        val t = System.currentTimeMillis()
+        var label = ""; var meta = false; var msg = ""
+        val cloudReady = endpoint != null && key.isNotBlank()
+        suspend fun cloud(): Map<String, FilledValue>? = try {
+            val raw = ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS) {
+                OpenAiCompatibleClient(endpoint!!, { key }, CLOUD_DEADLINE_MS.toInt()).complete("You fill official health forms from notes. Reply with JSON only.",
+                    ArogyaOfficialForms.prompt(spec, column, ArogyaOfficialForms.scrub(b, text)), 900)
+            } ?: error("no reply within ${CLOUD_DEADLINE_MS / 1000} s")
+            label = endpoint!!.label; meta = endpoint.metaModel
+            ArogyaOfficialForms.parse(raw, spec, column, text)
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { msg = (msg + " Online model not used: ${e.message?.take(120)}").trim(); Log.w(TAG, "AROGYA_FORM_ONLINE_FAILED ${endpoint?.id} ${e.message?.take(200)}"); null }
+        suspend fun phone(): Map<String, FilledValue>? = try {
+            val model = readyModel()
+            val raw = generate(ArogyaOfficialForms.prompt(spec, column, text), model, 700)
+            label = "On-phone model (offline): " + (model.loadedModelFileName?.substringBeforeLast('.') ?: "local"); meta = false
+            ArogyaOfficialForms.parse(raw.orEmpty(), spec, column, text)
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { msg = (msg + " On-phone model not ready: ${e.message?.take(100)}").trim(); null }
+        var values: Map<String, FilledValue>? = null
+        if (cloudFirst && cloudReady) values = cloud()
+        if (values == null) values = phone()
+        if (!cloudFirst && cloudReady && values.orEmpty().none { it.value.source == "ai" }) cloud()?.let { values = it }
+        if (values == null) { label = "Fixed patterns only (no model)"; values = ArogyaOfficialForms.parse("", spec, column, text) }
+        val ms = System.currentTimeMillis() - t
+        Log.i(TAG, "AROGYA_FORM_FILL form=${spec.id} col=$column policy=${if (cloudFirst) "cloud_first" else "local_first"} model=\"$label\" meta=$meta ms=$ms filled=${values!!.size}/${ArogyaOfficialForms.fieldsFor(spec, column).size}")
+        values!! to ArogyaExtraction(emptyList(), label, meta, ms, msg)
+    }
+
+    companion object { private const val TAG = "ArogyaDemo"; const val CLOUD_DEADLINE_MS = 25_000L; const val ASK_TIMEOUT_MS = 300_000L }
+}

@@ -1,0 +1,10 @@
+app/src/main/assets/voice/
+├── asr/
+│   ├── encoder.onnx
+│   ├── decoder.onnx
+│   ├── joiner.onnx
+│   └── tokens.txt
+└── tts/
+    ├── model.onnx
+    ├── tokens.txt
+    └── lexicon.txt
