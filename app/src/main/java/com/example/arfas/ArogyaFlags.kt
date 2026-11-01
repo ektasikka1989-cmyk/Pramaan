@@ -18,7 +18,7 @@ object ArogyaFlags {
     @Volatile var coverageFuzzy = true       // typo-tolerant coverage warning (§4 fix)
     // Batch 3 cloud.
     @Volatile var r10WideCloud = true        // Cloud first uses the 12 x 1600 set (else narrow)
-    @Volatile var r11LowReasoning = true     // Spark KB answers: minimal reasoning effort
+    @Volatile var r11LowReasoning = true     // Spark KB answers: minimal reasoning + type-fit ceiling
     // Speed work.
     @Volatile var speedStreamCloud = true    // stream Spark drafts into the card while checking
     @Volatile var speedFastRerank = true     // fewer rerank candidates when the top is clearly ahead

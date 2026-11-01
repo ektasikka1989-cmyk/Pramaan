@@ -15,7 +15,7 @@ $FILES = @('LogStub.kt', 'ShareStub.kt')
 foreach ($f in 'ArogyaVisit', 'ArogyaSources', 'ArogyaCapture', 'ArogyaDangerSigns', 'ArogyaClinicalText', 'ArogyaFinishVisit', 'ArogyaModelClient', 'ArogyaCloudApi', 'ArogyaRegistry', 'ArogyaGuided', 'ArogyaAiExtras', 'ArogyaFormSpecs', 'ArogyaVisitQueue', 'ArogyaFlags', 'SseStreamParser', 'GenericKbPhase14Engine', 'GenericKbRetrievalPlan', 'GenericKbCorpusProfile', 'GenericKbIdentifierLane', 'GenericKbQueryPlan', 'GenericKbAliasIndex', 'GenericKbKeyFacts', 'AnswerProof', 'KnowledgeSourcePresentation', 'CoreHealthFacts', 'KbReplyText', 'ArogyaQuestionType', 'ArogyaMarkdown', 'ArogyaDoseCheck', 'ArogyaHindiTerms', 'ArogyaGuideDb') { $FILES += "$SRC\$f.kt" }
 Remove-Item -Recurse -Force out -ErrorAction SilentlyContinue
 New-Item -ItemType Directory out | Out-Null
-foreach ($t in 'FormSpecsTest', 'FinishVisitTest', 'RegistryTest', 'ApplyTest', 'FormsTest', 'SampleTest', 'FlowTest', 'CloudTest', 'GuidedTest', 'SaveTest', 'SpeedTest', 'Batch2Test') {
+foreach ($t in 'FormSpecsTest', 'FinishVisitTest', 'RegistryTest', 'ApplyTest', 'FormsTest', 'SampleTest', 'FlowTest', 'CloudTest', 'GuidedTest', 'SaveTest', 'SpeedTest', 'Batch2Test', 'Batch3Test') {
   Write-Output "== $t"
   & kotlinc.bat @FILES "$t.kt" -cp $QCP -d "out\$t"
   if ($LASTEXITCODE -ne 0) { throw "$t compile failed" }

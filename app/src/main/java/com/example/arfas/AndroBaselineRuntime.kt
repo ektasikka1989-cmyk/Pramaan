@@ -847,8 +847,32 @@ class AndroBaselineRuntime(
         val draftToVerify = if (checkOnline) pocketRagSessions.context(selection.sessionKey)
             .lastOrNull { it.user.trim().equals(query.trim(), ignoreCase = true) }?.assistant else null
         Log.i(TAG, "POCKET_RAG_CLOUD_MODE mode=$cloudMode policy=${answerPolicyStore.get()} cloudReachable=${canAttemptCloud()} draft=${draftToVerify?.length ?: 0}")
+        // R10-lite: Cloud First reads the wide set (narrow windows + the companion extras,
+        // up to 12 x 1600) while the phone keeps the narrow packet. A failed wide assembly
+        // falls back to the narrow packet for the cloud too.
+        val wantWide = cloudMode == PocketRagEngine.CloudMode.CLOUD_FIRST && ArogyaFlags.r10WideCloud && selection.kind == "generic"
+        val cloudPacket = if (wantWide) runCatching {
+            val host = turnAttachments.firstOrNull { a ->
+                a.attributes["kb_wide_extra"].orEmpty().isNotBlank() && a.attributes["kb_wide_extra_refs"].orEmpty().isNotBlank()
+            } ?: return@runCatching null
+            val extraRecord = PocketRagAttachmentRecord(
+                sourceId = host.sourceId + ":wide",
+                text = host.attributes["kb_wide_extra"].orEmpty(),
+                attributes = host.attributes + ("kb_source_refs" to host.attributes["kb_wide_extra_refs"].orEmpty())
+            )
+            val records = turnAttachments.map { PocketRagAttachmentRecord(it.sourceId, it.text, it.attributes) } + extraRecord
+            PocketRagEvidenceAssembler { CHECK_ONLINE_CONTEXT_TOKENS }.assemble(query, selection, records)
+        }.onFailure { Log.w(TAG, "POCKET_RAG_CLOUD_WIDE_FAILED ${it.message}") }.getOrNull() else null
+        if (wantWide) {
+            if (cloudPacket != null) Log.i(TAG, "POCKET_RAG_CLOUD_WIDE blocks=${cloudPacket.evidenceBlocks.size} chars=${cloudPacket.evidenceText.length}")
+            else Log.i(TAG, "POCKET_RAG_CLOUD_WIDE_FALLBACK narrow=true")
+        }
+        val rawResult = kbEngine.answer(packet, cloudMode, draftToVerify, cloudPacket)
+        // Each answer is proven against the evidence it read: the wide packet for cloud
+        // answers, the narrow one for phone answers.
+        val proofPacket = if (rawResult.provider == Provider.CLOUD) (cloudPacket ?: packet) else packet
         val kbResult = proveKbAnswer(
-            kbEngine.answer(packet, cloudMode, draftToVerify), packet, selection, genericKnowledgeProvider,
+            rawResult, proofPacket, selection, genericKnowledgeProvider,
             rewrittenQuestion = attachments.firstNotNullOfOrNull { it.attributes["kb_search_rewrite"]?.takeIf { r -> r.isNotBlank() } }.orEmpty()
         )
         if (selection.kind == "generic") genericKnowledgeProvider?.commitPendingEvidenceWindow(kbResult.sourceIds.isNotEmpty())

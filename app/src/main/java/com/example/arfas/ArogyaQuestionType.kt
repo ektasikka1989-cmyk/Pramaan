@@ -43,6 +43,15 @@ object ArogyaQuestionType {
     }
 
     /**
+     * R11 output ceiling per question part: procedures and lists must fit every step/item
+     * (~320 words); facts and urgent answers keep the 400-token ceiling (~230 words).
+     */
+    fun ceilingPerPart(kind: Kind): Int = when (kind) {
+        Kind.PROCEDURE, Kind.LIST -> 560
+        Kind.FACT, Kind.URGENT -> 400
+    }
+
+    /**
      * The last line the model reads (replaces COMPLETE_ANSWER when r2LengthPrompt is on).
      * Matches the question type so it no longer contradicts the LENGTH tiers.
      */

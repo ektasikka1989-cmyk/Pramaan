@@ -1,6 +1,9 @@
 package com.example.arfas
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Thrown by a local answerer whose generation degenerated (decoder loop): never an answer. */
@@ -61,6 +64,8 @@ class PocketRagEngine(
          * ~90 characters a second a ceiling-length answer now takes ~15 s.
          */
         const val MAX_ANSWER_TOKENS_PER_PART = 400
+        /** R12: a cloud answer slower than this falls back to the phone (D7's 300 s stays the outer net). */
+        const val CLOUD_TIMEOUT_MS = 120_000L
         /** Length of an extractive (verbatim key facts) answer. */
         const val EXTRACTIVE_CHARS = 700
 
@@ -100,17 +105,45 @@ class PocketRagEngine(
         return d
     }
 
-    suspend fun answer(packet: PocketRagPacket, cloudMode: CloudMode = CloudMode.NONE, localDraftToVerify: String? = null): PocketRagResult {
+    suspend fun answer(
+        packet: PocketRagPacket,
+        cloudMode: CloudMode = CloudMode.NONE,
+        localDraftToVerify: String? = null,
+        /** R10-lite: the wide (12 x 1600) packet the cloud reads; null = the cloud reads [packet]. */
+        cloudPacket: PocketRagPacket? = null
+    ): PocketRagResult {
         val key = packet.selection.sessionKey
         val memory = sessions.context(key)
         val maxOutput = outputBudget(packet)
+        // The cloud reads the wide packet when there is one (Cloud First); the phone always
+        // reads the narrow one. "Check online" keeps its own already-wide packet.
+        val cpacket = if (cloudMode == CloudMode.CLOUD_FIRST) (cloudPacket ?: packet) else packet
+        val maxCloudOutput = outputBudget(cpacket)
 
         if (cloudMode != CloudMode.NONE) {
             if (canUseCloud()) {
                 val reason = if (cloudMode == CloudMode.VERIFY) "check_online" else "cloud_first"
-                val cloudAnswer = runCatching { cloud.generate(packet, memory, localDraftToVerify, reason, maxOutput) }
-                    .onFailure { Log.w(TAG, "POCKET_RAG_CLOUD_EXCEPTION mode=$cloudMode ${it.javaClass.simpleName}:${it.message}") }
-                    .getOrNull()?.trim()
+                val tCloud = System.currentTimeMillis()
+                val cloudAnswer: String? = try {
+                    withTimeout(CLOUD_TIMEOUT_MS) {
+                        try {
+                            cloud.generate(cpacket, memory, localDraftToVerify, reason, maxCloudOutput)?.trim()
+                        } catch (ce: CancellationException) {
+                            throw ce
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "POCKET_RAG_CLOUD_EXCEPTION mode=$cloudMode ${t.javaClass.simpleName}:${t.message}")
+                            null
+                        }
+                    }
+                } catch (ce: CancellationException) {
+                    // Our own deadline falls back to the phone; an outer deadline or a real
+                    // cancellation propagates (a real cancel never falls back).
+                    if (ce is TimeoutCancellationException && System.currentTimeMillis() - tCloud >= CLOUD_TIMEOUT_MS) {
+                        Log.w(TAG, "POCKET_RAG_CLOUD_TIMEOUT mode=$cloudMode ms=$CLOUD_TIMEOUT_MS fallback=local")
+                        if ((cloud as? PocketRagCloudResolver)?.didStream == true) runCatching { onDraftRejected?.invoke() }
+                        null
+                    } else throw ce
+                }
                 if (cloudMode == CloudMode.VERIFY && cloudAnswer?.contains(NOT_IN_EVIDENCE) == true) {
                     // The KB evidence does not answer it: the caller runs a live web search (labelled).
                     Log.i(TAG, "POCKET_RAG_CHECK_ONLINE_NOT_IN_KB")
@@ -123,9 +156,9 @@ class PocketRagEngine(
                 if (!cloudAnswer.isNullOrBlank()) {
                     // Cloud First is grounded like a local answer (same checks). A "Check online" answer
                     // may add newer information the KB does not have; the prompt makes Cloud label it.
-                    val decision = if (cloudMode == CloudMode.CLOUD_FIRST) evalGate(packet.query, cloudAnswer, packet, "cloud_first")
+                    val decision = if (cloudMode == CloudMode.CLOUD_FIRST) evalGate(packet.query, cloudAnswer, cpacket, "cloud_first")
                     else PocketRagQualityDecision(true, "cloud_verified")
-                    if (decision.acceptLocal) return acceptCloud(key, packet, cloudAnswer, "$reason:${decision.reason}")
+                    if (decision.acceptLocal) return acceptCloud(key, cpacket, cloudAnswer, "$reason:${decision.reason}")
                     Log.w(TAG, "POCKET_RAG_CLOUD_REJECT mode=$cloudMode reason=${decision.reason}")
                     if ((cloud as? PocketRagCloudResolver)?.didStream == true) runCatching { onDraftRejected?.invoke() }
                 }
@@ -521,8 +554,13 @@ class PocketRagEngine(
         val availableOutput = (context - inputEstimate).coerceAtLeast(256)
         // The answer model picks the length from the question (PocketRagPromptBuilder.LENGTH); this
         // is the hard ceiling behind its largest tier, per independently asked question part.
+        // R11: procedures and lists get room for every step/item; facts keep 400.
         val parts = packet.clauseCoverage.size.coerceAtLeast(1)
-        val ceiling = MAX_ANSWER_TOKENS_PER_PART * parts
+        val perPart = if (ArogyaFlags.r11LowReasoning) {
+            runCatching { ArogyaQuestionType.ceilingPerPart(ArogyaQuestionType.kindOf(packet.query)) }
+                .getOrDefault(MAX_ANSWER_TOKENS_PER_PART)
+        } else MAX_ANSWER_TOKENS_PER_PART
+        val ceiling = perPart * parts
         return desired.coerceAtMost(ceiling).coerceAtMost(availableOutput).coerceAtLeast(MIN_OUTPUT_TOKENS)
     }
 }

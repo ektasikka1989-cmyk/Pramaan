@@ -513,6 +513,10 @@ class GenericKnowledgeContextProvider(
             return null
         }
         var valueConflict = ""
+        // R10-lite companion: extra 1600-char windows (passages past the narrow set) for the
+        // cloud packet, cut from the same search (no second search). Empty unless passage mode.
+        var wideExtraText = ""
+        var wideExtraRefs = ""
         val packed = mutableListOf<GenericKnowledgePackRepository.Hit>()
         val sourceRefs = mutableListOf<String>()
         val blocks = mutableListOf<String>()
@@ -568,6 +572,33 @@ class GenericKnowledgeContextProvider(
                 sourceRefs += sourceRef
                 blocks += block
                 used += block.length + 2
+            }
+            if (ArogyaFlags.r10WideCloud && windows != null) {
+                runCatching {
+                    val narrowSet = windows.map { it.first }.toSet()
+                    val wideWindows = GenericKbKeyFacts.passageWindows(
+                        result.hits.take((ONLINE_PASSAGES + 2).coerceAtMost(result.hits.size)).map { it.content },
+                        keyFacts, count = ONLINE_PASSAGES, maxChars = ONLINE_WINDOW_CHARS
+                    )
+                    val extra = wideWindows.filter { it.first !in narrowSet }
+                    if (extra.isNotEmpty()) {
+                        val refs = mutableListOf<String>()
+                        val blks = extra.mapIndexed { i, (p, text) ->
+                            val hit = result.hits[p]
+                            val sid = "S${passageOrder.size + i + 1}"
+                            val label = sourceLabel(hit).trim().ifBlank { hit.sourceName.orEmpty().ifBlank { hit.docId } }
+                            val ref = buildString {
+                                append(sid).append(" :: ").append(label.replace('\n', ' ').take(500))
+                                hit.sourceUrl?.takeIf { it.startsWith("http") }?.let { append(" | ").append(it) }
+                            }
+                            refs += ref
+                            "Source ID: $sid\nSource: $ref\n\u2022 $text"
+                        }
+                        wideExtraText = blks.joinToString("\n\n")
+                        wideExtraRefs = refs.joinToString("\n")
+                        Log.i(TAG, "KB_WIDE_EXTRA blocks=${blks.size} chars=${wideExtraText.length}")
+                    }
+                }.onFailure { Log.w(TAG, "KB_WIDE_EXTRA_FAILED ${it.message}") }
             }
             Log.i(TAG, "KB_KEY_FACTS mode=${if (windows != null) "passages" else "sentences"} facts=${keyFacts.size} passages=${passageOrder.size} " +
                 "chars=${blocks.sumOf { it.length }} " +
@@ -641,6 +672,8 @@ class GenericKnowledgeContextProvider(
                 "kb_evidence_char_budget" to evidenceCharBudget.toString(),
                 "kb_resolved_user_query" to query.trim().take(1_800),
                 "kb_source_refs" to sourceRefs.joinToString("\n"),
+                "kb_wide_extra" to wideExtraText,
+                "kb_wide_extra_refs" to wideExtraRefs,
                 "kb_primary_source_ref" to sourceRefs.firstOrNull().orEmpty().take(700),
                 "kb_record_ids" to packed.joinToString(",") { it.chunkId }.take(1_500),
                 "kb_current_record_ids" to packed.joinToString(",") { it.chunkId }.take(1_500),
