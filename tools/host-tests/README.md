@@ -5,8 +5,9 @@ danger rules, registers, sample village, backup crypto, MCP card apply, cloud ro
 They compile the listed `app/src/main/java/com/example/arfas/*.kt` files together with two stubs
 (`LogStub.kt` replaces `android.util.Log`, `ShareStub.kt` replaces Android-only `ArogyaShare`).
 
-Last result (31 Oct 2026): all suites passed — FormSpecs 64, FinishVisit 34, Registry 28, Apply 22,
-Forms 13, Sample 12, Flow 12, Cloud 9, Guided 4.
+Last result (1 Nov 2026): all 19 suites passed — FinishVisit 34, Registry 28, Apply 22,
+Forms 13, Sample 12, Flow 12, Guided 4, Speed 18, Batch2 49, Batch3 6, Batch4 15, Batch5 18,
+Batch6 3, Review 28, RegisterTables 26, StockRegister 22 (FormSpecs/Cloud/Save: all checks passed).
 
 ## Requirements
 - `kotlinc` 2.0+ on PATH (or the Kotlin compiler jar), JDK 17+
