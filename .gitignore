@@ -46,3 +46,7 @@ app/src/main/assets/**
 *.jks
 *.keystore
 google-services.json
+
+# host-test compiler output (rebuilt by every run)
+tools/host-tests/out/
+
