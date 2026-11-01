@@ -85,7 +85,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
      * + saved turns) so the next question starts fresh. lastVisitId is kept: the cleared
      * session belongs to this visit, and the next answer re-seeds it.
      */
-    fun newConversation() {
+    suspend fun newConversation() {
         runCatching { runtime.startNewChat(clearHistory = true, mode = "NORMAL") }
         Log.i(TAG, "AROGYA_SOP_NEW_CONVERSATION visit=$lastVisitId")
     }

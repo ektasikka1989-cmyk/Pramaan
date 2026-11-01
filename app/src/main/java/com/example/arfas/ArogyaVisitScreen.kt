@@ -20,7 +20,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.item
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
@@ -689,7 +688,7 @@ fun ArogyaVisitScreen(
                     Text(when(aiTask) { ArogyaAiTask.EXPLAIN->tr("Ask the ASHA guide","ASHA गाइड से पूछें");ArogyaAiTask.ORGANISE_NOTES->tr("Your AI visit draft","AI का विज़िट ड्राफ़्ट");ArogyaAiTask.HANDOVER->tr("Prepare ANM handover","ANM के लिए विवरण") },style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
                     AiBadge(if(aiTask==ArogyaAiTask.EXPLAIN) "Ask SOP" else "Organise notes")
                     if(aiTask==ArogyaAiTask.EXPLAIN) TextButton(onClick={
-                        sopThreads=sopThreads-gv.id;aiResult=null;aiQuestion="";aiError="";familyText="";ai?.newConversation()
+                        sopThreads=sopThreads-gv.id;aiResult=null;aiQuestion="";aiError="";familyText="";scope.launch { ai?.newConversation() }
                     },enabled=!aiBusy) {Text(tr("↺ New","↺ नई"))}
                 }
                 // Warning appears after "Ask", not while typing (it used to push the text out of view).

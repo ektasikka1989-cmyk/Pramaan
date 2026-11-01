@@ -226,7 +226,7 @@ fun ArogyaGrid(
     sortAsc: Boolean = true,
     onHeaderTap: ((Int) -> Unit)? = null,
     onRowTap: ((Int) -> Unit)? = null,
-    rowBg: ((Int) -> Color)? = null,
+    rowBg: ((Int) -> Color?)? = null,
     chipColumns: Set<Int> = emptySet(),
     chipColor: (row: Int, col: Int, value: String) -> Color? = { _, _, _ -> null },
     maxHeight: Dp = 560.dp
