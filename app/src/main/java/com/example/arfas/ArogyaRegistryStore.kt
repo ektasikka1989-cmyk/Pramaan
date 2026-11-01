@@ -133,17 +133,25 @@ class ArogyaRegistryStore private constructor(private val context: Context, priv
         "Restored ${registry.beneficiaries.size} patients and registers; added $added visits ($skipped already here or unreadable)."
     }
 
-    /** Saves a file in Downloads/ArogyaDoot and opens the share sheet (CSV registers, reports). */
-    fun shareFile(name: String, mime: String, bytes: ByteArray): Boolean = runCatching {
+    /** Saves a file in Downloads/ArogyaDoot. Returns its Uri, or null. */
+    fun saveFile(name: String, mime: String, bytes: ByteArray): Uri? = runCatching {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name); put(MediaStore.MediaColumns.MIME_TYPE, mime)
             put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/ArogyaDoot")
         }
         val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("no destination")
         context.contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
-        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
-    }.getOrDefault(false)
+        uri
+    }.getOrNull()
+
+    /** Saves a file in Downloads/ArogyaDoot and opens the share sheet (CSV registers, reports). */
+    fun shareFile(name: String, mime: String, bytes: ByteArray): Boolean {
+        val uri = saveFile(name, mime, bytes) ?: return false
+        return runCatching {
+            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
+        }.getOrDefault(false)
+    }
 
     /** Renders an official form as a ruled table (A4 landscape) and opens the share sheet. */
     fun shareFormPdf(form: FormTable): Boolean {

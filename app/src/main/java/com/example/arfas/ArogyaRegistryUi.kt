@@ -383,6 +383,7 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
     fun updateBen(f: (Beneficiary) -> Beneficiary) = save { r -> r.copy(beneficiaries = r.beneficiaries.map { if (it.id == b.id) f(it).copy(updatedAt = System.currentTimeMillis()) else it }) }
     var giveOpen by remember { mutableStateOf(false) }
     var eventOpen by remember { mutableStateOf(false) }
+    var viewForm by remember { mutableStateOf<FormTable?>(null) }
     var kg by remember { mutableStateOf("") }
     val schedule = remember(b, visits) { ArogyaSchedule.forBeneficiary(b, visits, today) }
     val context = LocalContext.current
@@ -450,9 +451,9 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
                     OutlinedButton(onClick = { if (!ArogyaRegistryStore.get(context).shareCardPdf(b.name, official)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show() }) { Text(tr("Share MCP card (PDF)", "MCP कार्ड भेजें (PDF)")) }
                     val filled = ArogyaOfficialForms.ALL.filter { sp -> data.forms.any { it.beneficiaryId == b.id && it.formId == sp.id } }
                     filled.forEach { sp ->
-                        Text(tr("Visit form — filled over visits", "विज़िट फ़ॉर्म — विज़िटों में भरा"), fontWeight = FontWeight.Bold)
+                        Text(tr("Visit form — filled over visits (tap to open full-screen)", "विज़िट फ़ॉर्म — विज़िटों में भरा (पूरी स्क्रीन में खोलने के लिए दबाएँ)"), fontWeight = FontWeight.Bold)
                         val t = ArogyaOfficialForms.table(sp, b, data.forms)
-                        OfficialFormGrid(t, null, hindi = hindi)
+                        Box(Modifier.clickable { viewForm = t }) { OfficialFormGrid(t, null, hindi = hindi) }
                         OutlinedButton(onClick = { if (!ArogyaRegistryStore.get(context).shareFormPdf(t)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show() }) { Text(tr("Share this form (PDF)", "यह फ़ॉर्म भेजें (PDF)")) }
                     }
                     if (filled.none { it.id == "annex9" } && b.category == BenCategory.CHILD && b.dob.isNotBlank()) OutlinedButton(onClick = { ArogyaRegistryStore.get(context).shareFormPdf(ArogyaForms.homeVisitForm(b, visits)) }) { Text(tr("Share Home Visit Form (Annexure 9, PDF)", "होम विज़िट फ़ॉर्म भेजें (Annexure 9, PDF)")) }
@@ -532,6 +533,7 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
         if (save { r -> r.copy(stock = r.stock + StockTxn(item = item, qty = -qty, beneficiaryId = b.id, note = note)) }) giveOpen = false }
     if (eventOpen) EventDialog(hindi, onDismiss = { eventOpen = false }) { kind, place, note ->
         if (save { r -> r.copy(vitals = r.vitals + VitalEvent(kind = kind, beneficiaryId = b.id, place = place, note = note)) }) eventOpen = false }
+    viewForm?.let { f -> ArogyaFormViewer(f, hindi, ArogyaRegistryStore.get(context)) { viewForm = null } }
 }
 
 @Composable
@@ -590,30 +592,20 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
         when (sub) {
             "" -> {}
             "forms" -> {
-                var form by remember { mutableStateOf<FormTable?>(null) }
+                var viewer by remember { mutableStateOf<FormTable?>(null) }
                 val babies = data.beneficiaries.filter { it.active && it.category == BenCategory.CHILD && (ArogyaRegistryLogic.ageDays(it, today) ?: 999) <= 60 }
                 Text(tr("Official formats filled with this register's data. Share as PDF to print or send to your ANM.", "आधिकारिक खाके इस रजिस्टर के डेटा से भरे। छापने या ANM को भेजने के लिए PDF भेजें।"), style = MaterialTheme.typography.bodySmall)
                 listOf(tr("House to House Survey — RI Form 3", "घर-घर सर्वे — RI फ़ॉर्म 3") to { ArogyaForms.riForm3(data.beneficiaries, today) }, tr("Pregnant Women Listing — RI Form 4", "गर्भवती सूची — RI फ़ॉर्म 4") to { ArogyaForms.riForm4(data.beneficiaries, today) },
                     tr("Drug Kit Stock Card — Annexure 5", "दवा किट स्टॉक कार्ड — Annexure 5") to { ArogyaForms.drugKitCard(data.stock) }).forEach { (label, make) ->
-                    OutlinedButton(onClick = { form = make() }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+                    OutlinedButton(onClick = { viewer = make() }, modifier = Modifier.fillMaxWidth()) { Text(label) }
                 }
-                babies.filter { nb -> data.forms.none { it.beneficiaryId == nb.id && it.formId == "annex9" } }.forEach { nb -> OutlinedButton(onClick = { form = if (data.forms.any { it.beneficiaryId == nb.id && it.formId == "annex9" }) ArogyaOfficialForms.table(ArogyaOfficialForms.ANNEX9, nb, data.forms) else ArogyaForms.homeVisitForm(nb, visits) }, modifier = Modifier.fillMaxWidth()) { Text(tr("Home Visit Form (Annexure 9) — ", "होम विज़िट फ़ॉर्म (Annexure 9) — ") + nb.name) } }
+                babies.filter { nb -> data.forms.none { it.beneficiaryId == nb.id && it.formId == "annex9" } }.forEach { nb -> OutlinedButton(onClick = { viewer = if (data.forms.any { it.beneficiaryId == nb.id && it.formId == "annex9" }) ArogyaOfficialForms.table(ArogyaOfficialForms.ANNEX9, nb, data.forms) else ArogyaForms.homeVisitForm(nb, visits) }, modifier = Modifier.fillMaxWidth()) { Text(tr("Home Visit Form (Annexure 9) — ", "होम विज़िट फ़ॉर्म (Annexure 9) — ") + nb.name) } }
                 val filledForms = data.forms.groupBy { it.beneficiaryId to it.formId }.entries.mapNotNull { (k, es) -> val b = data.beneficiaries.firstOrNull { it.id == k.first }; val sp = ArogyaOfficialForms.byId(k.second); if (b == null || sp == null) null else Triple(b, sp, es.size) }
                     .sortedWith(compareBy({ ArogyaOfficialForms.ALL.indexOf(it.second) }, { it.first.name }))
                 if (filledForms.isNotEmpty()) Text(tr("Visit forms filled from home visits (", "घर विज़िट से भरे फ़ॉर्म (") + filledForms.size + ")", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
-                filledForms.forEach { (b, sp, n) -> OutlinedButton(onClick = { form = ArogyaOfficialForms.table(sp, b, data.forms) }, modifier = Modifier.fillMaxWidth()) {
+                filledForms.forEach { (b, sp, n) -> OutlinedButton(onClick = { viewer = ArogyaOfficialForms.table(sp, b, data.forms) }, modifier = Modifier.fillMaxWidth()) {
                     Text("${sp.title.substringBefore(" —").substringBefore(" (")} — ${b.name} · $n " + tr("visit", "विज़िट") + (if (n == 1 || hindi) "" else "s"), maxLines = 2) } }
-                form?.let { f ->
-                    Text(f.title, fontWeight = FontWeight.Bold); Text(tr("Format: ", "खाका: ") + f.source, style = MaterialTheme.typography.bodySmall)
-                    Column(Modifier.horizontalScroll(rememberScrollState())) {
-                        val w = f.headers.mapIndexed { i, hd -> if (i == 0 || hd.contains("Name") || hd.contains("Ask")) 170.dp else 84.dp }
-                        Row { f.headers.forEachIndexed { i, hd -> Text(hd, Modifier.width(w[i]).padding(2.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall) } }
-                        HorizontalDivider()
-                        f.rows.take(80).forEach { r -> Row { r.forEachIndexed { i, c -> Text(c, Modifier.width(w.getOrElse(i) { 84.dp }).padding(2.dp), style = MaterialTheme.typography.bodySmall, maxLines = 2) } }; HorizontalDivider() }
-                    }
-                    if (f.note.isNotBlank()) Text(f.note, style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { if (!store.shareFormPdf(f)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show() }) { Text(tr("Share as PDF", "PDF भेजें")) }
-                }
+                viewer?.let { f -> ArogyaFormViewer(f, hindi, store) { viewer = null } }
             }
             "vhr" -> {
                 val v = remember(data) { ArogyaRegistryLogic.villageRegister(data.beneficiaries, today) }

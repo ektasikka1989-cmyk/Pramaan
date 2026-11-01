@@ -1,0 +1,201 @@
+package com.example.arfas
+
+import android.content.Context
+import android.os.Bundle
+import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
+import android.print.PageRange
+import android.print.PrintAttributes
+import android.print.PrintDocumentAdapter
+import android.print.PrintDocumentInfo
+import android.print.PrintManager
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+
+/** System print (sharesheet Print / printers) for a PDF already rendered in memory. */
+object ArogyaPrint {
+    fun printPdf(context: Context, jobName: String, bytes: ByteArray): Boolean = runCatching {
+        val mgr = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+        mgr.print(jobName.take(60), PdfAdapter(bytes), null)
+        true
+    }.getOrDefault(false)
+
+    private class PdfAdapter(val bytes: ByteArray) : PrintDocumentAdapter() {
+        override fun onLayout(
+            old: PrintAttributes?, new: PrintAttributes?, cancel: CancellationSignal?,
+            cb: LayoutResultCallback?, extras: Bundle?
+        ) {
+            if (cancel?.isCanceled == true) { cb?.onLayoutCancelled(); return }
+            cb?.onLayoutFinished(
+                PrintDocumentInfo.Builder("document.pdf")
+                    .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+                    .setPageCount(PrintDocumentInfo.PAGE_COUNT_UNKNOWN).build(), true
+            )
+        }
+
+        override fun onWrite(
+            pages: Array<out PageRange>?, dest: ParcelFileDescriptor?,
+            cancel: CancellationSignal?, cb: WriteResultCallback?
+        ) {
+            try {
+                ParcelFileDescriptor.AutoCloseOutputStream(dest).use { it.write(bytes) }
+                cb?.onWriteFinished(arrayOf(PageRange.ALL_PAGES))
+            } catch (t: Throwable) {
+                cb?.onWriteFailed(t.message)
+            }
+        }
+    }
+}
+
+/**
+ * One shared grid for every register and official form: sticky header row, sticky first
+ * column, horizontal + vertical scroll. The header sits above the scrolling rows; every row
+ * shares one horizontal scroll state, so columns stay aligned.
+ */
+@Composable
+fun ArogyaGrid(
+    headers: List<String>,
+    rows: List<List<String>>,
+    colWidths: List<Dp> = headers.mapIndexed { i, _ -> if (i == 0) 150.dp else 96.dp },
+    maxLines: Int = 2,
+    firstColBold: Boolean = true,
+    highlightCol: Int? = null,
+    sortCol: Int = -1,
+    sortAsc: Boolean = true,
+    onHeaderTap: ((Int) -> Unit)? = null,
+    onRowTap: ((Int) -> Unit)? = null,
+    rowBg: ((Int) -> Color)? = null,
+    chipColumns: Set<Int> = emptySet(),
+    chipColor: (String) -> Color? = { null }
+) {
+    fun width(i: Int) = colWidths.getOrElse(i) { 96.dp }
+    val line = MaterialTheme.colorScheme.outlineVariant
+    val hState = rememberScrollState()
+    val today = MaterialTheme.colorScheme.tertiaryContainer
+
+    @Composable
+    fun cell(text: String, i: Int, bold: Boolean, bg: Color?, chip: Boolean) {
+        val box = Modifier.width(width(i)).background(bg ?: Color.Transparent).padding(6.dp)
+        if (chip) {
+            val c = chipColor(text)
+            if (c != null) {
+                Box(box, contentAlignment = Alignment.CenterStart) {
+                    Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = c,
+                        modifier = Modifier.background(c.copy(alpha = 0.14f), MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 2.dp))
+                }
+                return
+            }
+        }
+        Text(text, box, maxLines = maxLines, overflow = TextOverflow.Ellipsis,
+            fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+            style = MaterialTheme.typography.bodySmall)
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        // Sticky header: first cell fixed, the rest scroll with the rows.
+        Row(Modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
+            val h0 = headers.getOrElse(0) { "" } + if (sortCol == 0) (if (sortAsc) " ▲" else " ▼") else ""
+            Box(Modifier.width(width(0)).clickable(enabled = onHeaderTap != null) { onHeaderTap?.invoke(0) }.padding(6.dp)) {
+                Text(h0, maxLines = maxLines, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+            }
+            Row(Modifier.horizontalScroll(hState)) {
+                headers.drop(1).forEachIndexed { k, h ->
+                    val i = k + 1
+                    val label = h + if (sortCol == i) (if (sortAsc) " ▲" else " ▼") else ""
+                    Box(Modifier.width(width(i)).clickable(enabled = onHeaderTap != null) { onHeaderTap?.invoke(i) }.padding(6.dp)) {
+                        Text(label, maxLines = maxLines, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+        HorizontalDivider(color = line)
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
+            itemsIndexed(rows, key = { i, r -> "$i:${r.firstOrNull()}" }) { i, r ->
+                val bg = rowBg?.invoke(i)
+                Row(Modifier.fillMaxWidth().background(bg ?: Color.Transparent)
+                    .clickable(enabled = onRowTap != null) { onRowTap?.invoke(i) }) {
+                    cell(r.getOrElse(0) { "" }, 0, firstColBold, null, 0 in chipColumns)
+                    Row(Modifier.horizontalScroll(hState)) {
+                        r.drop(1).forEachIndexed { k, c ->
+                            val col = k + 1
+                            cell(c, col, false, if (highlightCol == col) today else null, col in chipColumns)
+                        }
+                    }
+                }
+                HorizontalDivider(color = line)
+            }
+        }
+    }
+}
+
+/**
+ * Full-screen official-form viewer: title, source, ruled grid, note, with
+ * Share PDF, Print and Back. Opened by tapping any form (RI 3/4, stock card,
+ * home visit forms, filled visit forms).
+ */
+@Composable
+fun ArogyaFormViewer(
+    form: FormTable,
+    hindi: Boolean,
+    store: ArogyaRegistryStore,
+    highlightCol: Int? = null,
+    onBack: () -> Unit
+) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val context = LocalContext.current
+    fun toast(m: String) = Toast.makeText(context, m, Toast.LENGTH_LONG).show()
+    Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onBack) { Text(tr("‹ Back", "‹ पीछे")) }
+                    Column(Modifier.weight(1f)) {
+                        Text(form.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(tr("Format: ", "खाका: ") + form.source, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Box(Modifier.weight(1f)) {
+                    ArogyaGrid(
+                        headers = form.headers, rows = form.rows, maxLines = 4,
+                        colWidths = form.headers.mapIndexed { i, hd ->
+                            when {
+                                i == 0 || hd.contains("Name", true) || hd.contains("Ask", true) -> 170.dp
+                                else -> 96.dp
+                            }
+                        },
+                        highlightCol = highlightCol
+                    )
+                }
+                if (form.note.isNotBlank()) Text(form.note, style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        if (!store.shareFormPdf(form)) toast(tr("Could not create the PDF", "PDF नहीं बना"))
+                    }, modifier = Modifier.weight(1f)) { Text(tr("Share PDF", "PDF भेजें")) }
+                    OutlinedButton(onClick = {
+                        val bytes = store.renderFormPdf(form)
+                        if (bytes == null || !ArogyaPrint.printPdf(context, form.title, bytes)) toast(tr("Print failed", "छपाई नहीं हुई"))
+                    }, modifier = Modifier.weight(1f)) { Text(tr("Print", "छापें")) }
+                }
+            }
+        }
+    }
+}
