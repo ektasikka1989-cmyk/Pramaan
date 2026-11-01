@@ -307,13 +307,17 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     }
 
     /** A short ANM message drafted from the visit facts only; the worker edits it before sending. */
-    suspend fun anmMessage(facts: String): String = mutex.withLock {
+    suspend fun anmMessage(facts: String): String = anmMessageDetailed(facts).first
+
+    /** Same, plus the engine label that ran it (for the demo's honest "AI at work" panel). */
+    suspend fun anmMessageDetailed(facts: String): Pair<String, String> = mutex.withLock {
         val t = System.currentTimeMillis()
-        val clean = route("anm_message", ArogyaAiExtras.anmPrompt(facts), 200) { out ->
-            ArogyaAiExtras.groundedSentences(out, facts, max = 8, lineMode = true).takeIf { it.length >= 30 } }.first.orEmpty()
+        val (opt, by) = route("anm_message", ArogyaAiExtras.anmPrompt(facts), 200) { out ->
+            ArogyaAiExtras.groundedSentences(out, facts, max = 8, lineMode = true).takeIf { it.length >= 30 } }
+        val clean = opt.orEmpty()
         Log.i(TAG, "AROGYA_TIMING event=anm_message ms=${System.currentTimeMillis() - t} chars=${clean.length}")
         check(clean.length >= 30) { "Could not draft the message. The ready-made message is still there." }
-        clean
+        clean to by
     }
 
     /** Daily refresher: one question per guide passage, kept only if the right answer is in the passage. */
@@ -331,7 +335,10 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     }
 
     /** Reads an MCP card photo/PDF: text by ML Kit on the phone, fields by Llama, and only fields found in the text are kept. */
-    suspend fun readCard(uri: android.net.Uri): ArogyaCardReading = mutex.withLock {
+    suspend fun readCard(uri: android.net.Uri): ArogyaCardReading = readCardDetailed(uri).first
+
+    /** Same, plus the engine label that read the fields (for the demo's honest "AI at work" panel). */
+    suspend fun readCardDetailed(uri: android.net.Uri): Pair<ArogyaCardReading, String> = mutex.withLock {
         val t = System.currentTimeMillis()
         val mgr = attachments ?: error("Card reading is not available.")
         mgr.clearPending()
@@ -341,10 +348,11 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             val text = listOf(staged.extractedText, staged.localVisualContext).filter { it.isNotBlank() }.joinToString("\n").trim()
             check(text.length >= 15) { "No readable text was found. Take a closer photo in good light, card flat." }
             // Only values found in the card's own text are kept, whichever model reads it.
-            val fields = route("card_read", ArogyaAiExtras.cardPrompt(text.take(3500)), 380) { out ->
-                ArogyaAiExtras.parseCard(out, text).takeIf { it.isNotEmpty() } }.first.orEmpty()
+            val (opt, by) = route("card_read", ArogyaAiExtras.cardPrompt(text.take(3500)), 380) { out ->
+                ArogyaAiExtras.parseCard(out, text).takeIf { it.isNotEmpty() } }
+            val fields = opt.orEmpty()
             Log.i(TAG, "AROGYA_TIMING event=card_read ms=${System.currentTimeMillis() - t} ocrChars=${text.length} fields=${fields.size}")
-            ArogyaCardReading(text, fields)
+            ArogyaCardReading(text, fields) to by
         } finally { mgr.releaseTurnAttachments(claimed.map { it.id }, consumed = true) }
     }
 

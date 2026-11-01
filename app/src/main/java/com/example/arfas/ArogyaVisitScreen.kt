@@ -949,7 +949,8 @@ fun ArogyaVisitScreen(
         }
     },confirmButton={TextButton(onClick={quizOpen=false}) {Text(tr("Close","बंद करें"))}},
     dismissButton={TextButton(onClick={loadQuiz()},enabled=!quizBusy) {Text(tr("New questions","नए सवाल"))}})
-    if(demoOpen) ArogyaDemoTour(ai,queue,visits,hindi,speak={ t -> speak(t) },onLoadSample={ loadSample() },onClose={ demoOpen=false; tts.stop() })
+    if(demoOpen) ArogyaDemoTour(ai,queue,visits,hindi,speak={ t -> speak(t) },onLoadSample={ loadSample() },onClose={ demoOpen=false; tts.stop() },
+        onDeepLink={ target -> demoOpen=false; tts.stop(); if(target.startsWith("guided:")) guidedFor=reg.beneficiaries.firstOrNull { it.id==target.removePrefix("guided:") } else hubOpen=target })
     if(profileOpen) {
         var n by remember { mutableStateOf(ashaName) }; var v by remember { mutableStateOf(ashaVillage) }
         AlertDialog(onDismissRequest={profileOpen=false},title={Text(tr("Your details","आपकी जानकारी"))},text={ Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
