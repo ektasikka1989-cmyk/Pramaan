@@ -115,7 +115,6 @@ fun ArogyaVisitScreen(
     var escalateOpen by remember { mutableStateOf(false) }
     var escalateConcern by remember { mutableStateOf("") }
     var historyOpen by remember { mutableStateOf(false) }
-    var showPassages by remember { mutableStateOf(false) }
     var historyEntry by remember { mutableStateOf<ArogyaGuideEntry?>(null) }
     fun escalate(concern:String) { escalateConcern=concern; escalateOpen=true }
     // Ask the SOP without a visit: a transient record that is never saved.
@@ -212,7 +211,7 @@ fun ArogyaVisitScreen(
     LaunchedEffect(ai) { ai?.cloudChoice = { ArogyaCloud.choice(context.applicationContext) } }
     fun openAi(task:ArogyaAiTask, topic:String="", sop:Boolean=false) {
         aiOriginalNotes=queue.state.value.visits.firstOrNull {it.id==selectedId}?.notes.orEmpty();aiVisitId=if(sop) SOP_VISIT_ID else selectedId;aiTask=task;aiTopic=topic;aiQuestion=if(task==ArogyaAiTask.EXPLAIN && topic.isNotBlank() && topic!="home visit") "Explain $topic in simple language for the family." else ""
-        showOnlineOptions=false;showPassages=false;familyText="";askedQuestionForWarning="";aiDraft="";ai?.clearAttachments();qFiles=emptyList();aiCapture=emptyList();aiResult=null;aiError="";aiPrevious="";aiCopy="";aiOpen=true
+        showOnlineOptions=false;familyText="";askedQuestionForWarning="";aiDraft="";ai?.clearAttachments();qFiles=emptyList();aiCapture=emptyList();aiResult=null;aiError="";aiPrevious="";aiCopy="";aiOpen=true
     }
     DisposableEffect(Unit) { onDispose { if(aiBusy) onCancelAi();aiJob?.cancel() } }
     var exportVisitId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -745,19 +744,20 @@ fun ArogyaVisitScreen(
                 }
                 // Warning appears after "Ask", not while typing (it used to push the text out of view).
                 val warningNow = if(aiTask==ArogyaAiTask.EXPLAIN && askedQuestionForWarning.isNotBlank()) ArogyaUrgentTriage.assess(askedQuestionForWarning,gv) else null
-                fun runVisitAi(forceOnline:Boolean,afterSafety:Boolean=false) {
+                fun runVisitAi(forceOnline:Boolean,afterSafety:Boolean=false,questionOverride:String?=null) {
                     val snapshot=gv
-                    val askedQuestion=aiQuestion.ifBlank { tr("About the attached file","अटैच की गई फ़ाइल के बारे में") }+(if(qFiles.isNotEmpty()) "  [📎 ${qFiles.joinToString(", ")}]" else "")
+                    val qNow=questionOverride ?: aiQuestion
+                    val askedQuestion=qNow.ifBlank { tr("About the attached file","अटैच की गई फ़ाइल के बारे में") }+(if(qFiles.isNotEmpty()) "  [📎 ${qFiles.joinToString(", ")}]" else "")
                     aiOnline=forceOnline
                     aiBusy=true;aiError="";aiDraft="";aiChecking=false;familyText="";familyModel="";familyMs=0L;aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L
                     aiJob=scope.launch {
                         try {
-                            val result=onRunAi(ArogyaAiRequest(aiTask,snapshot,aiQuestion,hindi,aiTopic,aiPrevious,forceOnline,afterSafetyPrompt=afterSafety,
+                            val result=onRunAi(ArogyaAiRequest(aiTask,snapshot,qNow,hindi,aiTopic,aiPrevious,forceOnline,afterSafetyPrompt=afterSafety,
                                 onProgress={ p -> val u=ArogyaDraftUiReduce.reduce(ArogyaDraftUi(aiDraft,aiChecking),p); aiDraft=u.text; aiChecking=u.checking
                                     if(u.text.isNotBlank()) lastDeltaAt=System.currentTimeMillis() }))
                             aiChecking=false
                             qFiles=ai?.attachedNames().orEmpty()
-                            aiResult=result;aiCopy=result.text;aiCapture=result.captureItems;showPassages=false
+                            aiResult=result;aiCopy=result.text;aiCapture=result.captureItems
                             // Every guide question is recorded with the gv: question, answer, the guide's sentence and the passages used.
                             if(aiTask==ArogyaAiTask.EXPLAIN && !result.sourceOnly && !result.safetyPrompt) {
                                 val entry=ArogyaGuideEntry(System.currentTimeMillis(),askedQuestion,result.text,result.quote,result.quoteSource,result.sources,result.provider,result.elapsedMs,ArogyaUrgentTriage.assess(askedQuestion,snapshot).orEmpty())
@@ -766,13 +766,43 @@ fun ArogyaVisitScreen(
                             }
                             // Chat thread: every answer stays visible; a repeated question (online check) replaces its answer.
                             if(aiTask==ArogyaAiTask.EXPLAIN) {
-                                val msg=SopChatMsg(System.currentTimeMillis(),askedQuestion,result)
+                                val msg=SopChatMsg(System.currentTimeMillis(),askedQuestion,result,qNow)
                                 val cur=sopThreads[snapshot.id].orEmpty()
                                 sopThreads=sopThreads+(snapshot.id to if(cur.lastOrNull()?.question==askedQuestion) cur.dropLast(1)+msg else cur+msg)
                             }
-                            aiPrevious="Previous question: $aiQuestion\nPrevious draft explanation: ${result.text.take(800)}"
+                            aiPrevious="Previous question: $qNow\nPrevious draft explanation: ${result.text.take(800)}"
                         } catch(e:CancellationException) {aiError="Cancelled or timed out. Any previous answer remains unchanged; no freshness check was accepted.";throw e}
                         catch(e:Exception) {aiError=e.message ?: "AI unavailable. Your visit is unchanged."}
+                        finally {aiBusy=false}
+                    }
+                }
+                // Item 4 "More detail": the same passages answer again, longer; the card (and the
+                // visit's guide log) is replaced in place, not appended.
+                fun runMoreDetail(displayQ:String,askedQ:String) {
+                    val snapshot=gv; val engine=ai ?: return
+                    aiBusy=true;aiError="";aiDraft="";aiChecking=false;aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L
+                    aiJob=scope.launch {
+                        try {
+                            val result=engine.moreDetail(askedQ,snapshot,
+                                onProgress={ p -> val u=ArogyaDraftUiReduce.reduce(ArogyaDraftUi(aiDraft,aiChecking),p); aiDraft=u.text; aiChecking=u.checking
+                                    if(u.text.isNotBlank()) lastDeltaAt=System.currentTimeMillis() })
+                            aiChecking=false
+                            val cur=sopThreads[snapshot.id].orEmpty()
+                            val idx=cur.indexOfLast { it.question==displayQ }
+                            if(idx>=0) sopThreads=sopThreads+(snapshot.id to cur.mapIndexed { i,m -> if(i==idx) m.copy(result=result) else m })
+                            // Latest card, expanded history and the draft flow (no thread entry) all refresh.
+                            if(idx<0 || cur.lastOrNull()?.question==displayQ) { aiResult=result;aiCopy=result.text;aiCapture=result.captureItems }
+                            if(!result.sourceOnly && !result.safetyPrompt) {
+                                val current=queue.state.value.visits.firstOrNull {it.id==snapshot.id}
+                                if(current!=null && !current.completed) edit(snapshot.id,false) {row->
+                                    val at=row.guideLog.indexOfLast {it.question==displayQ}
+                                    if(at<0) row else row.copy(guideLog=row.guideLog.mapIndexed { i,e ->
+                                        if(i==at) e.copy(answer=result.text,quote=result.quote,quoteSource=result.quoteSource,sources=result.sources,provider=result.provider,elapsedMs=result.elapsedMs) else e })
+                                }
+                            }
+                            aiPrevious="Previous question: $askedQ\nPrevious draft explanation: ${result.text.take(800)}"
+                        } catch(e:CancellationException) {aiError="Cancelled. The first answer is unchanged.";throw e}
+                        catch(e:Exception) {aiError=e.message ?: "The fuller answer failed. The first answer is unchanged."}
                         finally {aiBusy=false}
                     }
                 }
@@ -792,16 +822,23 @@ fun ArogyaVisitScreen(
                     }
                     LazyColumn(Modifier.weight(1f),state=chatState,verticalArrangement=Arrangement.spacedBy(10.dp)) {
                         val history=if(aiResult!=null) thread.dropLast(1) else thread
-                        items(history,key={it.id}) { msg -> SopChatHistoryCard(msg,hindi,onOpenSource={source=it},onSpeak={speak(it)}) }
+                        items(history,key={it.id}) { msg ->
+                            val askedH=msg.asked.ifBlank { msg.question }
+                            fun familyH(h:Boolean) { val r=msg.result ?: return; val engine=ai ?: return; familyBusy=true; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(r.text,r.quote,h); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
+                            SopChatHistoryCard(msg,hindi,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,
+                                { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
+                                {speak(it)},{tts.stop()},{familyH(it)},{runVisitAi(true,afterSafety=true,questionOverride=askedH)},{runMoreDetail(msg.question,askedH)},{escalate(it)},context)
+                        }
                         aiResult?.let { result ->
                             item(key="latest") {
                                 Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                     val q=thread.lastOrNull()?.question ?: aiQuestion
+                                    val askedQ=thread.lastOrNull()?.asked?.ifBlank { q } ?: q
                                     if(q.isNotBlank()) Text(q,fontWeight=FontWeight.Bold)
                                     fun family(h:Boolean) { val engine=ai ?: return; familyBusy=true; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(result.text,result.quote,h); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
-                                    SopAnswerCard(result,q,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,showPassages,{showPassages=!showPassages},{source=it},
+                                    SopAnswerCard(result,q,askedQ,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,true,
                                         { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
-                                        {speak(it)},{tts.stop()},familyText,familyBusy,familyModel,familyMs,{family(it)},{runVisitAi(true,afterSafety=true)},{escalate(it)},context,hindi)
+                                        {speak(it)},{tts.stop()},familyText,familyBusy,familyModel,familyMs,{family(it)},{runVisitAi(true,afterSafety=true,questionOverride=askedQ)},{runMoreDetail(q,askedQ)},{escalate(it)},context,hindi)
                                 }
                             }
                         }
@@ -882,9 +919,9 @@ fun ArogyaVisitScreen(
                         // Unreachable in the draft flow (organise results always carry canCopyToNotes);
                         // the shared card keeps it correct if that ever changes.
                         fun familyElse(h:Boolean) { val engine=ai ?: return; familyBusy=true; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(result.text,result.quote,h); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
-                        SopAnswerCard(result,aiQuestion,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,showPassages,{showPassages=!showPassages},{source=it},
+                        SopAnswerCard(result,aiQuestion,aiQuestion,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,true,
                             { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
-                            {speak(it)},{tts.stop()},familyText,familyBusy,familyModel,familyMs,{familyElse(it)},{runVisitAi(true,afterSafety=true)},{escalate(it)},context,hindi)
+                            {speak(it)},{tts.stop()},familyText,familyBusy,familyModel,familyMs,{familyElse(it)},{runVisitAi(true,afterSafety=true)},{runMoreDetail(aiQuestion,aiQuestion)},{escalate(it)},context,hindi)
                     }
                     Row {TextButton(onClick={speak(if(result.canCopyToNotes) aiCopy else result.text)}) {Text(tr("🔊 Read aloud","🔊 सुनें"))};TextButton(onClick={tts.stop()}) {Text(tr("Stop","रोकें"))}}
                 }

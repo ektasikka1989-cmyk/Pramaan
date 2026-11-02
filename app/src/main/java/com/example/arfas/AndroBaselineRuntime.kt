@@ -273,6 +273,17 @@ class AndroBaselineRuntime(
     private val semanticCapabilityProvider: SemanticCapabilityContextProvider?
         get() = contextProviders.filterIsInstance<SemanticCapabilityContextProvider>().firstOrNull()
     private val pocketRagSessions = PocketRagSessionStore(maxTurnsPerKb = 40)
+    /**
+     * Item 4 "More detail" evidence cache: the last 5 generic-KB packets by normalised
+     * question, so a detail request regenerates from the SAME passages with no new search.
+     */
+    private val detailPackets = LinkedHashMap<String, PocketRagPacket>()
+    private fun detailKey(q: String) = q.trim().lowercase(java.util.Locale.ROOT)
+    @Synchronized private fun cacheDetailPacket(query: String, packet: PocketRagPacket) {
+        detailPackets[detailKey(query)] = packet
+        while (detailPackets.size > 5) detailPackets.remove(detailPackets.keys.first())
+    }
+    @Synchronized private fun detailPacketFor(query: String): PocketRagPacket? = detailPackets[detailKey(query)]
     private val pocketRagEvidenceAssembler = PocketRagEvidenceAssembler { effectiveContextWindowTokens }
     // Generic selected-KB packets use the (possibly larger) KB window; ANM keeps the old budget.
     private val genericKbEvidenceAssembler = PocketRagEvidenceAssembler { kbContextWindowTokens }
@@ -753,6 +764,8 @@ class AndroBaselineRuntime(
         genericKnowledgeProvider: GenericKnowledgeContextProvider?,
         /** "Check online" pressed on a local KB answer: Cloud verifies that answer with the same evidence. */
         checkOnline: Boolean = false,
+        /** Item 4 "More detail": regenerate from the cached packet (no new search), longer length line. */
+        moreDetail: Boolean = false,
         /** The local answer as it is written (shown at once; replaced by the checked final answer). */
         onAnswerDelta: ((String) -> Unit)? = null,
         /** Clears the shown preview when that draft is not accepted as it is. */
@@ -790,30 +803,37 @@ class AndroBaselineRuntime(
             else -> pocketRagEvidenceAssembler
         }
         if (useOnline) Log.i(TAG, "CHECK_ONLINE_WIDE_EVIDENCE chars=${onlineAttachment!!.text.length}")
-        val assembled = assembler.assemble(
+        // Item 4 "More detail": the cached packet for this exact question (no new search); a
+        // cache miss (restart, another household) falls back to a normal searched turn.
+        val cached = if (moreDetail) detailPacketFor(query) else null
+        if (moreDetail) Log.i(TAG, "POCKET_RAG_DETAIL cacheHit=${cached != null}")
+        val detailPacket = cached?.copy(lengthLineOverride = ArogyaQuestionType.detailLine(), detailMode = true)
+        val assembled = if (detailPacket != null) null else assembler.assemble(
             query = query,
             selected = selection,
             attachments = turnAttachments.map { attachment ->
                 PocketRagAttachmentRecord(attachment.sourceId, attachment.text, attachment.attributes)
             }
         )
-        val packet = assembled
+        val packet = detailPacket ?: assembled
         // Current/live questions the KB has nothing solid on go to a live web search (labelled).
         val liveQuestion = FreshnessTemporalGuard.requiresFreshVerification(query)
         val kbEvidenceWeak = packet == null || packet.bestRelevance == null ||
             packet.bestRelevance < PocketRagPromptBuilder.WEAK_EVIDENCE_RELEVANCE
         val earlierAnswerWasNotFound = checkOnline && pocketRagSessions.context(selection.sessionKey)
             .none { it.user.trim().equals(query.trim(), ignoreCase = true) }
-        if ((liveQuestion && kbEvidenceWeak) || (checkOnline && earlierAnswerWasNotFound && kbEvidenceWeak)) {
-            kbLiveWebAnswer(query, started, if (liveQuestion) "live_question_weak_kb" else "check_online_not_in_kb")
-                ?.let { return it }
+        if (detailPacket == null) {
+            if ((liveQuestion && kbEvidenceWeak) || (checkOnline && earlierAnswerWasNotFound && kbEvidenceWeak)) {
+                kbLiveWebAnswer(query, started, if (liveQuestion) "live_question_weak_kb" else "check_online_not_in_kb")
+                    ?.let { return it }
+            }
         }
         // Offline first: a question the knowledge base clearly does not cover ("what is a bullet
         // train" with the ASHA guide open) gets the phone's general answer straight away, labelled,
         // instead of a long knowledge-base attempt that ends in "not found". Weaker matches still
         // go through the knowledge base first (broad questions often match at -1 to 1).
         val clearlyOutside = packet == null || (packet.bestRelevance != null && packet.bestRelevance < PocketRagPromptBuilder.VERY_WEAK_EVIDENCE_RELEVANCE)
-        if (clearlyOutside && !checkOnline) {
+        if (detailPacket == null && clearlyOutside && !checkOnline) {
             Log.i(TAG, "KB_OUT_OF_SCOPE_GENERAL best=${packet?.bestRelevance} kb=${selection.sessionKey}")
             kbGeneralAnswer(query, started, packet?.sources?.map { KnowledgeSourcePresentation.topicLabel(it.display) }.orEmpty(), null, selection.displayName, selection.sessionKey)
                 ?.let { return it }
@@ -829,6 +849,8 @@ class AndroBaselineRuntime(
                 sourceIds = listOf(KnowledgeSourcePresentation.topicsMarker(KnowledgeSourcePresentation.NOT_FOUND_PREFIX, emptyList()))
             )
         }
+        // Every fresh generic-KB packet is cached for "More detail" (detail regens re-cache nothing).
+        if (detailPacket == null && selection.kind == "generic") cacheDetailPacket(query, packet)
 
         val kbEngine = PocketRagEngine(
             local = PocketRagLocalGenerator(localModelManager, onAnswerDelta),
@@ -1334,6 +1356,8 @@ class AndroBaselineRuntime(
         userText: String,
         bitmap: Bitmap? = null,
         forceExternalInformation: Boolean = false,
+        /** Item 4 "More detail": same passages as the last answer to this question, no new search. */
+        moreDetail: Boolean = false,
         visionModeActive: Boolean = false,
         visualContext: String = "",
         visualFrameProvider: (suspend () -> Bitmap?)? = null,
@@ -1535,13 +1559,17 @@ class AndroBaselineRuntime(
             // KB + camera ("what is this?", "ye kya hai"): the Meta vision facts join the question,
             // so the guideline search uses the label text the camera read.
             val kbQuery = if (anyKnowledgePackSelectedAtTurnStart) kbTurnQuery(query, visionModeActive, bitmap, visualFrameProvider, turnAttachments) else query
-            var attachments = turnScopedAttachments + collectExtensionAttachments(
+            // Item 4 "More detail": the cached packet answers, so no new search runs (a cache
+            // miss still searches and answers normally; handlePocketRagTurn logs the fallback).
+            val detailHit = moreDetail && detailPacketFor(kbQuery) != null
+            if (moreDetail) Log.i(TAG, "POCKET_RAG_DETAIL_RESEARCH skip=${detailHit}")
+            var attachments = turnScopedAttachments + (if (detailHit) emptyList() else collectExtensionAttachments(
                 query = kbQuery,
                 allowSessionRecall = !visionModeActive && !anyKnowledgePackSelectedAtTurnStart,
                 currentTurnAttachmentIds = turnAttachments.mapTo(linkedSetOf()) { it.id },
                 attachmentContextDependent = attachmentContextDependent,
                 historyOverride = if (anyKnowledgePackSelectedAtTurnStart) kbHistoryForRetrieval else null
-            )
+            ))
             val genericKnowledgeProvider = genericKnowledgeProviderForTurn
             val genericLookupState = genericKnowledgeProvider?.lastLookupState()
             val turnSourceIds = buildList {
@@ -1592,6 +1620,7 @@ class AndroBaselineRuntime(
                     turnSourceIds = turnSourceIds,
                     genericKnowledgeProvider = genericKnowledgeProvider,
                     checkOnline = forceExternalInformation,
+                    moreDetail = moreDetail,
                     onAnswerDelta = onLocalDelta,
                     onAnswerAbort = onLocalAbort
                 )

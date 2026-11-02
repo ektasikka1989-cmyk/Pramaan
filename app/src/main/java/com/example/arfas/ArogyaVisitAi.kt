@@ -237,11 +237,54 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             // Used attachments are released; on failure they stay attached for a retry.
             attachments?.releaseTurnAttachments(turnFiles.map { it.id }, consumed = answered)
         }
-        val elapsed = System.currentTimeMillis() - t0
+        return buildResult(turn, question, System.currentTimeMillis() - t0, firstWordsMs, detail = false)
+    }
+
+    /**
+     * Item 4 "More detail": the same question regenerates from the SAME passages (the
+     * runtime's detail cache; no new search) with the longer detail length line, up to the
+     * model ceiling. The caller replaces the answer in place; sources come from the same
+     * evidence, so the source line stays the same.
+     */
+    suspend fun moreDetail(question: String, visit: ArogyaVisit, onProgress: ((ArogyaProgress) -> Unit)? = null): ArogyaAiResult = mutex.withLock {
+        val t0 = System.currentTimeMillis()
+        val asked = question.trim()
+        check(asked.isNotEmpty()) { "Ask a question first." }
+        runCatching { ensureLocalModel() }
+        check(features.ensureKnowledgeReady()) { "The ASHA guide is not ready. Open Setup → Install ASHA guide. Your visit is saved." }
+        if (!features.isKnowledgeEnabled()) check(features.setKnowledgeEnabled(true)) { "Could not select the ASHA guide. Open Setup and select it. Your visit is saved." }
+        if (lastVisitId != visit.id) { runCatching { runtime.startNewChat(clearHistory = true, mode = "NORMAL") }; lastVisitId = visit.id }
+        runCatching { runtime.ensureConversationOpen() }
+        onProgress?.invoke(ArogyaProgress("search"))
+        val draft = StringBuilder()
+        var firstWordsMs = -1L
+        val turn = try {
+            withTimeout(ASK_TIMEOUT_MS) {
+                runtime.chat(asked, moreDetail = true,
+                    onLocalDelta = { d ->
+                        if (firstWordsMs < 0 && d.isNotBlank()) firstWordsMs = System.currentTimeMillis() - t0
+                        synchronized(draft) { draft.append(d) }; onProgress?.invoke(ArogyaProgress("write", synchronized(draft) { draft.toString() })) },
+                    onLocalAbort = { synchronized(draft) { draft.setLength(0) }; onProgress?.invoke(ArogyaProgress("checking")) })
+            }
+        } catch (e: TimeoutCancellationException) {
+            Log.w(TAG, "AROGYA_ASK_TIMEOUT detail after ${ASK_TIMEOUT_MS / 1000}s")
+            error("The fuller answer is taking too long. Your first answer is unchanged.")
+        }
+        return buildResult(turn, asked, System.currentTimeMillis() - t0, firstWordsMs, detail = true)
+    }
+
+    /** Shared turn → card result: breakdown log, R8, sources, quote, dose check. */
+    private fun buildResult(
+        turn: AndroBaselineRuntime.TurnResult,
+        question: String,
+        elapsed: Long,
+        firstWordsMs: Long,
+        detail: Boolean
+    ): ArogyaAiResult {
         // Joined offline with the stage lines by timestamp: POCKET_RAG_SEARCH_MS (search/rerank),
         // POCKET_RAG_EVIDENCE_MS, POCKET_RAG_LOCAL_GEN_MS / POCKET_RAG_CLOUD_MS (first words),
         // LLAMA_GENERATE (prompt/prefill/generation), POCKET_RAG_GATE_MS (checker), recovery lines.
-        Log.i(TAG, "AROGYA_ASK_BREAKDOWN online=${turn.provider == AndroBaselineRuntime.Provider.CLOUD} totalMs=$elapsed firstWordsMs=$firstWordsMs sources=${turn.sourceIds.size} profile=${ArogyaFlags.r1Profile} chars=${turn.text.length}")
+        Log.i(TAG, "AROGYA_ASK_BREAKDOWN detail=$detail online=${turn.provider == AndroBaselineRuntime.Provider.CLOUD} totalMs=$elapsed firstWordsMs=$firstWordsMs sources=${turn.sourceIds.size} profile=${ArogyaFlags.r1Profile} chars=${turn.text.length}")
         // R8 guideline-only mode (Ask SOP): a live-web or general answer — recognised by the
         // kbnotfound:/freshness: markers, never by verification:optional — becomes the ANM
         // message with the closest guide topics. Grounded and "Check online" answers pass through.

@@ -3,7 +3,9 @@ package com.example.arfas
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,19 +17,49 @@ import androidx.compose.ui.unit.dp
 data class SopChatMsg(
     val id: Long,
     val question: String,
-    val result: ArogyaAiResult? = null
+    val result: ArogyaAiResult? = null,
+    /** The exact query the runtime answered (thread [question] may carry a 📎 suffix). */
+    val asked: String = ""
 )
 
 /**
- * An earlier answer in the thread: question + "guide says" quote + sources, collapsible.
- * Tap expands the full answer text and the guide passages behind it.
+ * An answer rendered in sections: each Answer:/What to do:/When to tell the ANM: label
+ * (English or Hindi) becomes a small heading; unlabelled text renders as one block.
+ * Raw Markdown is stripped: the card never shows ## or **.
+ */
+@Composable
+fun SopAnswerText(text: String) {
+    val sections = remember(text) { ArogyaAnswerFormat.sections(text) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        sections.forEach { s ->
+            if (s.heading.isNotEmpty()) Text(s.heading, style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            if (s.body.isNotEmpty()) Text(s.body, style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}
+
+/**
+ * An earlier answer in the thread: question + answer + sources, collapsible.
+ * Tap expands the same full card the latest answer shows (buttons included).
  */
 @Composable
 fun SopChatHistoryCard(
     msg: SopChatMsg,
     hindi: Boolean,
-    onOpenSource: (ArogyaSource) -> Unit,
-    onSpeak: (String) -> Unit
+    warning: String?,
+    inVisit: Boolean,
+    ai: ArogyaVisitAi?,
+    busy: Boolean,
+    pending: Int,
+    onOpenUrl: (String) -> Unit,
+    onSpeak: (String) -> Unit,
+    onStopSpeak: () -> Unit,
+    onFamily: (Boolean) -> Unit,
+    onCheckOnline: () -> Unit,
+    onMoreDetail: () -> Unit,
+    onEscalate: (String) -> Unit,
+    context: Context
 ) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     var expanded by remember(msg.id) { mutableStateOf(false) }
@@ -40,41 +72,20 @@ fun SopChatHistoryCard(
             }
             if (result == null) {
                 Text(tr("No answer recorded.", "कोई उत्तर दर्ज नहीं।"), style = MaterialTheme.typography.bodySmall)
-            } else {
-                AiResultChip(result.provider, result.online, result.elapsedMs, hindi)
-                if (result.quote.isNotBlank()) Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-                ) {
-                    Column(Modifier.padding(10.dp)) {
-                        Text(tr("The guide says", "गाइड में लिखा है"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        Text("“${result.quote}”", maxLines = if (expanded) Int.MAX_VALUE else 2)
-                        if (result.quoteSource.isNotBlank()) Text("— " + result.quoteSource, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                Text(ArogyaMarkdown.strip(result.text), maxLines = if (expanded) Int.MAX_VALUE else 3, style = MaterialTheme.typography.bodyMedium)
+            } else if (!expanded) {
+                Text(ArogyaMarkdown.strip(result.text), maxLines = 3, style = MaterialTheme.typography.bodyMedium)
                 if (result.sources.isNotEmpty()) {
-                    if (!expanded) {
-                        Text(tr("Sources: ", "स्रोत: ") + result.sources.joinToString(", ") { "[${it.id}] ${it.title}" }.take(160),
-                            style = MaterialTheme.typography.bodySmall)
-                    } else {
-                        result.sources.forEach { s ->
-                            OutlinedButton(onClick = { onOpenSource(s) }, modifier = Modifier.fillMaxWidth()) {
-                                Text("📄 [${s.id}] ${s.title}" + (if (s.locator.isNotBlank()) " · ${s.locator}" else ""),
-                                    style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                            }
-                            if (s.excerpt.isNotBlank()) Card(Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(10.dp)) {
-                                    Text("[${s.id}] ${s.title}" + (if (s.locator.isNotBlank()) " · ${s.locator}" else ""),
-                                        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
-                                    ArogyaPassageText(s)
-                                }
-                            }
-                        }
-                        Row {
-                            TextButton(onClick = { onSpeak(result.text) }) { Text(tr("🔊 Read aloud", "🔊 सुनें")) }
-                        }
-                    }
+                    val s0 = result.sources.first()
+                    Text(tr("📚 From the guide: ", "📚 गाइड से: ") + s0.title +
+                        (if (s0.locator.isNotBlank()) ", ${s0.locator}" else ""),
+                        style = MaterialTheme.typography.bodySmall, maxLines = 2)
                 }
+            } else {
+                // Expanded history shows the full card; the family explanation it triggers
+                // reads back in the latest card (one family block per window).
+                SopAnswerCard(result, msg.question, msg.asked.ifBlank { msg.question }, warning, inVisit,
+                    ai, busy, pending, false, onOpenUrl, onSpeak, onStopSpeak, "", false, "", 0L,
+                    onFamily, onCheckOnline, onMoreDetail, onEscalate, context, hindi)
             }
         }
     }
@@ -115,21 +126,25 @@ fun SopBusyCard(
 }
 
 /**
- * The latest answer in the thread: quote, answer, source line, sources, passages,
- * share, family explanation and the online check. Moved as-is from the old single card.
+ * Item 4 answer layout (latest card and expanded history alike): the model chip, the
+ * "guide says" quote only when it adds to the answer (>= 70% overlap hides it), the
+ * answer first in sections, one compact source line that expands to the highlighted
+ * passages with "Open official document", then one buttons row: read aloud, explain,
+ * check online, more detail, share.
  */
 @Composable
 fun SopAnswerCard(
     result: ArogyaAiResult,
     question: String,
+    /** The exact query the runtime answered (for Check online / More detail). */
+    asked: String,
     warning: String?,
     inVisit: Boolean,
     ai: ArogyaVisitAi?,
     busy: Boolean,
     pending: Int,
-    showPassages: Boolean,
-    onTogglePassages: () -> Unit,
-    onOpenSource: (ArogyaSource) -> Unit,
+    /** History cards trigger the family explanation; its text reads in the latest card. */
+    showFamily: Boolean,
     onOpenUrl: (String) -> Unit,
     onSpeak: (String) -> Unit,
     onStopSpeak: () -> Unit,
@@ -139,30 +154,41 @@ fun SopAnswerCard(
     familyMs: Long,
     onFamily: (Boolean) -> Unit,
     onCheckOnline: () -> Unit,
+    onMoreDetail: () -> Unit,
     onEscalate: (String) -> Unit,
     context: Context,
     hindi: Boolean
 ) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val grounded = result.sources.isNotEmpty() && !result.sourceOnly && !result.r8Blocked
+    val showQuote = result.quote.isNotBlank() && !ArogyaAnswerFormat.isDuplicate(result.text, result.quote)
+    var srcOpen by remember(result) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         AiResultChip(result.provider, result.online, result.elapsedMs, hindi)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(tr("Guidance with sources", "स्रोत के साथ जानकारी"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            if (grounded) Text(tr("📚 From official guides", "📚 आधिकारिक गाइड से"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        }
-        if (result.quote.isNotBlank()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+        if (grounded) Text(tr("📚 From official guides", "📚 आधिकारिक गाइड से"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        if (showQuote) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
             Column(Modifier.padding(12.dp)) {
                 Text(tr("The guide says", "गाइड में लिखा है"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 Text("“${result.quote}”")
                 if (result.quoteSource.isNotBlank()) Text("— " + result.quoteSource, style = MaterialTheme.typography.bodySmall)
             }
         }
-        Text(ArogyaMarkdown.strip(result.text))
+        SopAnswerText(result.text)
         if (ArogyaFlags.r7SourceLine && result.sources.isNotEmpty()) {
             val s0 = result.sources.first()
-            TextButton(onClick = { onOpenSource(s0) }) {
-                Text(tr("Source: ", "स्रोत: ") + s0.title + (if (s0.locator.isNotBlank()) ", ${s0.locator}" else ""), fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { srcOpen = !srcOpen }) {
+                Text(tr("📚 From the guide: ", "📚 गाइड से: ") + s0.title +
+                    (if (s0.locator.isNotBlank()) ", ${s0.locator}" else "") + (if (srcOpen) " ▴" else " ▾"),
+                    fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+            }
+            if (srcOpen) result.sources.forEach { s ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("[${s.id}] ${s.title}" + (if (s.locator.isNotBlank()) " · ${s.locator}" else ""), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                        ArogyaPassageText(s)
+                        if (s.url.startsWith("http")) TextButton(onClick = { onOpenUrl(ArogyaGuideLibrary.pageUrl(s.url, s.locator)) }) { Text(tr("Open official document", "आधिकारिक दस्तावेज़ खोलें")) }
+                    }
+                }
             }
         }
         if (result.r8Blocked) {
@@ -174,51 +200,28 @@ fun SopAnswerCard(
                 runCatching { context.startActivity(Intent.createChooser(send, tr("Ask ANM", "ANM से पूछें"))) }
             }, modifier = Modifier.fillMaxWidth()) { Text(tr("Ask ANM", "ANM से पूछें")) }
         }
-        if (result.sources.isNotEmpty()) {
-            Text(tr("Sources — tap to read", "स्रोत — पढ़ने के लिए दबाएँ"), fontWeight = FontWeight.Bold)
-            result.sources.forEach { s ->
-                OutlinedButton(onClick = { onOpenSource(s) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("📄 [${s.id}] ${s.title}" + (if (s.locator.isNotBlank()) " · ${s.locator}" else ""), style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                }
-            }
-        }
-        if (result.sources.any { it.excerpt.isNotBlank() }) {
-            TextButton(onClick = onTogglePassages) { Text(if (showPassages) tr("Hide guide text", "गाइड का पाठ छिपाएँ") else tr("Show the guide text used for this answer", "इस उत्तर के लिए पढ़ा गया गाइड का पाठ")) }
-            if (showPassages) result.sources.filter { it.excerpt.isNotBlank() }.forEach { s ->
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text("[${s.id}] ${s.title}" + (if (s.locator.isNotBlank()) " · ${s.locator}" else ""), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
-                        ArogyaPassageText(s)
-                        if (s.url.startsWith("http")) TextButton(onClick = { onOpenUrl(ArogyaGuideLibrary.pageUrl(s.url, s.locator)) }) { Text(tr("Open official page", "आधिकारिक पेज खोलें")) }
-                    }
-                }
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { ArogyaShare.shareText(context, "Guide answer", ArogyaShare.guideEntryText(ArogyaGuideEntry(System.currentTimeMillis(), question, result.text, result.quote, result.quoteSource, result.sources, result.provider, result.elapsedMs))) }) { Text(tr("Share answer", "उत्तर भेजें")) }
-            if (warning != null && inVisit) Button(onClick = { onEscalate(question) }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text(tr("Escalate to ANM", "ANM को सूचित करें")) }
-        }
-        if (ai != null && !result.sourceOnly) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = { onSpeak(result.text) }) { Text(tr("🔊 Read aloud", "🔊 सुनें")) }
+            TextButton(onClick = onStopSpeak) { Text(tr("Stop", "रोकें")) }
+            if (ai != null && !result.sourceOnly) {
                 Button(onClick = { onFamily(true) }, enabled = !familyBusy && !busy) { Text(if (familyBusy) tr("Writing…", "लिखा जा रहा है…") else tr("👪 Explain to family (हिंदी)", "👪 परिवार को समझाएँ")) }
                 TextButton(onClick = { onFamily(false) }, enabled = !familyBusy && !busy) { Text(tr("English", "English")) }
                 AiBadge("Explain to family")
             }
-            if (familyText.isNotBlank()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Column(Modifier.padding(12.dp)) {
-                    Text(tr("For the family", "परिवार के लिए"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    if (familyModel.isNotBlank()) AiResultChip(familyModel, !familyModel.startsWith("On-phone"), familyMs, hindi)
-                    Text(familyText, style = MaterialTheme.typography.bodyLarge)
-                    TextButton(onClick = { onSpeak(familyText) }) { Text(tr("🔊 Read to the family", "🔊 परिवार को सुनाएँ")) }
-                    Text(tr("AI rewrite of the guide answer in simple words. No new advice or numbers are added — check before reading out.", "गाइड के उत्तर का सरल रूप। कोई नई सलाह या संख्या नहीं जोड़ी गई — सुनाने से पहले देख लें।"), style = MaterialTheme.typography.bodySmall)
-                }
+            if (!result.online && !ArogyaOnlinePolicy.localOnly(question)) Button(onClick = onCheckOnline, enabled = !busy && pending == 0 && asked.isNotBlank()) { Text(tr("☁ Check online", "☁ ऑनलाइन जाँचें")) }
+            if (!result.sourceOnly) OutlinedButton(onClick = onMoreDetail, enabled = !busy && pending == 0 && asked.isNotBlank()) { Text(tr("More detail", "और विस्तार")) }
+            OutlinedButton(onClick = { ArogyaShare.shareText(context, "Guide answer", ArogyaShare.guideEntryText(ArogyaGuideEntry(System.currentTimeMillis(), question, result.text, result.quote, result.quoteSource, result.sources, result.provider, result.elapsedMs))) }) { Text(tr("Share answer", "उत्तर भेजें")) }
+        }
+        if (warning != null && inVisit) Button(onClick = { onEscalate(question) }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), modifier = Modifier.fillMaxWidth()) { Text(tr("Escalate to ANM", "ANM को सूचित करें")) }
+        if (showFamily && ai != null && !result.sourceOnly && familyText.isNotBlank()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+            Column(Modifier.padding(12.dp)) {
+                Text(tr("For the family", "परिवार के लिए"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                if (familyModel.isNotBlank()) AiResultChip(familyModel, !familyModel.startsWith("On-phone"), familyMs, hindi)
+                Text(familyText, style = MaterialTheme.typography.bodyLarge)
+                TextButton(onClick = { onSpeak(familyText) }) { Text(tr("🔊 Read to the family", "🔊 परिवार को सुनाएँ")) }
+                Text(tr("AI rewrite of the guide answer in simple words. No new advice or numbers are added — check before reading out.", "गाइड के उत्तर का सरल रूप। कोई नई सलाह या संख्या नहीं जोड़ी गई — सुनाने से पहले देख लें।"), style = MaterialTheme.typography.bodySmall)
             }
         }
         Text((if (result.online) tr("Online", "ऑनलाइन") else tr("Offline on this phone", "इस फ़ोन पर ऑफ़लाइन")) + " · ${result.elapsedMs / 1000}s · " + tr("Not a diagnosis — ask your ANM if unsure.", "यह निदान नहीं है — शंका हो तो ANM से पूछें।"), style = MaterialTheme.typography.bodySmall)
-        if (!result.online && !ArogyaOnlinePolicy.localOnly(question)) TextButton(onClick = onCheckOnline, enabled = !busy && pending == 0 && question.isNotBlank()) { Text(tr("Also check online (sends only the question)", "ऑनलाइन भी जाँचें (सिर्फ़ सवाल भेजा जाएगा)"), style = MaterialTheme.typography.bodySmall) }
-        Row {
-            TextButton(onClick = { onSpeak(result.text) }) { Text(tr("🔊 Read aloud", "🔊 सुनें")) }
-            TextButton(onClick = onStopSpeak) { Text(tr("Stop", "रोकें")) }
-        }
     }
 }

@@ -1,0 +1,105 @@
+package com.example.arfas
+
+/**
+ * Item 4: answer presentation helpers. Pure Kotlin, host-testable.
+ * - [isDuplicate]: the "guide says" quote is hidden when the answer already says
+ *   the same thing (>= 70% token overlap after normalising), so no sentence shows twice.
+ * - [sections]: the Answer: / What to do: / When to tell the ANM: shape (English or
+ *   Hindi labels) into headed blocks; anything else renders as one plain block.
+ * - [sentenceCount]: sentence pieces for the AROGYA_ANSWER_LEN log line.
+ */
+object ArogyaAnswerFormat {
+    /** One headed block of an answer; [heading] is empty for plain (unlabelled) text. */
+    data class Section(val heading: String, val body: String)
+
+    /** Model-written labels (lowercased for Latin) to the canonical heading shown. */
+    private val LABELS = linkedMapOf(
+        "answer" to "Answer",
+        "what to do" to "What to do",
+        "when to tell the anm" to "When to tell the ANM",
+        "when to tell anm" to "When to tell the ANM",
+        "उत्तर" to "उत्तर",
+        "क्या करें" to "क्या करें",
+        "क्या करे" to "क्या करें",
+        "anm को कब बताएं" to "ANM को कब बताएं",
+        "anm को कब बताये" to "ANM को कब बताएं",
+        "एएनएम को कब बताएं" to "ANM को कब बताएं"
+    )
+
+    /** A line starting with a known label + colon opens a section; returns (heading, rest). */
+    private fun matchLabel(line: String): Pair<String, String>? {
+        val l = line.trimStart('•', '-', '–', '*', ' ', '#')
+        for ((key, heading) in LABELS) {
+            val hit = if (key[0] in 'a'..'z') l.lowercase(java.util.Locale.ROOT).startsWith(key) else l.startsWith(key)
+            if (!hit) continue
+            val rest = l.drop(key.length).trimStart()
+            if (!rest.startsWith(":") && !rest.startsWith("：")) continue
+            return heading to rest.drop(1).trim()
+        }
+        return null
+    }
+
+    fun sections(text: String): List<Section> {
+        if (text.isBlank()) return emptyList()
+        val out = ArrayList<Section>()
+        var heading = ""
+        val body = StringBuilder()
+        fun flush() {
+            val b = body.toString().trim()
+            if (b.isNotEmpty() || heading.isNotEmpty()) out += Section(heading, b)
+            body.clear()
+        }
+        for (raw in ArogyaMarkdown.strip(text).lines()) {
+            val line = raw.trim()
+            if (line.isEmpty()) {
+                if (body.isNotEmpty()) body.append('\n')
+                continue
+            }
+            val label = matchLabel(line)
+            if (label != null) {
+                flush()
+                heading = label.first
+                if (label.second.isNotEmpty()) body.append(label.second)
+            } else {
+                if (body.isNotEmpty()) body.append('\n')
+                body.append(line)
+            }
+        }
+        flush()
+        return out.ifEmpty { listOf(Section("", ArogyaMarkdown.strip(text).trim())) }
+    }
+
+    /** Lowercased word tokens (Devanagari matras kept: \\p{M}); one-letter bits dropped. */
+    private fun tokens(t: String): Set<String> =
+        Regex("[\\p{L}\\p{M}\\p{N}]+").findAll(t.lowercase(java.util.Locale.ROOT))
+            .map { it.value }.filter { it.length >= 2 }.toSet()
+
+    /**
+     * Containment of the shorter text in the longer one: shared tokens over the
+     * smaller token set. 1.0 when the answer contains the whole quote.
+     */
+    fun overlap(a: String, b: String): Double {
+        val ta = tokens(a)
+        val tb = tokens(b)
+        if (ta.isEmpty() || tb.isEmpty()) return 0.0
+        val shared = ta.intersect(tb).size
+        return shared.toDouble() / minOf(ta.size, tb.size)
+    }
+
+    /** True when the quote adds nothing over the answer: show the answer once, with the source line. */
+    fun isDuplicate(answer: String, quote: String): Boolean {
+        if (answer.isBlank() || quote.isBlank()) return false
+        return overlap(answer, quote) >= 0.7
+    }
+
+    /** Sentence pieces: enumerators stripped, split on end marks (incl. । ॥) and newlines. */
+    fun sentenceCount(text: String): Int {
+        if (text.isBlank()) return 0
+        var n = 0
+        for (line in text.lines()) {
+            val noEnum = line.trim().replace(Regex("^([•\\-*–]|\\d+[.)])\\s+"), "")
+            n += noEnum.split(Regex("[.!?…।॥]+")).count { it.trim().length >= 3 }
+        }
+        return n
+    }
+}

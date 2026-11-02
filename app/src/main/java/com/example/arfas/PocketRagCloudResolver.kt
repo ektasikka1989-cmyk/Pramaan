@@ -55,7 +55,7 @@ class PocketRagCloudResolver(
             } else {
                 appendLine("Use only the selected KB evidence above as factual authority. Synthesize the best complete conversational answer, citing source IDs like [S1]. If the evidence cannot establish part of the request, say so rather than using outside knowledge.")
                 if (ArogyaFlags.r2LengthPrompt) {
-                    runCatching { appendLine(ArogyaQuestionType.lengthLine(ArogyaQuestionType.kindOf(packet.query), packet.query)) }
+                    runCatching { appendLine(packet.lengthLineOverride.ifBlank { ArogyaQuestionType.lengthLine(ArogyaQuestionType.kindOf(packet.query), packet.query) }) }
                 }
             }
         }

@@ -45,7 +45,11 @@ data class PocketRagPacket(
     /** Values of the same kind stated differently by different sources ("S1: 1.5%; S3: 0.5 %"); empty when none. */
     val valueConflict: String = "",
     /** Abbreviations in the question with the pack's own long forms ("AON = acceptance of necessity"); empty when none. */
-    val terms: String = ""
+    val terms: String = "",
+    /** Item 4 "More detail": replaces the type length line (ArogyaQuestionType.detailLine); empty = normal line. */
+    val lengthLineOverride: String = "",
+    /** Item 4 "More detail": the output budget is the full per-part ceiling, not the evidence estimate. */
+    val detailMode: Boolean = false
 ) {
     val evidenceText: String = evidenceBlocks.joinToString("\n\n") { block ->
         "[${block.id} | ${block.sourceId}]\n${block.text.trim()}"

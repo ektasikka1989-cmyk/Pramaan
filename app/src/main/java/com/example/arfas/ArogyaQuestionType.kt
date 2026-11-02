@@ -86,9 +86,32 @@ object ArogyaQuestionType {
                 "do not list other age groups. Keep it short: the dose, how to give it, and for how long). "
             else "(for a \"what is\" question: what it is, its role or purpose, and its key details; " +
                 "for a comparison or a \"difference between\" question: first what each one is, then how they " +
-                "differ). Keep it short: three to five sentences with the conditions and limits the material gives. "
+                "differ). "
             Kind.URGENT -> "(this is URGENT: start with the most useful action first, then the details). "
         }
-        return head + core + "The app already shows one quoted line above your answer, so do not just repeat that line."
+        // Item 4 shape: up to three labelled parts; the card renders each label as a small heading.
+        val shape = "Shape the answer in up to three parts, each part on its own lines starting with its label and a colon: " +
+            "'Answer:' with the direct answer in two to five sentences (three to five for a fact question; " +
+            "never a single sentence when the material has more); " +
+            "'What to do:' with the numbered steps, or one line per item, only from the material " +
+            "(skip this part when the material gives no steps or items); " +
+            "'When to tell the ANM:' with one line, only when the material gives referral conditions " +
+            "(otherwise skip this part). "
+        return head + core + shape + "The app already shows one quoted line above your answer, so do not just repeat that line."
+    }
+
+    /**
+     * Item 4 "More detail": a fuller answer from the SAME passages (no new search), up to
+     * the model ceiling. PROCEDURE-style: every step, item, condition and limit, each on its
+     * own line, in the same three labelled parts the card renders.
+     */
+    fun detailLine(): String {
+        return "Give a fuller answer from the same material: every step, item, condition and limit it gives " +
+            "on this question, each on its own numbered or bulleted line; do not merge steps and do not stop early. " +
+            "Shape it in up to three parts, each part on its own lines starting with its label and a colon: " +
+            "'Answer:' with the full direct answer (five or more sentences when the material supports it); " +
+            "'What to do:' with the numbered steps, or one line per item, only from the material; " +
+            "'When to tell the ANM:' with one line, only when the material gives referral conditions. " +
+            "The app already shows one quoted line above your answer, so do not just repeat that line."
     }
 }

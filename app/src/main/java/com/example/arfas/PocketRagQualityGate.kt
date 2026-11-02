@@ -221,10 +221,12 @@ class PocketRagQualityGate {
      */
     /**
      * R3-lite (behind ArogyaFlags.r3Salvage): drop only the unsupported statements and
-     * keep the rest when at least 2 supported statements remain; else null (the caller
-     * falls back to copied key points). Support is judged exactly like [evidenceSupport].
+     * keep the rest when at least [minSupported] supported statements remain; else null
+     * (the caller falls back to copied key points). Support is judged exactly like
+     * [evidenceSupport]. Item 4 retries with 1: one good sentence is shown with
+     * "More detail" instead of a one-line dead end.
      */
-    fun salvageUnsupportedStatements(answer: String, evidence: String): String? {
+    fun salvageUnsupportedStatements(answer: String, evidence: String, minSupported: Int = 2): String? {
         val evidenceScript = KbReplyText.dominantScript(evidence).takeIf { it != KbReplyText.Script.NONE } ?: return null
         val evidenceTerms = KnowledgeLexicalText.tokens(evidence.lowercase(), dropStopWords = true, maxTokens = Int.MAX_VALUE).toHashSet()
         if (evidenceTerms.isEmpty()) return null
@@ -242,7 +244,7 @@ class PocketRagQualityGate {
         if (pieces.size <= 1) return null
         val kept = pieces.filter { supported(it) != false }
         if (kept.size == pieces.size) return answer
-        if (kept.count { supported(it) == true } < 2) return null
+        if (kept.count { supported(it) == true } < minSupported) return null
         return kept.joinToString(" ").trim().ifBlank { null }
     }
 

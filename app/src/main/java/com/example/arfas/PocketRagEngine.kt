@@ -110,7 +110,15 @@ class PocketRagEngine(
         val t = System.currentTimeMillis()
         val d = qualityGate.evaluate(query, text, packet)
         Log.i(TAG, "POCKET_RAG_GATE_MS stage=$stage ms=${System.currentTimeMillis() - t} accept=${d.acceptLocal} reason=${d.reason}")
+        logAnswerLen(stage, text.orEmpty(), text)
         return d
+    }
+
+    /** Item 4: sentence counts as drafts pass the gate and the salvages (before/after each step). */
+    private fun logAnswerLen(stage: String, before: String, after: String?) {
+        val b = ArogyaAnswerFormat.sentenceCount(before)
+        val a = after?.let { ArogyaAnswerFormat.sentenceCount(it) } ?: 0
+        Log.i(TAG, "AROGYA_ANSWER_LEN stage=$stage before=$b after=$a salvaged=${(b - a).coerceAtLeast(0)}")
     }
 
     suspend fun answer(
@@ -228,6 +236,7 @@ class PocketRagEngine(
         if (decision.reason.startsWith("unsupported_numeric_claim") && localDraft.isNotBlank()) {
             val salvaged = qualityGate.salvageUnsupportedNumericSentences(packet.query, localDraft, packet)
             if (!salvaged.isNullOrBlank() && salvaged != localDraft) {
+                logAnswerLen("numeric_salvage", localDraft, salvaged)
                 val salvageDecision = evalGate(packet.query, salvaged, packet, "numeric_salvage")
                 if (salvageDecision.acceptLocal) {
                     Log.i(TAG, "POCKET_RAG_LOCAL_NUMERIC_SALVAGE_ACCEPT removedUnsupported=true stage=first_draft")
@@ -241,6 +250,7 @@ class PocketRagEngine(
         if (decision.reason.startsWith("term_swap") && localDraft.isNotBlank()) {
             val salvaged = qualityGate.salvageSwappedTerms(localDraft, packet)
             if (!salvaged.isNullOrBlank() && salvaged != localDraft) {
+                logAnswerLen("term_swap_salvage", localDraft, salvaged)
                 val salvageDecision = evalGate(packet.query, salvaged, packet, "term_swap_salvage")
                 if (salvageDecision.acceptLocal) {
                     Log.i(TAG, "POCKET_RAG_LOCAL_TERM_SWAP_SALVAGE_ACCEPT stage=first_draft")
@@ -254,8 +264,11 @@ class PocketRagEngine(
         // place after the recovery pass.
         fun tryStatementSalvage(draft: String, reason: String, stage: String): String? {
             if (!ArogyaFlags.r3Salvage || !reason.startsWith("low_evidence_support") || draft.isBlank()) return null
+            // Item 4: one supported sentence is still shown (with "More detail") instead of a one-line dead end.
             val salvaged = qualityGate.salvageUnsupportedStatements(draft, packet.evidenceText)
+                ?: qualityGate.salvageUnsupportedStatements(draft, packet.evidenceText, minSupported = 1)
             if (salvaged.isNullOrBlank() || salvaged == draft) return null
+            logAnswerLen(stage, draft, salvaged)
             val salvageDecision = evalGate(packet.query, salvaged, packet, stage)
             if (salvageDecision.acceptLocal) {
                 Log.i(TAG, "POCKET_RAG_STATEMENT_SALVAGE_ACCEPT removedUnsupported=true stage=$stage")
@@ -319,6 +332,7 @@ class PocketRagEngine(
                 packet
             )
             if (!salvaged.isNullOrBlank() && salvaged != bestLocalDraft) {
+                logAnswerLen("numeric_salvage_late", bestLocalDraft, salvaged)
                 val salvageDecision = qualityGate.evaluate(packet.query, salvaged, packet)
                 if (salvageDecision.acceptLocal) {
                     Log.i(TAG, "POCKET_RAG_LOCAL_NUMERIC_SALVAGE_ACCEPT removedUnsupported=true")
@@ -616,11 +630,16 @@ class PocketRagEngine(
         // is the hard ceiling behind its largest tier, per independently asked question part.
         // R11: procedures and lists get room for every step/item; facts keep 400.
         val parts = packet.clauseCoverage.size.coerceAtLeast(1)
-        val perPart = if (ArogyaFlags.r11LowReasoning) {
+        // Item 4 "More detail": PROCEDURE-style ceiling, and the full ceiling (not the estimate).
+        val perPart = if (packet.detailMode) {
+            runCatching { ArogyaQuestionType.ceilingPerPart(ArogyaQuestionType.Kind.PROCEDURE) }
+                .getOrDefault(MAX_ANSWER_TOKENS_PER_PART)
+        } else if (ArogyaFlags.r11LowReasoning) {
             runCatching { ArogyaQuestionType.ceilingPerPart(ArogyaQuestionType.kindOf(packet.query)) }
                 .getOrDefault(MAX_ANSWER_TOKENS_PER_PART)
         } else MAX_ANSWER_TOKENS_PER_PART
         val ceiling = perPart * parts
-        return desired.coerceAtMost(ceiling).coerceAtMost(availableOutput).coerceAtLeast(MIN_OUTPUT_TOKENS)
+        return if (packet.detailMode) ceiling.coerceAtMost(availableOutput).coerceAtLeast(MIN_OUTPUT_TOKENS)
+        else desired.coerceAtMost(ceiling).coerceAtMost(availableOutput).coerceAtLeast(MIN_OUTPUT_TOKENS)
     }
 }
