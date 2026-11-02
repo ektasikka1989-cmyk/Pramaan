@@ -33,12 +33,12 @@ object ArogyaDemoScript {
     val scenes = listOf(
         Scene("meet", "Meet Sunita, and the problem", "सुनीता से मिलिए, और समस्या",
             listOf(
-                "This is Sunita. She is an ASHA in our sample village, Demo Gaon.",
+                "This is Sunita. She is an ASHA in our sample village, Rampur.",
                 "Every day she plans visits, fills paper forms, copies registers, and answers health questions from memory.",
                 "With no signal in the village, she cannot look anything up.",
                 "ArogyaDoot puts her visits, official guides, and registers on her phone, and it works offline."),
             listOf(
-                "ये हैं सुनीता। वे हमारे नमूना गाँव, डेमो गाँव की आशा हैं।",
+                "ये हैं सुनीता। वे हमारे नमूना गाँव, रामपुर की आशा हैं।",
                 "रोज़ वे विज़िट तय करती हैं, कागज़ी फ़ॉर्म भरती हैं, रजिस्टर नकल करती हैं, और स्वास्थ्य के सवालों के जवाब याद से देती हैं।",
                 "गाँव में सिग्नल नहीं होता, तो वे कुछ देख नहीं पातीं।",
                 "ArogyaDoot उनकी विज़िट, आधिकारिक गाइड और रजिस्टर फ़ोन में रखता है, और बिना इंटरनेट चलता है।")),

@@ -596,7 +596,7 @@ object ArogyaSampleVillage {
 
     fun build(today: LocalDate = LocalDate.now()): Sample {
         val bens = ArrayList<Beneficiary>(); val visits = ArrayList<ArogyaVisit>()
-        val villages = listOf("Demo Gaon", "Demo Tola")
+        val villages = listOf("Rampur", "Sundarpur")
         var h = 0
         fun house(head: String) = "H-%02d %s".format(++h, head)
         fun id(n: Int) = "demo-b-%02d".format(n)
@@ -613,7 +613,7 @@ object ArogyaSampleVillage {
         weeks.forEachIndexed { i, w ->
             val lmp = today.minusWeeks(w.toLong())
             val anc = buildMap { if (w >= 10 && i != 1) put(1, lmp.plusWeeks(10).toString()); if (w >= 20 && i != 4) put(2, lmp.plusWeeks(20).toString()); if (w >= 32) put(3, lmp.plusWeeks(31).toString()) }
-            add(Beneficiary(name = "${womenNames[i]} Devi (demo)", relativeName = "Husband ${i + 1}", age = "${21 + i * 2}", household = house("${womenNames[i]}'s family"), village = villages[i % 2],
+            add(Beneficiary(name = "${womenNames[i]} Devi", relativeName = "Husband ${i + 1}", age = "${21 + i * 2}", household = house("${womenNames[i]}'s family"), village = villages[i % 2],
                 category = BenCategory.PREGNANT, sex = "F", lmp = lmp.toString(), phone = "9000000%03d".format(i), mcp = McpCard(anc = anc, ifaTablets = if (w > 14) 60 else 0,
                     tdDates = listOfNotNull(anc[1], if (w >= 20) lmp.plusWeeks(18).toString() else null),
                     ancDetails = anc.keys.associateWith { k -> AncDetail("%.1f".format(java.util.Locale.ROOT, 48.0 + i + k * 2.5), if (i == 6 && k == 3) "142/94" else "110/70", if (i == 2) "9.6" else "11.2") })))
@@ -626,9 +626,9 @@ object ArogyaSampleVillage {
         nbs.forEach { nb ->
             val hh = house(nb.name.removePrefix("Baby of ") + "'s family")
             val dob = today.minusDays(nb.days)
-            add(Beneficiary(name = nb.name.removePrefix("Baby of ") + " (mother, demo)", household = hh, village = villages[0], category = BenCategory.MOTHER, sex = "F",
+            add(Beneficiary(name = nb.name.removePrefix("Baby of ") + " (mother)", household = hh, village = villages[0], category = BenCategory.MOTHER, sex = "F",
                 deliveryDate = dob.toString(), familyPlanning = "Counselled"))
-            val b = add(Beneficiary(name = nb.name + " (demo)", household = hh, village = villages[0], category = BenCategory.CHILD, sex = if (nb.days % 2L == 0L) "F" else "M",
+            val b = add(Beneficiary(name = nb.name, household = hh, village = villages[0], category = BenCategory.CHILD, sex = if (nb.days % 2L == 0L) "F" else "M",
                 dob = dob.toString(), deliveryPlace = if (nb.home) "HOME" else "INSTITUTION", birthWeightKg = nb.kg, preterm = nb.kg < 2.5,
                 sncuDischarge = nb.sncu?.let { dob.plusDays(it).toString() }.orEmpty(),
                 mcp = McpCard(vaccines = if (nb.home) emptyMap() else mapOf("BCG" to dob.toString(), "OPV0" to dob.toString(), "HEPB0" to dob.toString()),
@@ -642,7 +642,7 @@ object ArogyaSampleVillage {
             val dob = today.minusMonths(months).minusDays(3)
             val vac = HashMap<String, String>()
             ArogyaSchedule.VACCINE_CONTACTS.forEachIndexed { ci, c -> if (!c.due(dob).isAfter(today.minusDays(7)) && !(i == 3 && ci >= 2) && !(i == 7 && ci == 4)) c.codes.forEach { vac[it] = c.due(dob).toString() } }
-            val b = add(Beneficiary(name = "Infant ${listOf("Aarav", "Diya", "Kabir", "Isha", "Vivaan", "Anaya", "Reyansh", "Myra", "Arjun", "Sara")[i]} (demo)",
+            val b = add(Beneficiary(name = "Infant ${listOf("Aarav", "Diya", "Kabir", "Isha", "Vivaan", "Anaya", "Reyansh", "Myra", "Arjun", "Sara")[i]}",
                 relativeName = "Mother ${i + 1}", household = house("Family ${i + 1}"), village = villages[i % 2], category = BenCategory.CHILD, sex = if (i % 2 == 0) "M" else "F",
                 dob = dob.toString(), deliveryPlace = "INSTITUTION", birthWeightKg = if (i == 5) 2.3 else 2.9, mcp = McpCard(vaccines = vac)))
             if (months >= 3 && i % 3 != 0) visits += ArogyaVisit(id = "demo-v-${b.id}-hbyc3", personId = b.id, name = b.name, village = b.village, kind = ArogyaKind.CHILD,
@@ -651,20 +651,20 @@ object ArogyaSampleVillage {
         // 8 children 1–5 years (share households with infants)
         (0 until 8).forEach { i ->
             val dob = today.minusMonths(14L + i * 6)
-            add(Beneficiary(name = "Child ${listOf("Rohan", "Nisha", "Aman", "Pinki", "Sonu", "Tara", "Golu", "Mini")[i]} (demo)", household = "H-%02d Family %d".format(15 + i % 10, i % 10 + 1),
+            add(Beneficiary(name = "Child ${listOf("Rohan", "Nisha", "Aman", "Pinki", "Sonu", "Tara", "Golu", "Mini")[i]}", household = "H-%02d Family %d".format(15 + i % 10, i % 10 + 1),
                 village = villages[i % 2], category = BenCategory.CHILD, sex = if (i % 2 == 0) "M" else "F", dob = dob.toString(), deliveryPlace = "INSTITUTION",
                 mcp = McpCard(vaccines = ArogyaSchedule.VACCINE_CONTACTS.filter { !it.due(dob).isAfter(today.minusMonths(1)) && it.label.contains("16–24").not() || i % 2 == 0 }
                     .filter { !it.due(dob).isAfter(today) }.flatMap { c -> c.codes.map { it to c.due(dob).toString() } }.toMap())))
         }
         // 10 eligible couples
         (0 until 10).forEach { i ->
-            add(Beneficiary(name = "${listOf("Rani", "Seema", "Kiran", "Usha", "Nirmala", "Shanti", "Babli", "Mamta", "Suman", "Radha")[i]} (EC, demo)",
+            add(Beneficiary(name = "${listOf("Rani", "Seema", "Kiran", "Usha", "Nirmala", "Shanti", "Babli", "Mamta", "Suman", "Radha")[i]} (EC)",
                 relativeName = "Husband EC${i + 1}", household = house("EC family ${i + 1}"), village = villages[i % 2], category = BenCategory.ELIGIBLE_COUPLE, sex = "F",
                 familyPlanning = listOf("Condom", "OCP", "None", "IUCD", "Injectable (Antara)", "None", "Condom", "OCP", "Sterilisation", "None")[i]))
         }
         // 2 others
-        add(Beneficiary(name = "Ramesh (demo) — cough >2 weeks", household = "H-03 Pooja's family", village = villages[0], category = BenCategory.OTHER, sex = "M", notes = "TB suspect, sputum test advised"))
-        add(Beneficiary(name = "Kamla (demo) — elderly", household = "H-05 Kavita's family", village = villages[0], category = BenCategory.OTHER, sex = "F"))
+        add(Beneficiary(name = "Ramesh — cough >2 weeks", household = "H-03 Pooja's family", village = villages[0], category = BenCategory.OTHER, sex = "M", notes = "TB suspect, sputum test advised"))
+        add(Beneficiary(name = "Kamla — elderly", household = "H-05 Kavita's family", village = villages[0], category = BenCategory.OTHER, sex = "F"))
         // Two unfinished visits to continue
         bens.filter { it.category == BenCategory.CHILD && it.dob == today.minusDays(2).toString() }.forEach { b ->
             visits += ArogyaVisit(id = "demo-draft-${b.id}", personId = b.id, name = b.name, village = b.village, kind = ArogyaKind.NEWBORN, date = today.toString(), birthDate = b.dob, demo = true)
@@ -675,16 +675,16 @@ object ArogyaSampleVillage {
         }
         val ids = bens.map { it.id }
         val diary = listOf(
-            DiaryEntry("demo-d1", today.minusMonths(2).toString(), DiaryKind.SURVEY, "", "Household line listing updated (demo)"),
-            DiaryEntry("demo-d2", today.withDayOfMonth(minOf(5, today.dayOfMonth)).toString(), DiaryKind.VHND, "", "VHND at Anganwadi (demo)"),
-            DiaryEntry("demo-d3", today.minusMonths(1).withDayOfMonth(10).toString(), DiaryKind.PHC_MEETING, "", "Monthly PHC meeting (demo)"),
-            DiaryEntry("demo-d4", today.withDayOfMonth(minOf(3, today.dayOfMonth)).toString(), DiaryKind.VHSNC_MEETING, "", "VHSNC meeting (demo)"),
-            DiaryEntry("demo-d5", today.minusDays(4).toString(), DiaryKind.ESCORT, ids[3], "Escorted to PHC for ANC (demo)"))
+            DiaryEntry("demo-d1", today.minusMonths(2).toString(), DiaryKind.SURVEY, "", "Household line listing updated"),
+            DiaryEntry("demo-d2", today.withDayOfMonth(minOf(5, today.dayOfMonth)).toString(), DiaryKind.VHND, "", "VHND at Anganwadi"),
+            DiaryEntry("demo-d3", today.minusMonths(1).withDayOfMonth(10).toString(), DiaryKind.PHC_MEETING, "", "Monthly meeting at PHC Rampur"),
+            DiaryEntry("demo-d4", today.withDayOfMonth(minOf(3, today.dayOfMonth)).toString(), DiaryKind.VHSNC_MEETING, "", "VHSNC meeting"),
+            DiaryEntry("demo-d5", today.minusDays(4).toString(), DiaryKind.ESCORT, ids[3], "Escorted to PHC Rampur for ANC"))
         // Realistic opening stock for every kit item (received last month, so this month's
         // opening column is full): zinc runs low and the RDT batch expires soon on purpose.
         val rcv = today.minusMonths(1).withDayOfMonth(5).toString()
         fun rcvTxn(i: Int, item: String, qty: Int, exp: String) =
-            StockTxn("demo-s$i", rcv, item, qty, "", "Opening stock (demo)", "receive", "", "B-26%02d".format(i), exp, "Sub-centre")
+            StockTxn("demo-s$i", rcv, item, qty, "", "Opening stock", "receive", "", "B-26%02d".format(i), exp, "SC Rampur")
         val stock = listOf(
             rcvTxn(1, "ORS", 50, "2027-09-30"), rcvTxn(2, "Zinc tablets", 100, "2027-06-30"),
             rcvTxn(3, "IFA tablets (adult)", 500, "2027-12-31"), rcvTxn(4, "IFA syrup (child)", 20, "2027-08-31"),
@@ -695,13 +695,13 @@ object ArogyaSampleVillage {
             rcvTxn(13, "Chloroquine / ACT", 30, "2027-02-28"),
             rcvTxn(14, "Rapid diagnostic test (malaria)", 25, today.plusMonths(2).toString()),
             rcvTxn(15, "Cotton / bandage", 15, "2029-12-31"),
-            StockTxn("demo-g1", today.minusDays(6).toString(), "Zinc tablets", -85, ids[3], "Given (demo)", "give"),
-            StockTxn("demo-g2", today.minusDays(3).toString(), "Paracetamol", -10, ids[5], "Given (demo)", "give"),
-            StockTxn("demo-g3", today.minusDays(2).toString(), "Sanitary napkins", -5, ids[7], "Given (demo)", "give"))
-        val vitals = nbs.mapIndexed { i, nb -> VitalEvent("demo-e$i", today.minusDays(nb.days).toString(), VitalKind.BIRTH, "", if (nb.home) "Home" else "PHC", nb.name + " (demo)") } + listOf(
-            VitalEvent("demo-e10", today.minusDays(10).toString(), VitalKind.DIARRHOEA, bens.firstOrNull { it.category == BenCategory.CHILD && ArogyaOfficialForms.formFor(it, emptyList(), today).first.id == "sick" }?.id.orEmpty(), "Home", "ORS + zinc given (demo)"),
-            VitalEvent("demo-e11", today.minusDays(8).toString(), VitalKind.AEFI, ids[25], "Home", "Mild fever after Penta, resolved (demo)"),
-            VitalEvent("demo-e12", today.minusDays(5).toString(), VitalKind.TB_SUSPECT, ids.last(), "Home", "Referred for sputum test (demo)"))
+            StockTxn("demo-g1", today.minusDays(6).toString(), "Zinc tablets", -85, ids[3], "Given", "give"),
+            StockTxn("demo-g2", today.minusDays(3).toString(), "Paracetamol", -10, ids[5], "Given", "give"),
+            StockTxn("demo-g3", today.minusDays(2).toString(), "Sanitary napkins", -5, ids[7], "Given", "give"))
+        val vitals = nbs.mapIndexed { i, nb -> VitalEvent("demo-e$i", today.minusDays(nb.days).toString(), VitalKind.BIRTH, "", if (nb.home) "Home" else "PHC Rampur", nb.name) } + listOf(
+            VitalEvent("demo-e10", today.minusDays(10).toString(), VitalKind.DIARRHOEA, bens.firstOrNull { it.category == BenCategory.CHILD && ArogyaOfficialForms.formFor(it, emptyList(), today).first.id == "sick" }?.id.orEmpty(), "Home", "ORS + zinc given"),
+            VitalEvent("demo-e11", today.minusDays(8).toString(), VitalKind.AEFI, ids[25], "Home", "Mild fever after Penta, resolved"),
+            VitalEvent("demo-e12", today.minusDays(5).toString(), VitalKind.TB_SUSPECT, ids.last(), "Home", "Referred for sputum test"))
         val (reg, allVisits) = ArogyaOfficialForms.seedDemo(RegistryData(bens, diary, stock, vitals, emptyList(), ArogyaRegistryLogic.DRUG_KIT_DEFAULTS), visits, today)
         return Sample(reg, allVisits)
     }

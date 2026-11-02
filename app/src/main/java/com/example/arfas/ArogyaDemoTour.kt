@@ -287,7 +287,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                 4 -> {
                     dangers = ArogyaOfficialForms.dangers(sp, filled.mapValues { it.value.value }); dangersRan = true
                     status = tr("AI is drafting the ANM message…", "AI ANM संदेश लिख रहा है…")
-                    val facts = "Baby of Neha (demo), day 7, Demo Gaon. " + dangers.joinToString("; ") + ". Referred to PHC today."
+                    val facts = "Baby of Neha, day 7, Rampur. " + dangers.joinToString("; ") + ". Referred to PHC Rampur today."
                     val tanm = System.currentTimeMillis()
                     val got = runCatching { ai?.anmMessageDetailed(facts) }.getOrNull()
                     anm = got?.first.orEmpty().ifBlank { "URGENT: $facts Please advise. — ASHA Sunita (ArogyaDoot)" }

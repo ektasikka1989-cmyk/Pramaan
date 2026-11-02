@@ -149,6 +149,7 @@ fun ArogyaVisitScreen(
     // Finish Visit
     var modelSettingsOpen by remember { mutableStateOf(false) }
     var modeTick by remember { mutableStateOf(0) }
+    var clearAsk by remember { mutableStateOf(false) }
     var fvOpen by remember { mutableStateOf(false) }
     var fvVisitId by remember { mutableStateOf<String?>(null) }
     var fvStep by remember { mutableStateOf(1) }
@@ -188,8 +189,20 @@ fun ArogyaVisitScreen(
                 vitals=r.vitals.filterNot {it.id.startsWith("demo-")}+sm.registry.vitals,
                 forms=r.forms.filterNot {f -> f.id.startsWith("demo-") || f.beneficiaryId.startsWith("demo-")}+sm.registry.forms) }
             queue.resetDemo(sm.visits)
-        }.onSuccess { Toast.makeText(context,"Sample village loaded: 50 fictional people",Toast.LENGTH_SHORT).show() }
+        }.onSuccess { Toast.makeText(context,"Sample village loaded: 50 fictional people",Toast.LENGTH_SHORT).show()
+            if (ashaName.isBlank()) { ashaName = "Sunita Devi"; ashaVillage = "Rampur"
+                profilePrefs.edit().putString("name", ashaName).putString("village", ashaVillage).apply() } }
          .onFailure { Toast.makeText(context,it.message ?: "Could not load the sample",Toast.LENGTH_LONG).show() }
+    }
+    fun clearSample() {
+        runCatching {
+            registry.update { r -> r.copy(beneficiaries = r.beneficiaries.filterNot { it.demo },
+                diary = r.diary.filterNot { it.id.startsWith("demo-") }, stock = r.stock.filterNot { it.id.startsWith("demo-") },
+                vitals = r.vitals.filterNot { it.id.startsWith("demo-") },
+                forms = r.forms.filterNot { f -> f.id.startsWith("demo-") || f.beneficiaryId.startsWith("demo-") }) }
+            queue.resetDemo(emptyList())
+        }.onSuccess { Toast.makeText(context,tr("Sample data cleared","नमूना डेटा हटाया"),Toast.LENGTH_SHORT).show() }
+         .onFailure { Toast.makeText(context,it.message ?: "Could not clear",Toast.LENGTH_LONG).show() }
     }
     LaunchedEffect(Unit) { registry.load(); registry.autoBackupIfDue() }
     var photoUri by remember { mutableStateOf<Uri?>(null) }
@@ -399,6 +412,14 @@ fun ArogyaVisitScreen(
             Text(modeText,style=MaterialTheme.typography.bodySmall,
                 color=if(modeOk) Color(0xFF2E7D32) else Color(0xFFB26A00),
                 modifier=Modifier.clickable(enabled=cloudFirst && !hasKey) { modelSettingsOpen=true })
+            if(reg.beneficiaries.any { it.demo })
+                Text(tr("Sample data · fictional people","नमूना डेटा · काल्पनिक लोग"),style=MaterialTheme.typography.bodySmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.clickable { clearAsk=true })
+            if(clearAsk) AlertDialog(onDismissRequest={ clearAsk=false },
+                title={ Text(tr("Clear sample data?","नमूना डेटा हटाएँ?")) },
+                text={ Text(tr("Removes the fictional sample people and their rows. Your real people stay.","काल्पनिक नमूना लोग और उनकी पंक्तियाँ हटेंगी। असली लोग रहेंगे।")) },
+                confirmButton={ TextButton(onClick={ clearAsk=false; clearSample() }) { Text(tr("Clear","हटाएँ")) } },
+                dismissButton={ TextButton(onClick={ clearAsk=false }) { Text(tr("Keep","रखें")) } })
         } else {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                 TextButton(onClick={ if(!locked) selectedId=null },enabled=!locked) { Text("‹ ArogyaDoot",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold) }

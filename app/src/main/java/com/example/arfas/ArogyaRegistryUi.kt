@@ -447,7 +447,7 @@ private fun PatientsTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaV
                 if (header != null) Text("🏠 $header", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
                 Card(Modifier.fillMaxWidth().clickable { onOpen(b.id) }) {
                     Column(Modifier.padding(10.dp)) {
-                        Text((if (b.demo) "[DEMO] " else "") + b.name + if (ArogyaRegistryLogic.isHighRisk(b)) tr("  ⚠ high risk", "  ⚠ जोखिम") else "", fontWeight = FontWeight.Bold)
+                        Text(b.name + if (ArogyaRegistryLogic.isHighRisk(b)) tr("  ⚠ high risk", "  ⚠ जोखिम") else "", fontWeight = FontWeight.Bold)
                         Text(trGroup(b) + " · " + (if (b.household.isNotBlank()) "${b.household} · " else "") + b.village + (ArogyaRegistryLogic.edd(b)?.let { " · " + tr("EDD ", "प्रसव तिथि ") + it } ?: "") + (if (b.dob.isNotBlank()) " · " + tr("DOB ", "जन्म ") + b.dob else ""),
                             style = MaterialTheme.typography.bodySmall)
                     }
@@ -919,7 +919,7 @@ private fun BackupTab(hindi: Boolean, store: ArogyaRegistryStore, queue: ArogyaV
         HorizontalDivider()
         Text(tr("Demo / scale test", "डेमो / जाँच"), fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { runCatching { store.loadSyntheticPatients(1000) }.onSuccess { status = tr("Added 1000 synthetic patients (marked DEMO).", "1000 काल्पनिक लोग जोड़े (DEMO)।") } }, enabled = !busy) { Text(tr("Add 1000 synthetic", "1000 काल्पनिक जोड़ें")) }
+            OutlinedButton(onClick = { runCatching { store.loadSyntheticPatients(1000) }.onSuccess { status = tr("Added 1000 synthetic patients.", "1000 काल्पनिक लोग जोड़े।") } }, enabled = !busy) { Text(tr("Add 1000 synthetic", "1000 काल्पनिक जोड़ें")) }
             OutlinedButton(onClick = { runCatching { store.removeSynthetic() }.onSuccess { status = tr("Removed synthetic patients.", "काल्पनिक लोग हटाए।") } }, enabled = !busy) { Text(tr("Remove synthetic", "काल्पनिक हटाएँ")) }
         }
     }
