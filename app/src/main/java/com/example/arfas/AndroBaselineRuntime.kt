@@ -237,6 +237,13 @@ class AndroBaselineRuntime(
     private val runtimeHealth = Phase1RuntimeHealth()
     private val answerPolicyStore = AnswerPolicyStore(context.applicationContext)
 
+    /**
+     * In-memory per-turn policy override (Ask SOP cloud→phone retry sets LOCAL_FIRST
+     * around one turn). Never persisted: a crash can never change the saved setting.
+     */
+    @Volatile var policyOverride: AnswerPolicy? = null
+    private fun effectivePolicy(): AnswerPolicy = policyOverride ?: answerPolicyStore.get()
+
     fun answerPolicy(): AnswerPolicy = answerPolicyStore.get()
     fun onlineBackup(): Boolean = answerPolicyStore.onlineBackup()
     fun setOnlineBackup(enabled: Boolean) = answerPolicyStore.setOnlineBackup(enabled)
@@ -841,12 +848,12 @@ class AndroBaselineRuntime(
         // Cloud takes part only by the user's choice: the Cloud First setting, or "Check online".
         val cloudMode = when {
             checkOnline -> PocketRagEngine.CloudMode.VERIFY
-            answerPolicyStore.get() == AnswerPolicy.CLOUD_FIRST -> PocketRagEngine.CloudMode.CLOUD_FIRST
+            effectivePolicy() == AnswerPolicy.CLOUD_FIRST -> PocketRagEngine.CloudMode.CLOUD_FIRST
             else -> PocketRagEngine.CloudMode.NONE
         }
         val draftToVerify = if (checkOnline) pocketRagSessions.context(selection.sessionKey)
             .lastOrNull { it.user.trim().equals(query.trim(), ignoreCase = true) }?.assistant else null
-        Log.i(TAG, "POCKET_RAG_CLOUD_MODE mode=$cloudMode policy=${answerPolicyStore.get()} cloudReachable=${canAttemptCloud()} draft=${draftToVerify?.length ?: 0}")
+        Log.i(TAG, "POCKET_RAG_CLOUD_MODE mode=$cloudMode policy=${effectivePolicy()} cloudReachable=${canAttemptCloud()} draft=${draftToVerify?.length ?: 0}")
         // R10-lite: Cloud First reads the wide set (narrow windows + the companion extras,
         // up to 12 x 1600) while the phone keeps the narrow packet. A failed wide assembly
         // falls back to the narrow packet for the cloud too.
@@ -7410,7 +7417,7 @@ class AndroBaselineRuntime(
     }
 
     private fun cloudFirstLeansFresh(capabilities: TurnCapabilities): Boolean =
-        capabilities.externalFreshLean && answerPolicyStore.get() == AnswerPolicy.CLOUD_FIRST && canAttemptCloud()
+        capabilities.externalFreshLean && effectivePolicy() == AnswerPolicy.CLOUD_FIRST && canAttemptCloud()
 
     /**
      * Cloud First for an ordinary turn: the online AI answers (fact lookups via web search first).
@@ -7588,7 +7595,7 @@ class AndroBaselineRuntime(
         sourceGroundedTurn: Boolean,
         hasTurnAttachments: Boolean
     ): AnswerPolicyDecision {
-        val policy = answerPolicyStore.get()
+        val policy = effectivePolicy()
         if (sourceGroundedTurn || hasTurnAttachments ||
             capabilities.externalRequired || capabilities.safetyRequired || capabilities.visualRequired
         ) {

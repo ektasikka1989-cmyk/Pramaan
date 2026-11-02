@@ -217,17 +217,18 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
                 // so the next answer never appends to rejected text; the card shows "checking…".
                 onLocalAbort = { synchronized(draft) { draft.setLength(0) }; request.onProgress?.invoke(ArogyaProgress("checking")) })
         }
-        val policyStore = appContext?.let { AnswerPolicyStore(it.applicationContext) }
         val turn = try {
             try {
                 doChat()
             } catch (e: Exception) {
                 // A real cancel (back button, Stop) must never trigger a retry.
                 if (e is CancellationException && e !is TimeoutCancellationException) throw e
-                if (policyStore?.get() != AnswerPolicy.CLOUD_FIRST || policyStore == null) throw e
+                if (runtime.answerPolicy() != AnswerPolicy.CLOUD_FIRST) throw e
                 Log.w(TAG, "AROGYA_ASK_FALLBACK cloud failed (${e.message?.take(100)}), retrying on the phone")
-                policyStore.set(AnswerPolicy.LOCAL_FIRST)
-                try { doChat() } finally { policyStore.set(AnswerPolicy.CLOUD_FIRST) }
+                // In-memory override only: the saved setting is never touched, so a
+                // crash mid-retry cannot leave it changed.
+                runtime.policyOverride = AnswerPolicy.LOCAL_FIRST
+                try { doChat() } finally { runtime.policyOverride = null }
             }.also { answered = true }
         } catch (e: TimeoutCancellationException) {
             Log.w(TAG, "AROGYA_ASK_TIMEOUT after ${ASK_TIMEOUT_MS / 1000}s")

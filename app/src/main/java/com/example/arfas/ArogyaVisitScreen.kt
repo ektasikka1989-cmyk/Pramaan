@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.asImageBitmap
 import android.graphics.Bitmap
 import android.app.DatePickerDialog
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -146,6 +148,7 @@ fun ArogyaVisitScreen(
     var photoTarget by remember { mutableStateOf("") }
     // Finish Visit
     var modelSettingsOpen by remember { mutableStateOf(false) }
+    var modeTick by remember { mutableStateOf(0) }
     var fvOpen by remember { mutableStateOf(false) }
     var fvVisitId by remember { mutableStateOf<String?>(null) }
     var fvStep by remember { mutableStateOf(1) }
@@ -382,16 +385,20 @@ fun ArogyaVisitScreen(
                     TextButton(onClick=onSettings,enabled=!locked) { Text(tr("⚙ Setup","⚙ सेटअप")) }
                 }
             }
-            val online=remember(aiPageOpen,hubOpen,pickerOpen) { MetaOnline.hasInternet(context) }
-            val cloudFirst=remember(aiPageOpen,hubOpen,pickerOpen) { ArogyaCloud.cloudFirst(context) }
-            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                Text(LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM",if(hindi) java.util.Locale("hi","IN") else java.util.Locale.ENGLISH)),
-                    style=MaterialTheme.typography.bodyMedium)
-                AssistChip(onClick={aiPageOpen=true},label={ Text(when {
-                    !online -> tr("📱 Offline · phone AI","📱 ऑफ़लाइन · फ़ोन AI")
-                    cloudFirst -> tr("☁ Online · Meta cloud AI","☁ ऑनलाइन · Meta क्लाउड AI")
-                    else -> tr("📱 Online · phone AI first","📱 ऑनलाइन · पहले फ़ोन AI") },style=MaterialTheme.typography.labelMedium,maxLines=1) })
+            val online=remember(modeTick) { MetaOnline.hasInternet(context) }
+            val cloudFirst=remember(modeTick) { ArogyaCloud.cloudFirst(context) }
+            val hasKey=remember(modeTick) { ArogyaCloud.metaKey(context).isNotBlank() }
+            val (modeText,modeOk)=remember(cloudFirst,online,hasKey,hindi) { ArogyaModeStatus.line(cloudFirst,online,hasKey,hindi) }
+            Text(LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM",if(hindi) java.util.Locale("hi","IN") else java.util.Locale.ENGLISH)),
+                style=MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp),
+                modifier=Modifier.pointerInput(Unit) { detectTapGestures(onLongPress={ modelSettingsOpen=true }) }) {
+                FilterChip(selected=!cloudFirst,onClick={ ArogyaCloud.setCloudFirst(context,false); modeTick++ },label={ Text(tr("📱 Offline","📱 ऑफ़लाइन")) })
+                FilterChip(selected=cloudFirst,onClick={ ArogyaCloud.setCloudFirst(context,true); modeTick++ },label={ Text(tr("☁ Online","☁ ऑनलाइन")) })
             }
+            Text(modeText,style=MaterialTheme.typography.bodySmall,
+                color=if(modeOk) Color(0xFF2E7D32) else Color(0xFFB26A00),
+                modifier=Modifier.clickable(enabled=cloudFirst && !hasKey) { modelSettingsOpen=true })
         } else {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                 TextButton(onClick={ if(!locked) selectedId=null },enabled=!locked) { Text("‹ ArogyaDoot",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold) }
@@ -1120,7 +1127,7 @@ fun ArogyaVisitScreen(
             }
         }
     }
-    if(modelSettingsOpen) ArogyaCloudSettingsDialog(hindi) { modelSettingsOpen=false }
+    if(modelSettingsOpen) ArogyaCloudSettingsDialog(hindi) { modelSettingsOpen=false; modeTick++ }
     voiceMissing?.let { lang -> AlertDialog(onDismissRequest={voiceMissing=null},title={Text(tr("Voice not installed","आवाज़ नहीं है"))},text={Text(tr("Reading aloud uses the Android voice. Install a ${if(lang=="hi") "Hindi" else "English"} voice, then try again.","बोलकर सुनाने के लिए Android आवाज़ चाहिए। ${if(lang=="hi") "हिन्दी" else "English"} आवाज़ इंस्टॉल करें, फिर सुनें।"))},confirmButton={TextButton(onClick={voiceMissing=null;runCatching {context.startActivity(android.content.Intent(android.speech.tts.TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA))}}) {Text(tr("Download voice","आवाज़ डाउनलोड करें"))}},dismissButton={TextButton(onClick={voiceMissing=null}) {Text(tr("Later","बाद में"))}}) }
     deleteId?.let { id -> AlertDialog(onDismissRequest={deleteId=null},title={Text(tr("Delete visit?","विज़िट हटाएँ?"))},text={Text(tr("This deletes this local visit and its attachments. Exported copies are not deleted.","यह स्थानीय विज़िट और इसके अटैचमेंट हटाएगा। भेजी गई कॉपी नहीं हटेगी।"))},confirmButton={TextButton(onClick={deleteId=null;queue.delete(id);selectedId=null}) {Text(tr("Delete","हटाएँ"))}},dismissButton={TextButton(onClick={deleteId=null}) {Text(tr("Cancel","रद्द करें"))}}) }
 }

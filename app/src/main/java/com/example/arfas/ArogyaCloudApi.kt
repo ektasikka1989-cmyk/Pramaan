@@ -17,6 +17,19 @@ object MetaCloud {
 
 }
 
+/** Home mode-switch status line: text + ok (true = green, false = amber). Pure, host-tested. */
+object ArogyaModeStatus {
+    fun line(cloudFirst: Boolean, online: Boolean, hasKey: Boolean, hindi: Boolean): Pair<String, Boolean> {
+        fun tr(en: String, hi: String) = if (hindi) hi else en
+        return when {
+            !cloudFirst -> tr("Offline · everything runs on this phone", "ऑफ़लाइन · सब कुछ इसी फ़ोन पर चलता है") to true
+            !online -> tr("Online selected · no internet — using phone", "ऑनलाइन चुना · इंटरनेट नहीं — फ़ोन इस्तेमाल होगा") to false
+            !hasKey -> tr("Online needs a Meta key — tap to add", "ऑनलाइन को Meta key चाहिए — जोड़ने के लिए दबाएँ") to false
+            else -> tr("Online · Meta key ✓ · internet ✓", "ऑनलाइन · Meta key ✓ · इंटरनेट ✓") to true
+        }
+    }
+}
+
 /** Items counted from Pramaan's SAM 3.1 boxes: confident matches only (when confidence is returned). */
 object ArogyaSamCount {
     fun count(confidences: List<Float?>, minConf: Float = 0.5f) = confidences.count { (it ?: 1f) >= minConf }

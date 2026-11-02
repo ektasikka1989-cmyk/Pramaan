@@ -11,5 +11,10 @@ fun main() {
     check("route cloud first", ArogyaRouting.order(true, true) == listOf("cloud", "phone"))
     check("route local first", ArogyaRouting.order(false, true) == listOf("phone", "cloud"))
     check("route no cloud", ArogyaRouting.order(true, false) == listOf("phone"))
+    check("mode offline", ArogyaModeStatus.line(false, true, true, false) == ("Offline · everything runs on this phone" to true))
+    check("mode online ok", ArogyaModeStatus.line(true, true, true, false) == ("Online · Meta key ✓ · internet ✓" to true))
+    check("mode no internet", ArogyaModeStatus.line(true, false, true, false).first.contains("no internet") && !ArogyaModeStatus.line(true, false, true, false).second)
+    check("mode no key", ArogyaModeStatus.line(true, true, false, false).first.contains("tap to add") && !ArogyaModeStatus.line(true, true, false, false).second)
+    check("mode hindi", ArogyaModeStatus.line(false, false, false, true).first.contains("ऑफ़लाइन"))
     println("Cloud: ${n - fails}/$n passed")
 }
