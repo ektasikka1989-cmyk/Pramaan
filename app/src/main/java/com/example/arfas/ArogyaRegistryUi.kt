@@ -309,6 +309,61 @@ fun ArogyaLowStockCard(hindi: Boolean, low: List<ArogyaRegistryLogic.LowItem>, s
     }
 }
 
+/** Today's plan: due and overdue visits in order, each with its own Start visit. */
+@Composable
+fun ArogyaTodayPlan(hindi: Boolean, due: List<DueItem>, today: LocalDate, onStartVisit: (String) -> Unit, onOpenList: () -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(tr("Today's plan", "आज की योजना"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            if (due.isEmpty()) Text(tr("Nothing due this week", "इस हफ़्ते कुछ बाकी नहीं"))
+            due.take(8).forEach { d ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(d.name, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text((if (d.overdue(today)) tr("Overdue · ", "छूटी · ") else "") + d.label.substringBefore(" (") + " · " + d.due,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (d.overdue(today)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                    }
+                    Button(onClick = { onStartVisit(d.beneficiaryId) }) { Text(tr("Start visit", "विज़िट शुरू"), maxLines = 1) }
+                }
+            }
+            if (due.size > 8 || due.isNotEmpty()) TextButton(onClick = onOpenList) { Text(tr("Full due list ›", "पूरी सूची ›")) }
+        }
+    }
+}
+
+/** Backup status line: last Google Drive backup + Back up now (or Set up when missing). */
+@Composable
+fun ArogyaBackupStatusRow(hindi: Boolean, store: ArogyaRegistryStore, onSetup: () -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("") }
+    val ready = store.password().isNotBlank() && store.backupUri != null
+    Card(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(if (store.lastBackup > 0)
+                    tr("Last backup to Google Drive: ", "Google Drive पर आखिरी बैकअप: ") +
+                        java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(store.lastBackup))
+                    else tr("Not backed up yet", "अभी बैकअप नहीं हुआ"), style = MaterialTheme.typography.bodySmall)
+                if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
+            }
+            if (busy) CircularProgressIndicator(Modifier.size(24.dp))
+            else if (ready) Button(onClick = {
+                busy = true
+                scope.launch {
+                    try { status = store.backupTo(store.backupUri!!, store.password()) }
+                    catch (e: CancellationException) { throw e } catch (e: Exception) { status = e.message ?: tr("Failed", "नहीं हुआ") }
+                    finally { busy = false }
+                }
+            }) { Text(tr("Back up now", "अभी बैकअप"), maxLines = 1) }
+            else OutlinedButton(onClick = onSetup) { Text(tr("Set up backup", "बैकअप लगाएँ"), maxLines = 1) }
+        }
+    }
+}
+
 /** U7: "Next visits this week" strip — one-line chips, tap opens the full due list. */
 @Composable
 fun ArogyaNextStrip(hindi: Boolean, due: List<DueItem>, onOpen: () -> Unit) {

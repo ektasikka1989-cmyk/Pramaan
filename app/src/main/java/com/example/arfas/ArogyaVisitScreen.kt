@@ -447,6 +447,9 @@ fun ArogyaVisitScreen(
                     val lowStock = ArogyaRegistryLogic.lowItems(reg.stock,reg.stockItems,LocalDate.now())
                     if(lowStock.isNotEmpty()) item { ArogyaLowStockCard(hindi,lowStock,reg.stock,reg.stockItems,LocalDate.now()) }
                 }
+                // Today's plan + backup status
+                item { ArogyaTodayPlan(hindi,dueNow,LocalDate.now(),onStartVisit={ id -> reg.beneficiaries.firstOrNull { it.id==id }?.let { guidedFor=it } },onOpenList={ hubOpen="due" }) }
+                item { ArogyaBackupStatusRow(hindi,ArogyaRegistryStore.get(context),onSetup={ hubOpen="backup" }) }
                 // 2. Four things she does, nothing else
                 item { ArogyaHomeGrid(hindi,reg.beneficiaries.count {it.active},
                     onPeople={ hubOpen="patients" }, onVisit={ pickerOpen=true },
