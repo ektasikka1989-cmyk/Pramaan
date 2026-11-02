@@ -159,11 +159,19 @@ object ArogyaRegistryLogic {
     fun stockHistory(stock: List<StockTxn>, item: String): List<StockTxn> =
         stock.filter { it.item == item }.sortedByDescending { it.date + it.id }
 
+    /** One item at or below its minimum (OUT or LOW): for the Home low-stock card. */
+    data class LowItem(val name: String, val balance: Int, val min: Int, val status: String)
+
+    fun lowItems(stock: List<StockTxn>, storedItems: List<StockItem>, today: LocalDate): List<LowItem> =
+        stockRegister(stock, storedItems, YearMonth.from(today), today, false).rows
+            .filter { (it.status == "OUT" || it.status == "LOW") && stock.any { t -> t.item == it.cells[0] } }
+            .map { LowItem(it.cells[0], it.cells[5].toIntOrNull() ?: 0, it.cells[6].toIntOrNull() ?: 0, it.status) }
+
     /** Refill request text for the ANM: out/low/expired/expiring items with balances. */
     fun refillRequest(stock: List<StockTxn>, storedItems: List<StockItem>, today: LocalDate, hindi: Boolean): String {
         val cat = catalog(storedItems).associateBy { it.name }
         val lines = stockRegister(stock, storedItems, YearMonth.from(today), today, hindi).rows
-            .filter { it.status == "OUT" || it.status == "LOW" || it.status == "EXPIRED" || it.status == "EXPIRING" }
+            .filter { (it.status == "OUT" || it.status == "LOW" || it.status == "EXPIRED" || it.status == "EXPIRING") && stock.any { t -> t.item == it.cells[0] } }
             .map { r ->
                 val unit = cat[r.cells[0]]?.unit.orEmpty()
                 "- ${r.cells[0]}: ${r.cells[5]} $unit ${if (hindi) "(कम से कम ${r.cells[6]})" else "(min ${r.cells[6]})"} — ${r.cells[8]}" +

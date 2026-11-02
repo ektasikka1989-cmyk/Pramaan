@@ -442,6 +442,11 @@ fun ArogyaVisitScreen(
                 // 1. Today — what to do now
                 item { ArogyaTodayCard(hindi,dueNow,LocalDate.now()) { hubOpen="due" } }
                 item { ArogyaNextStrip(hindi,dueNow) { hubOpen="due" } }
+                // Low kit stock, with a one-tap refill request
+                run {
+                    val lowStock = ArogyaRegistryLogic.lowItems(reg.stock,reg.stockItems,LocalDate.now())
+                    if(lowStock.isNotEmpty()) item { ArogyaLowStockCard(hindi,lowStock,reg.stock,reg.stockItems,LocalDate.now()) }
+                }
                 // 2. Four things she does, nothing else
                 item { ArogyaHomeGrid(hindi,reg.beneficiaries.count {it.active},
                     onPeople={ hubOpen="patients" }, onVisit={ pickerOpen=true },

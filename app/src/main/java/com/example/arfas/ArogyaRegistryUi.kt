@@ -279,6 +279,36 @@ fun ArogyaTodayCard(hindi: Boolean, due: List<DueItem>, today: LocalDate, onOpen
     }
 }
 
+/** Home card when kit items run low: balances + one-tap refill request to the ANM (number remembered). */
+@Composable
+fun ArogyaLowStockCard(hindi: Boolean, low: List<ArogyaRegistryLogic.LowItem>, stock: List<StockTxn>, storedItems: List<StockItem>, today: LocalDate) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val context = LocalContext.current
+    var phone by remember { mutableStateOf(ArogyaShare.anmPhone(context)) }
+    val hasPhone = phone.count { it.isDigit() } >= 10
+    val text = remember(stock, storedItems, today, hindi) { ArogyaRegistryLogic.refillRequest(stock, storedItems, today, hindi) }
+    fun send(whatsApp: Boolean) {
+        ArogyaShare.setAnmPhone(context, phone)
+        val ok = if (whatsApp) ArogyaShare.whatsApp(context, phone, text)
+        else hasPhone && ArogyaShare.sms(context, phone, text)
+        if (!ok) ArogyaShare.shareText(context, tr("Drug kit refill request", "दवा किट रिफिल अनुरोध"), text)
+    }
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(tr("Low stock: ", "कम स्टॉक: ") + low.joinToString(", ") { "${it.name} ${it.balance}" },
+                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+            if (!hasPhone) OutlinedTextField(phone, { phone = it.filter { c -> c.isDigit() || c == '+' }.take(15) },
+                label = { Text(tr("ANM phone (saved once)", "ANM फ़ोन (एक बार)")) }, singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone),
+                modifier = Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { send(true) }, modifier = Modifier.weight(1f)) { Text(tr("Request refill — WhatsApp", "रिफिल माँगें — WhatsApp"), maxLines = 1) }
+                OutlinedButton(onClick = { send(false) }, enabled = hasPhone) { Text(tr("SMS", "SMS")) }
+            }
+        }
+    }
+}
+
 /** U7: "Next visits this week" strip — one-line chips, tap opens the full due list. */
 @Composable
 fun ArogyaNextStrip(hindi: Boolean, due: List<DueItem>, onOpen: () -> Unit) {
