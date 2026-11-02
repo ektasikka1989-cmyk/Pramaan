@@ -17,4 +17,5 @@ fun main() {
     check("mode no key", ArogyaModeStatus.line(true, true, false, false).first.contains("tap to add") && !ArogyaModeStatus.line(true, true, false, false).second)
     check("mode hindi", ArogyaModeStatus.line(false, false, false, true).first.contains("ऑफ़लाइन"))
     println("Cloud: ${n - fails}/$n passed")
+    if (fails > 0) kotlin.system.exitProcess(1)
 }

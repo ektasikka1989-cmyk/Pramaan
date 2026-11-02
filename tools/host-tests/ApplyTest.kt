@@ -14,4 +14,5 @@ fun main() {
     a(out.mcp.weights.any { it.date == "2026-10-24" && it.kg == 3.1 }, "weight applied with date")
     a(ArogyaAiCatalog.features.count { it.metaModel } >= 8 && ArogyaAiCatalog.features.any { !it.metaModel && it.model.contains("ML Kit") }, "catalog labels Meta and non-Meta models")
     println(if (af == 0) "ALL $ap PASS" else "$af FAILED, $ap passed")
+    if (af > 0) kotlin.system.exitProcess(1)
 }

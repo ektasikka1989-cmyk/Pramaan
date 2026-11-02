@@ -8,4 +8,5 @@ fun main() {
     c("pregnant", ArogyaGuided.kindFor(Beneficiary(category = BenCategory.PREGNANT, lmp = "2026-06-01"), t) == GuidedKind.PREGNANT)
     c("couple", ArogyaGuided.kindFor(Beneficiary(category = BenCategory.ELIGIBLE_COUPLE), t) == GuidedKind.COUPLE)
     println(if (ok == n) "ALL $n PASS" else "$ok/$n")
+    if (ok != n) kotlin.system.exitProcess(1)
 }

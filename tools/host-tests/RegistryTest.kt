@@ -83,4 +83,5 @@ fun main() {
     ck(runCatching { ArogyaBackupCrypto.decrypt(bad, "correct horse") }.isFailure, "tampered backup rejected")
     ck(runCatching { ArogyaBackupCrypto.encrypt(payload, "short") }.isFailure, "backup password must be at least 8 characters")
     println(if (rf == 0) "ALL $rp PASS" else "$rf FAILED, $rp passed")
+    if (rf > 0) kotlin.system.exitProcess(1)
 }

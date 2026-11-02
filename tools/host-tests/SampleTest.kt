@@ -25,4 +25,5 @@ fun main() {
     s(ArogyaRegistryLogic.stockBalance(r.stock)["ORS"] == 46, "ORS stock 46")
     s(ArogyaRegistryCodec.decode(ArogyaRegistryCodec.encode(r)) == r, "sample round-trips")
     println(if (sf == 0) "ALL $sp PASS" else "$sf FAILED, $sp passed")
+    if (sf > 0) kotlin.system.exitProcess(1)
 }

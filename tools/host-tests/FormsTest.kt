@@ -36,4 +36,5 @@ fun main() {
     val ccard = ArogyaForms.mcpCard(child, bens, sm.visits, today)
     o(ccard.any { it.first.startsWith("10. Child immunization") && it.second.any { r -> r.startsWith("BCG") } }, "child card has immunization table with BCG")
     println(if (of == 0) "ALL $op PASS" else "$of FAILED, $op passed")
+    if (of > 0) kotlin.system.exitProcess(1)
 }

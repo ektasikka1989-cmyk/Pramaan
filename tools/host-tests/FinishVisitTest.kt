@@ -106,4 +106,5 @@ fun main() {
     check(ArogyaModelEndpoints.all.any { it.model.contains("Glimmer", true) || it.model.contains("glimmer") }, "Muse Glimmer partner preset present")
 
     println(if (failed == 0) "ALL $passed PASS" else "$failed FAILED, $passed passed")
+    if (failed > 0) kotlin.system.exitProcess(1)
 }

@@ -44,4 +44,5 @@ fun main() {
     val inc2 = ArogyaRegistryLogic.incentiveEstimate(RegistryData(beneficiaries = listOf(nb)), hbncVisits, YearMonth.of(2026, 10))
     t(inc2.lines.first { it.item.startsWith("HBNC") }.count == 1 && inc2.lines.first { it.item.startsWith("HBNC") }.amount == 250, "all 6 HBNC visits done (last in October) = Rs 250 in October")
     println(if (ff == 0) "ALL $fp PASS" else "$ff FAILED, $fp passed")
+    if (ff > 0) kotlin.system.exitProcess(1)
 }
