@@ -1912,6 +1912,11 @@ class MainActivity : ComponentActivity() {
             endSessionThen("Add this knowledge base?", "Adding a knowledge base starts a new chat; the current chat will end.") { handleKbFilePick(uri) }
             return
         }
+        // Item 6: never swap the guide under a running answer; the ASHA retries in a moment.
+        if (runCatching { arogyaVisitAi.isBusy }.getOrDefault(false)) {
+            Toast.makeText(this, "An answer is being written — wait a moment, then retry.", Toast.LENGTH_LONG).show()
+            return
+        }
         if (knowledgeImporting) return
         knowledgeImporting = true
         knowledgeStatusText = "Preparing health guide…"

@@ -54,6 +54,8 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     private val appContext: Context? = null) {
     private val mutex=Mutex()
     @Volatile private var lastVisitId: String? = null
+    /** Item 6: true while an AI answer is being written (guide installs wait for it). */
+    val isBusy: Boolean get() = mutex.isLocked
 
     /** Set by the screen: which cloud model/key to use and the Settings order (Cloud first / Local first). */
     @Volatile var cloudChoice: (() -> ArogyaCloudChoice)? = null
