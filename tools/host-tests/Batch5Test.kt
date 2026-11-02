@@ -35,17 +35,22 @@ fun synthWav(rate: Int, channels: Int, float32: Boolean, frames: Int, withFact: 
 }
 
 fun main() {
-    // Script shape: 12 scenes, short titles, one-sentence narrations in both languages.
-    check("s-count", ArogyaDemoScript.scenes.size == 12)
-    check("s-titles-en", ArogyaDemoScript.scenes.all { it.title.split(' ').size in 1..5 })
+    // Script shape (Part B): 14 scenes, 3-6 sentences per language, unique ids, one hero.
+    check("s-count", ArogyaDemoScript.scenes.size == 14)
+    check("s-ids", ArogyaDemoScript.scenes.map { it.id }.toSet().size == 14)
+    check("s-titles-en", ArogyaDemoScript.scenes.all { it.title.isNotBlank() })
     check("s-titles-hi", ArogyaDemoScript.scenes.all { it.hi.isNotBlank() })
-    check("s-nar-en", ArogyaDemoScript.scenes.all { it.narration.endsWith('.') && !it.narration.dropLast(1).contains(". ") })
-    check("s-nar-hi", ArogyaDemoScript.scenes.all { it.narrationHi.endsWith('।') && it.narrationHi.count { c -> c == '।' } == 1 })
+    check("s-nar-en", ArogyaDemoScript.scenes.all { it.narration.size in 3..6 && it.narration.all { s -> s.endsWith('.') } })
+    check("s-nar-hi", ArogyaDemoScript.scenes.all { it.narrationHi.size in 3..6 && it.narrationHi.all { s -> s.endsWith('।') } })
     check("s-q-en", ArogyaDemoScript.QUESTION_EN == "What are the danger signs in a newborn that need immediate referral?")
     check("s-q-hi", ArogyaDemoScript.QUESTION_HI == "नवजात शिशु में खतरे के लक्षण क्या हैं?")
-    check("s-hold", ArogyaDemoScript.HOLD_MS in 3000..4500)
+    check("s-follow", ArogyaDemoScript.FOLLOWUP_EN.isNotBlank() && ArogyaDemoScript.FOLLOWUP_HI.isNotBlank())
     check("s-note-nums", listOf("2650", "38.4").all { ArogyaDemoScript.NOTE_EN.contains(it) && ArogyaDemoScript.NOTE_HI.contains(it) })
-    check("s-assets", ArogyaDemoScript.VOICE_EN.isNotBlank() && ArogyaDemoScript.VOICE_HI.isNotBlank() && ArogyaDemoScript.SAM_PHOTO.isNotBlank())
+    check("s-assets", ArogyaDemoScript.VOICE_EN.isNotBlank() && ArogyaDemoScript.VOICE_HI.isNotBlank())
+    val scriptAll = ArogyaDemoScript.scenes.flatMap { listOf(it.title, it.hi) + it.narration + it.narrationHi }.joinToString("\n") +
+        "\n" + ArogyaDemoScript.NOTE_EN + "\n" + ArogyaDemoScript.NOTE_HI
+    check("s-hero-one", !scriptAll.contains("ritu", ignoreCase = true) && !scriptAll.contains("रितु"))
+    check("s-hero-neha", scriptAll.contains("Neha") && scriptAll.contains("नेहा"))
     // WAV decoder.
     val mono8k = ArogyaWav.decode(synthWav(8000, 1, false, 8000))
     check("w-mono-rate", mono8k != null && mono8k.size == 16000)

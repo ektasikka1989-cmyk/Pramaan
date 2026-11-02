@@ -13,7 +13,7 @@ for f in ArogyaVisit ArogyaSources ArogyaCapture ArogyaDangerSigns ArogyaClinica
          GenericKbAliasIndex GenericKbKeyFacts AnswerProof KnowledgeSourcePresentation CoreHealthFacts KbReplyText ArogyaQuestionType \
          ArogyaMarkdown ArogyaDoseCheck ArogyaHindiTerms ArogyaGuideDb ArogyaLang ArogyaDemoScript; do FILES="$FILES $SRC/$f.kt"; done
 rm -rf out && mkdir out
-for t in FormSpecsTest FinishVisitTest RegistryTest ApplyTest FormsTest SampleTest FlowTest CloudTest GuidedTest SaveTest SpeedTest Batch2Test Batch3Test Batch4Test Batch5Test Batch6Test ReviewTest RegisterTablesTest StockRegisterTest GuideLibraryTest MedScanTest; do
+for t in FormSpecsTest FinishVisitTest RegistryTest ApplyTest FormsTest SampleTest FlowTest CloudTest GuidedTest SaveTest SpeedTest Batch2Test Batch3Test Batch4Test Batch5Test Batch6Test ReviewTest RegisterTablesTest StockRegisterTest GuideLibraryTest MedScanTest DemoTourTest; do
   echo "== $t"
   kotlinc $FILES $t.kt -cp "$CP" -d out/$t 2>&1 | grep -E "error" || true
   kotlin -cp "out/$t:$CP" ${t}Kt

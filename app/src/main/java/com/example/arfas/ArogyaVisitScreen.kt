@@ -1001,7 +1001,7 @@ fun ArogyaVisitScreen(
         if(!guideFromSop) openAi(ArogyaAiTask.EXPLAIN,sop=true)
     },onClose={guideOpen=false})
     if(welcome) ArogyaWelcome(hindi) { ArogyaLang.setWelcomed(context); welcome=false }
-    if(demoOpen) ArogyaDemoTour(ai,queue,visits,hindi,speak={ t -> speak(t) },onLoadSample={ loadSample() },onClose={ demoOpen=false; tts.stop() },
+    if(demoOpen) ArogyaDemoTour(ai,queue,visits,hindi,tts=if(ttsReady) tts else null,onLoadSample={ loadSample() },onClose={ demoOpen=false; tts.stop() },
         onDeepLink={ target -> demoOpen=false; tts.stop(); if(target.startsWith("guided:")) guidedFor=reg.beneficiaries.firstOrNull { it.id==target.removePrefix("guided:") } else hubOpen=target })
     if(profileOpen) {
         var n by remember { mutableStateOf(ashaName) }; var v by remember { mutableStateOf(ashaVillage) }

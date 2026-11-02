@@ -2,16 +2,20 @@ package com.example.arfas
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Typeface
 import android.net.Uri
 import android.provider.MediaStore
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
-import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -29,98 +33,106 @@ import androidx.compose.ui.window.DialogProperties
 import java.io.ByteArrayOutputStream
 import java.time.LocalDate
 import java.time.YearMonth
-import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /*
- * The 3-minute auto-demo. It drives the REAL features on the sample village (fictional people):
- * start screen → schedule → official form for today → voice note through real speech-to-text →
- * AI fills the form → danger rules → Ask SOP with passages, answer and open page → AI message to
- * ANM + referral to PHC → MCP card photo found on the phone and read by AI → save to form, MCP card,
- * diary and visit list → registers and monthly report → SAM 3.1 drug-kit count → what ran where.
- * The script data lives in ArogyaDemoScript.kt (pure, host-tested). Nothing is sent to anyone:
- * calls and WhatsApp show a "Demo: not sent" confirmation instead of placing anything.
+ * Part B: the presenter-controlled walkthrough. No timers, no auto-advance: the live
+ * step runs once when a scene opens, narration reads every sentence to the end, and
+ * the presenter moves with Back / Replay / Next. It drives the REAL features on the
+ * sample village (fictional people). The script data lives in ArogyaDemoScript.kt
+ * (pure, host-tested). Nothing is sent to anyone: calls and WhatsApp show a
+ * "Demo: not sent" note instead of placing anything.
  */
 
-/** Writes a fictional sample MCP card photo for the demo baby to Pictures/ArogyaDoot and finds it again via MediaStore. */
-object ArogyaDemoCard {
-    private val DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy")
-    fun render(b: Beneficiary): Bitmap {
-        val w = 1200; val h = 1500
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); val c = Canvas(bmp)
-        c.drawColor(0xFFFFFDF7.toInt())
-        val band = Paint().apply { color = 0xFFF8D7E3.toInt() }; c.drawRect(0f, 0f, w.toFloat(), 190f, band)
-        val title = Paint().apply { color = 0xFF222222.toInt(); textSize = 50f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
-        val text = Paint().apply { color = 0xFF111111.toInt(); textSize = 44f; isAntiAlias = true }
-        val small = Paint().apply { color = 0xFF555555.toInt(); textSize = 32f; isAntiAlias = true }
-        val line = Paint().apply { color = 0xFFAAAAAA.toInt(); strokeWidth = 2f }
-        c.drawText("MOTHER AND CHILD PROTECTION CARD", 60f, 90f, title)
-        c.drawText("SAMPLE - fictional card for ArogyaDoot demo", 60f, 150f, small)
-        val dob = runCatching { LocalDate.parse(b.dob) }.getOrDefault(LocalDate.now().minusDays(7))
-        val given = dob.plusDays(1)
-        var y = 270f
-        fun row(s: String, p: Paint = text) { c.drawText(s, 60f, y, p); y += 78f }
-        row("Child's name: ${b.name}")
-        row("Mother's name: ${b.name.removePrefix("Baby of ").substringBefore(" (")} (demo)")
-        row("Date of birth: ${dob.format(DMY)}")
-        row("Birth weight: ${b.birthWeightKg ?: 2.8} kg")
-        row("Place of birth: Home")
-        c.drawLine(60f, y - 40f, w - 60f, y - 40f, line); y += 20f
-        row("IMMUNIZATION", title)
-        row("BCG          ${given.format(DMY)}")
-        row("OPV-0        ${given.format(DMY)}")
-        row("Hep B-0      ${given.format(DMY)}")
-        c.drawLine(60f, y - 40f, w - 60f, y - 40f, line); y += 20f
-        row("WEIGHT RECORD", title)
-        row("${given.format(DMY)}   2.75 kg")
-        y += 40f; row("Given at: PHC Demo Gaon (sample)", small)
-        return bmp
+/**
+ * Demo narration over Android TTS: one sentence at a time (per-sentence queue with
+ * UtteranceProgressListener), rate 0.9, offline voices preferred. When no offline
+ * voice exists for the language it falls back to any voice, labelled online; when no
+ * voice exists at all the captions still show and speakAll returns false.
+ */
+class ArogyaDemoSpeech(private val tts: TextToSpeech?) {
+    private var gen = 0
+    private val main = Handler(Looper.getMainLooper())
+    var voiceLabel = "Android voice"
+        private set
+    var voiceCloud = false
+        private set
+
+    fun stop() { gen++; runCatching { tts?.stop() } }
+
+    /** Offline-voice check for Hindi and English: matching locale, no network needed. */
+    fun offlineVoices(): Pair<Boolean, Boolean> {
+        val vs = runCatching { tts?.voices.orEmpty().toList() }.getOrDefault(emptyList())
+        return vs.any { it.locale?.language == "hi" && !it.isNetworkConnectionRequired } to
+            vs.any { it.locale?.language == "en" && !it.isNetworkConnectionRequired }
     }
 
-    /** (Re)writes the sample card so its dates match today's sample village; returns its Uri. */
-    fun putOnPhone(context: Context, b: Beneficiary): Uri? = runCatching {
-        val cr = context.contentResolver
-        find(context)?.let { cr.delete(it, null, null) }
-        val uri = cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, ArogyaDemoScript.CARD_FILE); put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ArogyaDoot")
-        }) ?: return null
-        cr.openOutputStream(uri)?.use { render(b).compress(Bitmap.CompressFormat.JPEG, 92, it) }
-        uri
-    }.onFailure { Log.w("ArogyaDemo", "AROGYA_DEMO_CARD_WRITE_FAILED ${it.message}") }.getOrNull()
-
-    /** Finds the sample card photo on the phone (only this app's own file). */
-    fun find(context: Context): Uri? = runCatching {
-        context.contentResolver.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, arrayOf(MediaStore.Images.Media._ID),
-            "${MediaStore.Images.Media.DISPLAY_NAME}=?", arrayOf(ArogyaDemoScript.CARD_FILE), null)?.use { cur ->
-            if (cur.moveToFirst()) android.content.ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cur.getLong(0)) else null
+    fun speakAll(context: Context, sentences: List<String>, hindi: Boolean,
+                 onSentence: (Int) -> Unit, onDone: () -> Unit): Boolean {
+        stop()
+        val t = tts ?: return false
+        val lang = if (hindi) "hi" else "en"
+        val vs = runCatching { t.voices.orEmpty().toList() }.getOrDefault(emptyList())
+            .filter { it.locale?.language == lang }
+        if (vs.isEmpty()) { Log.w("ArogyaDemo", "AROGYA_DEMO_TTS lang=$lang voices=none"); return false }
+        val pick = vs.sortedWith(compareBy({ it.isNetworkConnectionRequired }, { it.name })).first()
+        voiceCloud = pick.isNetworkConnectionRequired
+        voiceLabel = "Android voice (${if (voiceCloud) "online" else "offline"})"
+        val g = gen
+        Log.i("ArogyaDemo", "AROGYA_DEMO_TTS lang=$lang voice=${pick.name} offline=${!voiceCloud} sentences=${sentences.size}")
+        runCatching { t.voice = pick; t.setSpeechRate(0.9f) }
+        fun say(i: Int) {
+            if (g != gen || i >= sentences.size) return
+            main.post { if (g == gen) onSentence(i) }
+            runCatching { t.speak(sentences[i], TextToSpeech.QUEUE_FLUSH, null, "demo-$g-$i") }
         }
-    }.getOrNull()
+        t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(id: String) {}
+            override fun onDone(id: String) {
+                val i = id.substringAfterLast("-").toIntOrNull() ?: return
+                if (id != "demo-$g-$i") return
+                if (i + 1 >= sentences.size) main.post { if (g == gen) onDone() } else say(i + 1)
+            }
+            override fun onError(id: String) { onDone(id) }
+        })
+        say(0)
+        return true
+    }
 }
 
 @Composable
-fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<ArogyaVisit>, hindi: Boolean, speak: (String) -> Unit,
+fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<ArogyaVisit>, hindi: Boolean, tts: TextToSpeech?,
                    onLoadSample: () -> Unit, onClose: () -> Unit, onDeepLink: ((String) -> Unit)? = null) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val scope = rememberCoroutineScope()
+    val speech = remember(tts) { ArogyaDemoSpeech(tts) }
+    DisposableEffect(speech) { onDispose { speech.stop() } }
     var started by remember { mutableStateOf(false) }
     var demoHindi by remember(hindi) { mutableStateOf(hindi) }
     fun tr(en: String, hi: String) = if (demoHindi) hi else en
     val store = remember { ArogyaRegistryStore.get(context) }
     val data by store.state.collectAsState()
     val scenes = ArogyaDemoScript.scenes
+    val n = scenes.size
     var scene by remember { mutableStateOf(0) }
     var ready by remember { mutableStateOf(false) }
-    var playing by remember { mutableStateOf(true) }
     var narrate by remember { mutableStateOf(true) }
+    var caption by remember { mutableStateOf(-1) }
+    var narrDone by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
-    var startedAt by remember { mutableStateOf(0L) }
-    var elapsed by remember { mutableStateOf(0L) }
+    var exitAsk by remember { mutableStateOf(false) }
+    var libraryOpen by remember { mutableStateOf(false) }
+    var manualJob by remember { mutableStateOf<Job?>(null) }
+    var ran by remember { mutableStateOf(setOf<Int>()) }
+    var replayTick by remember { mutableStateOf(0) }
     // Results of each scene (real outputs).
     var hero by remember { mutableStateOf<Beneficiary?>(null) }
     var spec by remember { mutableStateOf<FormSpec?>(null) }
@@ -128,32 +140,59 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
     var filled by remember { mutableStateOf<Map<String, FilledValue>>(emptyMap()) }
     var formModel by remember { mutableStateOf("") }
     var formMs by remember { mutableStateOf(0L) }
+    var formConfirmed by remember { mutableStateOf(false) }
     var transcript by remember { mutableStateOf("") }
     var transcriptEngine by remember { mutableStateOf("") }
     var transcriptLive by remember { mutableStateOf(false) }
     var dangers by remember { mutableStateOf<List<String>>(emptyList()) }
+    var dangersRan by remember { mutableStateOf(false) }
     var sop by remember { mutableStateOf<ArogyaAiResult?>(null) }
+    var sopFollow by remember { mutableStateOf<ArogyaAiResult?>(null) }
     var anm by remember { mutableStateOf("") }
     var anmModel by remember { mutableStateOf("") }
     var demoMsg by remember { mutableStateOf("") }
+    var guideDocs by remember { mutableStateOf<List<GuideDoc>?>(null) }
     var card by remember { mutableStateOf<ArogyaCardReading?>(null) }
     var cardModel by remember { mutableStateOf("") }
-    var cardUri by remember { mutableStateOf<Uri?>(null) }
+    var cardChecked by remember { mutableStateOf(setOf<Int>()) }
+    var cardApplied by remember { mutableStateOf(false) }
     var vaccinesAdded by remember { mutableStateOf<List<String>>(emptyList()) }
-    var saved by remember { mutableStateOf(false) }
-    var savedReferral by remember { mutableStateOf("") }
+    var weightAdded by remember { mutableStateOf("") }
+    var medScan by remember { mutableStateOf<MedScan?>(null) }
+    var medEngine by remember { mutableStateOf("") }
+    var medMs by remember { mutableStateOf(0L) }
+    var medOcrLen by remember { mutableStateOf(0) }
+    var medMatched by remember { mutableStateOf("") }
+    var medSaved by remember { mutableStateOf(false) }
     var samBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var samMsg by remember { mutableStateOf("") }
+    var saved by remember { mutableStateOf(false) }
+    var savedVisit by remember { mutableStateOf<ArogyaVisit?>(null) }
+    var savedReferral by remember { mutableStateOf("") }
+    var shareMsg by remember { mutableStateOf("") }
+    var quizItems by remember { mutableStateOf<List<ArogyaQuizItem>>(emptyList()) }
+    var quizChoice by remember { mutableStateOf<Map<Int, Int>>(emptyMap()) }
+    var quizModel by remember { mutableStateOf("") }
+    var quizMs by remember { mutableStateOf(0L) }
     var openSource by remember { mutableStateOf<ArogyaSource?>(null) }
-    var sceneMs by remember { mutableStateOf<Long?>(null) }
+    var sourceErr by remember { mutableStateOf("") }
+    var photoFor by remember { mutableStateOf("") }
+    var shotUri by remember { mutableStateOf<Uri?>(null) }
     val ticks = remember { mutableStateListOf<ArogyaAiTick>() }
     fun secs(ms: Long) = if (ms < 1000) tr("<1 s", "<1 से.") else tr("${ms / 1000} s", "${ms / 1000} से.")
     val online = MetaOnline.hasInternet(context)
-    val cloudFirst = ArogyaCloud.cloudFirst(context)
+    fun lines(): List<String> = if (scene >= n) listOf(tr("The demo is complete. Thank you.", "डेमो पूरा हुआ। धन्यवाद।"))
+        else if (demoHindi) scenes[scene].narrationHi else scenes[scene].narration
 
-    LaunchedEffect(started) { if (started) { while (true) { elapsed = (System.currentTimeMillis() - startedAt) / 1000; delay(1000) } } }
+    // Navigation: stop narration and any running work cleanly, then move.
+    fun go(i: Int) { speech.stop(); manualJob?.cancel(); status = ""; scene = i.coerceIn(0, n) }
+    fun replay() { speech.stop(); manualJob?.cancel(); ran = ran - scene; status = ""; replayTick++ }
 
-    // Prepare after Start: fresh sample village, the hero baby, the sample MCP card photo on the phone.
+    // Resume: the last scene is saved; the start screen offers it back.
+    val demoPrefs = remember { context.getSharedPreferences("arogya_demo", 0) }
+    LaunchedEffect(scene, started) { if (started) demoPrefs.edit().putInt("last_scene", scene).apply() }
+
+    // Prepare after Start: fresh sample village, the hero baby, a warm model.
     LaunchedEffect(started) {
         if (!started || ready) return@LaunchedEffect
         busy = true; status = tr("Loading the sample village (fictional people)…", "नमूना गाँव लोड हो रहा है…")
@@ -161,32 +200,33 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
         val b = store.state.value.beneficiaries.firstOrNull { it.name.startsWith(ArogyaDemoScript.HERO_PREFIX) }
         if (b == null) { busy = false; status = tr("Sample village not found — load it from Home first.", "नमूना गाँव नहीं मिला — होम से लोड करें।"); return@LaunchedEffect }
         val (sp, col) = ArogyaOfficialForms.formFor(b, store.state.value.forms); spec = sp; column = col; hero = b
-        cardUri = withContext(Dispatchers.IO) { ArogyaDemoCard.putOnPhone(context, b) }
         runCatching { ai?.warmUp() }
         busy = false; status = ""; ready = true
-        Log.i("ArogyaDemo", "AROGYA_DEMO_START hero=${hero?.id} card=${cardUri != null} lang=${if (demoHindi) "hi" else "en"}")
+        Log.i("ArogyaDemo", "AROGYA_DEMO_START hero=${hero?.id} lang=${if (demoHindi) "hi" else "en"}")
     }
 
-    // Run each scene's real work, narrate, hold a few seconds so the result can be read, then move on.
-    LaunchedEffect(scene, ready) {
-        if (!ready) return@LaunchedEffect
+    // Narration for the open scene (or the end screen): every sentence to the end,
+    // captions highlighting the sentence being read. Language switch restarts it.
+    LaunchedEffect(scene, demoHindi, ready, narrate, replayTick, started) {
+        if (!started || !ready) return@LaunchedEffect
+        if (!narrate) { caption = -1; return@LaunchedEffect }
+        caption = 0; narrDone = false
+        val ok = speech.speakAll(context, lines(), demoHindi, onSentence = { caption = it }, onDone = { narrDone = true })
+        if (ok && ticks.none { it.feature == "reading aloud" })
+            ticks += ArogyaAiTick("reading aloud", "सुनाना", speech.voiceLabel, 0, speech.voiceCloud)
+    }
+
+    // The scene's live step runs once when the scene opens; its result stays until
+    // Replay. Leaving the scene cancels this block, stopping the work cleanly.
+    LaunchedEffect(scene, ready, replayTick) {
+        if (!started || !ready || scene >= n || scene in ran) return@LaunchedEffect
+        ran = ran + scene
         val b = hero ?: return@LaunchedEffect
         val sp = spec ?: return@LaunchedEffect
-        val sc = scenes[scene]
-        if (narrate) {
-            speak(if (demoHindi) sc.narrationHi else sc.narration)
-            if (ticks.none { it.feature == "reading aloud" }) {
-                val net = ArogyaCloud.cloudFirst(context) && MetaOnline.hasInternet(context)
-                ticks += ArogyaAiTick("reading aloud", "सुनाना", if (net) "Android voice (online)" else "Android voice (on-phone)", 0, net)
-            }
-        }
-        sceneMs = null
-        val t0 = System.currentTimeMillis()
         busy = true; status = ""
         try {
             when (scene) {
                 3 -> {
-                    // D5: the owner's recording through the real speech-to-text, or the typed note when missing.
                     val voiceAsset = if (demoHindi) ArogyaDemoScript.VOICE_HI else ArogyaDemoScript.VOICE_EN
                     val choice = if (demoHindi) ArogyaLang.VOICE_HINDI else ArogyaLang.VOICE_ENGLISH
                     val pcm = withContext(Dispatchers.IO) {
@@ -195,7 +235,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     }
                     if (pcm == null) {
                         transcript = if (demoHindi) ArogyaDemoScript.NOTE_HI else ArogyaDemoScript.NOTE_EN
-                        transcriptEngine = tr("typed note (no recording)", "लिखा नोट (रिकॉर्डिंग नहीं)")
+                        transcriptEngine = tr("typed note (recording not bundled — speech-to-text skipped)",
+                            "लिखा नोट (रिकॉर्डिंग नहीं है — बोल→लिख छोड़ा)")
                         transcriptLive = false
                     } else {
                         transcriptLive = true; transcript = ""
@@ -217,7 +258,6 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                                     session.append(pcm.copyOfRange(i, minOf(i + 3200, pcm.size))); i += 3200
                                     if (i % 12800 == 0 || i >= pcm.size) { transcript = session.partial(); delay(60) }
                                 }
-                                // Explicit language re-decode ("hi" keeps Hindi out of Urdu script); Auto keeps its own.
                                 val t = withContext(Dispatchers.Default) { session.finishWithLanguage(lang) }.takeIf { it.isNotBlank() } ?: return null
                                 return t to "Whisper (on this phone, offline)"
                             } finally { withContext(NonCancellable + Dispatchers.IO) { recognizer.release() } }
@@ -242,14 +282,9 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     filled = v; formModel = ex.modelLabel; formMs = ex.ms
                     ticks += ArogyaAiTick("form filling + evidence check", "फ़ॉर्म + सबूत जाँच", ex.modelLabel, ex.ms, ex.metaModel)
                 }
-                4 -> dangers = ArogyaOfficialForms.dangers(sp, filled.mapValues { it.value.value })
-                5 -> { status = tr("Searching the official guides…", "आधिकारिक गाइड में खोज…")
-                    val engine = ai ?: error("AI is not ready")
-                    val r = engine.run(ArogyaAiRequest(ArogyaAiTask.EXPLAIN, ArogyaVisit(id = SOP_VISIT_ID, personId = SOP_VISIT_ID, name = "", kind = ArogyaKind.FOLLOW_UP),
-                        question = if (demoHindi) ArogyaDemoScript.QUESTION_HI else ArogyaDemoScript.QUESTION_EN, hindi = demoHindi))
-                    sop = r
-                    ticks += ArogyaAiTick("guide search + grounded answer", "गाइड खोज + उत्तर", r.provider, r.elapsedMs, r.online) }
-                6 -> { status = tr("AI is drafting the ANM message…", "AI ANM संदेश लिख रहा है…")
+                4 -> {
+                    dangers = ArogyaOfficialForms.dangers(sp, filled.mapValues { it.value.value }); dangersRan = true
+                    status = tr("AI is drafting the ANM message…", "AI ANM संदेश लिख रहा है…")
                     val facts = "Baby of Neha (demo), day 7, Demo Gaon. " + dangers.joinToString("; ") + ". Referred to PHC today."
                     val tanm = System.currentTimeMillis()
                     val got = runCatching { ai?.anmMessageDetailed(facts) }.getOrNull()
@@ -258,77 +293,146 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     if (got != null && got.first.isNotBlank()) {
                         val by = got.second
                         ticks += ArogyaAiTick("ANM message", "ANM संदेश", by, System.currentTimeMillis() - tanm, !by.startsWith("On-phone"))
-                    } }
-                7 -> { status = tr("Finding the MCP card photo on the phone…", "फ़ोन पर MCP कार्ड फ़ोटो ढूँढ रहे हैं…")
-                    val uri = withContext(Dispatchers.IO) { ArogyaDemoCard.find(context) } ?: error("Sample card photo not found")
-                    cardUri = uri; status = tr("AI is reading the card…", "AI कार्ड पढ़ रहा है…")
-                    val tcard = System.currentTimeMillis()
-                    val got = (ai ?: error("AI is not ready")).readCardDetailed(uri)
-                    card = got.first; cardModel = got.second
-                    val before = store.state.value.beneficiaries.first { it.id == b.id }
-                    val after = ArogyaCardApply.apply(before, got.first.fields)
-                    vaccinesAdded = (after.mcp.vaccines.keys - before.mcp.vaccines.keys).map { ArogyaSchedule.VACCINE_NAMES[it] ?: it }
-                    store.update { reg -> reg.copy(beneficiaries = reg.beneficiaries.map { if (it.id == b.id) after else it }) }
-                    ticks += ArogyaAiTick("card text reading + extraction", "कार्ड पढ़ना", "ML Kit text + ${got.second}", System.currentTimeMillis() - tcard, !got.second.startsWith("On-phone")) }
-                8 -> { val vals = filled.mapValues { it.value.value }
-                    val cur = store.state.value.beneficiaries.first { it.id == b.id }
-                    ArogyaVisitSave.save(store, queue, cur, sp, column, vals, filled.mapValues { it.value.source }, emptySet()); saved = true
-                    // The referral is recorded here, by the save — scene 6 only drafts the message.
-                    val rec = queue.state.value.visits.firstOrNull { it.id == "official:${b.id}:${sp.id}:$column" }
-                    savedReferral = if (rec == null) tr("Visit record not found after save.", "सेव के बाद विज़िट नहीं मिला।")
-                        else if (rec.referral == ArogyaReferral.NEEDED) tr("Referral recorded: NEEDED — ", "रेफ़रल दर्ज: ज़रूरी — ") + rec.referralNote
-                        else tr("Referral recorded: none needed.", "रेफ़रल दर्ज: ज़रूरत नहीं।")
-                    Log.i("ArogyaDemo", "AROGYA_DEMO_SAVED form=${sp.id} col=$column filled=${vals.size} dangers=${dangers.size}") }
-                10 -> { status = tr("Loading the sample drug-kit photo…", "दवा किट की नमूना फ़ोटो लोड हो रही है…")
-                    val bytes = withContext(Dispatchers.IO) { runCatching { context.assets.open(ArogyaDemoScript.SAM_PHOTO).use { it.readBytes() } }.getOrNull() }
-                    if (bytes == null) {
-                        samMsg = tr("Sample photo not bundled yet — SAM 3.1 count skipped (its API passed the live V1 test).",
-                            "नमूना फ़ोटो अभी नहीं है — SAM 3.1 गिनती छोड़ी (API लाइव V1 में चल चुका है)।")
-                    } else {
-                        val (bmp, jpeg) = withContext(Dispatchers.IO) {
-                            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
-                            var sample = 1; while (maxOf(opts.outWidth, opts.outHeight) / sample > 2000) sample *= 2
-                            val raw = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
-                                ?: error("Could not open the photo")
-                            val scale = 1280f / maxOf(raw.width, raw.height)
-                            val b2 = if (scale < 1f) Bitmap.createScaledBitmap(raw, (raw.width * scale).toInt(), (raw.height * scale).toInt(), true) else raw
-                            b2 to ByteArrayOutputStream().also { b2.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
-                        }
-                        samBitmap = bmp
-                        if (!withContext(Dispatchers.IO) { MetaOnline.ready(context) }) {
-                            samMsg = tr("SAM 3.1 needs internet and the Meta key (Settings). The count is skipped, nothing is guessed.",
-                                "SAM 3.1 को इंटरनेट और Meta key चाहिए। गिनती छोड़ी, अंदाज़ा नहीं लगाया।")
-                        } else {
-                            status = tr("SAM 3.1 is counting…", "SAM 3.1 गिन रहा है…")
-                            val tsam = System.currentTimeMillis()
-                            val phrase = ArogyaKitPhrases.phrase("ORS")
-                            val found = MetaOnline.api(context).sam("arogya_demo_kit", jpeg, phrase)
-                            val n = ArogyaSamCount.count(found.map { it.confidence })
-                            samMsg = "SAM 3.1 " + tr("found $n \"$phrase\" in ${(System.currentTimeMillis() - tsam) / 1000}s. Sunita confirms before it reaches the register (demo: not written).",
-                                "\"$phrase\" $n मिला ${(System.currentTimeMillis() - tsam) / 1000} सेकंड में। रजिस्टर से पहले सुनीता पक्की करती हैं (डेमो: लिखा नहीं)।")
-                            ticks += ArogyaAiTick("SAM 3.1 count", "SAM 3.1 गिनती", "SAM 3.1 (Meta, online)", System.currentTimeMillis() - tsam, true)
-                            Log.i("ArogyaDemo", "AROGYA_SAM_COUNT item=\"ORS\" phrase=\"$phrase\" found=${found.size} counted=$n ms=${System.currentTimeMillis() - tsam}")
-                        }
-                    } }
+                    }
+                }
+                5 -> { status = tr("Reading the guide library on this phone…", "फ़ोन की गाइड लाइब्रेरी पढ़ रहे हैं…")
+                    guideDocs = withContext(Dispatchers.IO) { ai?.guideLibrary() } }
+                6 -> { status = tr("Searching the official guides…", "आधिकारिक गाइड में खोज…")
+                    val engine = ai ?: error("AI is not ready")
+                    suspend fun ask(q: String) = engine.run(ArogyaAiRequest(ArogyaAiTask.EXPLAIN,
+                        ArogyaVisit(id = SOP_VISIT_ID, personId = SOP_VISIT_ID, name = "", kind = ArogyaKind.FOLLOW_UP),
+                        question = q, hindi = demoHindi))
+                    val r = ask(if (demoHindi) ArogyaDemoScript.QUESTION_HI else ArogyaDemoScript.QUESTION_EN)
+                    sop = r
+                    ticks += ArogyaAiTick("guide search + grounded answer", "गाइड खोज + उत्तर", r.provider, r.elapsedMs, r.online)
+                    status = tr("Asking the follow-up…", "दोबारा पूछ रहे हैं…")
+                    val f = ask(if (demoHindi) ArogyaDemoScript.FOLLOWUP_HI else ArogyaDemoScript.FOLLOWUP_EN)
+                    sopFollow = f
+                    ticks += ArogyaAiTick("guide follow-up", "दोबारा सवाल", f.provider, f.elapsedMs, f.online) }
+                9 -> {
+                    if (!saved) {
+                        val vals = filled.mapValues { it.value.value }
+                        val cur = store.state.value.beneficiaries.first { it.id == b.id }
+                        ArogyaVisitSave.save(store, queue, cur, sp, column, vals, filled.mapValues { it.value.source }, emptySet())
+                        saved = true
+                        val rec = queue.state.value.visits.firstOrNull { it.id == "official:${b.id}:${sp.id}:$column" }
+                        savedVisit = rec
+                        savedReferral = if (rec == null) tr("Visit record not found after save.", "सेव के बाद विज़िट नहीं मिला।")
+                            else if (rec.referral == ArogyaReferral.NEEDED) tr("Referral recorded: NEEDED — ", "रेफ़रल दर्ज: ज़रूरी — ") + rec.referralNote
+                            else tr("Referral recorded: none needed.", "रेफ़रल दर्ज: ज़रूरत नहीं।")
+                        Log.i("ArogyaDemo", "AROGYA_DEMO_SAVED form=${sp.id} col=$column filled=${vals.size} dangers=${dangers.size}")
+                    }
+                }
+                10 -> { status = tr("Making 3 questions from the guides…", "गाइड से 3 सवाल बना रहे हैं…")
+                    val got = (ai ?: error("AI is not ready")).refresherDetailed(3)
+                    quizItems = got.first; quizModel = got.second; quizMs = got.third
+                    ticks += ArogyaAiTick("daily practice", "रोज़ अभ्यास", got.second, got.third, !got.second.startsWith("On-phone")) }
             }
-            if (scene in setOf(3, 4, 5, 6, 7, 8, 10)) sceneMs = System.currentTimeMillis() - t0
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             status = tr("This step could not finish: ", "यह चरण पूरा नहीं हुआ: ") + (e.message ?: "")
             Log.w("ArogyaDemo", "AROGYA_DEMO_STEP_FAILED scene=$scene ${e.message}")
         }
-        busy = false; if (status.startsWith(tr("This step", "यह चरण")).not()) status = ""
-        delay(ArogyaDemoScript.HOLD_MS)
-        while (!playing) delay(300)
-        if (scene < scenes.lastIndex) scene++
+        busy = false; if (!status.startsWith(tr("This step", "यह चरण"))) status = ""
     }
 
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    suspend fun decodePhoto(uri: Uri, maxDim: Int): Bitmap = withContext(Dispatchers.IO) {
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+        var sample = 1; while (maxOf(opts.outWidth, opts.outHeight) / sample > 2000) sample *= 2
+        val raw = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+            ?: throw IllegalStateException("Could not open the photo")
+        val scale = maxDim.toFloat() / maxOf(raw.width, raw.height)
+        if (scale < 1f) Bitmap.createScaledBitmap(raw, (raw.width * scale).toInt(), (raw.height * scale).toInt(), true) else raw
+    }
+
+    // Manual photo steps (MCP card, medicine strip, SAM shelf): the presenter picks
+    // the photo by hand; nothing is generated and nothing is searched for.
+    fun handlePhoto(uri: Uri, temp: Boolean) {
+        manualJob?.cancel()
+        manualJob = scope.launch {
+            busy = true; status = ""
+            try {
+                when (photoFor) {
+                    "card" -> {
+                        status = tr("AI is reading the card…", "AI कार्ड पढ़ रहा है…")
+                        val t = System.currentTimeMillis()
+                        val got = (ai ?: error("AI is not ready")).readCardDetailed(uri)
+                        card = got.first; cardModel = got.second
+                        cardChecked = got.first.fields.indices.toSet(); cardApplied = false
+                        val by = got.second
+                        ticks += ArogyaAiTick("card text reading + extraction", "कार्ड पढ़ना",
+                            "ML Kit text + $by", System.currentTimeMillis() - t, !by.startsWith("On-phone"))
+                    }
+                    "med" -> {
+                        status = tr("Reading the label…", "लेबल पढ़ रहे हैं…")
+                        val t = System.currentTimeMillis()
+                        val bmp = decodePhoto(uri, 1600)
+                        val ocrProc = MLKitProcessor()
+                        val ocr = try { withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) } }
+                            finally { runCatching { ocrProc.close() } }
+                        if (ocr.isBlank()) error(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
+                        medOcrLen = ocr.length
+                        val (res, eng, _) = withContext(Dispatchers.IO) { (ai ?: error("AI is not ready")).scanMedicine(ocr) }
+                        medScan = res; medEngine = eng; medMs = System.currentTimeMillis() - t; medSaved = false
+                        medMatched = ArogyaMedScan.matchItem(res.name,
+                            ArogyaRegistryLogic.catalog(store.state.value.stockItems).map { it.name })
+                        val cloud = !eng.contains("offline", ignoreCase = true)
+                        ticks += ArogyaAiTick("medicine scan", "दवा स्कैन", "ML Kit text + $eng", medMs, cloud)
+                        Log.i("ArogyaDemo", "AROGYA_MEDSCAN name=\"${res.name}\" batch=\"${res.batch}\" expiry=\"${res.expiry}\" qty=${res.qty} engine=$eng ms=$medMs")
+                    }
+                    "sam" -> {
+                        status = tr("Loading the photo…", "फ़ोटो लोड हो रही है…")
+                        val bmp = decodePhoto(uri, 1280)
+                        val jpeg = ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
+                        samBitmap = bmp
+                        if (!withContext(Dispatchers.IO) { MetaOnline.ready(context) }) {
+                            samMsg = tr("Online only — skipped offline (SAM 3.1 needs internet and the Meta key). Nothing is guessed.",
+                                "सिर्फ़ ऑनलाइन — ऑफ़लाइन छोड़ा (SAM 3.1 को इंटरनेट और Meta key चाहिए)। अंदाज़ा नहीं लगाया।")
+                        } else {
+                            status = tr("SAM 3.1 is counting…", "SAM 3.1 गिन रहा है…")
+                            val t = System.currentTimeMillis()
+                            val phrase = ArogyaKitPhrases.phrase("ORS")
+                            val found = MetaOnline.api(context).sam("arogya_demo_kit", jpeg, phrase)
+                            val count = ArogyaSamCount.count(found.map { it.confidence })
+                            samMsg = "SAM 3.1 " + tr("found $count \"$phrase\" in ${(System.currentTimeMillis() - t) / 1000}s. Sunita confirms before it reaches the register (demo: not written).",
+                                "\"$phrase\" $count मिला ${(System.currentTimeMillis() - t) / 1000} सेकंड में। रजिस्टर से पहले सुनीता पक्की करती हैं (डेमो: लिखा नहीं)।")
+                            ticks += ArogyaAiTick("SAM 3.1 count", "SAM 3.1 गिनती", "SAM 3.1 (Meta, online)", System.currentTimeMillis() - t, true)
+                            Log.i("ArogyaDemo", "AROGYA_SAM_COUNT item=\"ORS\" phrase=\"$phrase\" found=${found.size} counted=$count ms=${System.currentTimeMillis() - t}")
+                        }
+                    }
+                }
+            } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                status = tr("This step could not finish: ", "यह चरण पूरा नहीं हुआ: ") + (e.message ?: "")
+            } finally {
+                busy = false
+                if (temp) runCatching { context.contentResolver.delete(uri, null, null) }
+            }
+        }
+    }
+    val shoot = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val u = shotUri; shotUri = null
+        if (u != null) { if (ok) handlePhoto(u, true) else runCatching { context.contentResolver.delete(u, null, null) } }
+    }
+    val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { g ->
+        if (g) {
+            val u = runCatching { context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "demo_${System.currentTimeMillis()}.jpg")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg") }) }.getOrNull()
+            if (u != null) { shotUri = u; runCatching { shoot.launch(u) } }
+        }
+    }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u -> if (u != null) handlePhoto(u, false) }
+    fun takePhoto(forWhat: String) { photoFor = forWhat; camPerm.launch(android.Manifest.permission.CAMERA) }
+    fun choosePhoto(forWhat: String) { photoFor = forWhat; pick.launch(arrayOf("image/*")) }
+
+    Dialog(onDismissRequest = { exitAsk = true }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
             if (!started) {
-                // D1 start screen: language, banner, mode, Start.
+                val cloudFirst = ArogyaCloud.cloudFirst(context)
+                val (hiVoice, enVoice) = remember(tts) { speech.offlineVoices() }
+                val resumeAt = demoPrefs.getInt("last_scene", 0)
                 Column(Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("▶ " + tr("ArogyaDoot · 3-minute demo", "ArogyaDoot · 3 मिनट डेमो"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("▶ " + tr("ArogyaDoot · guided demo", "ArogyaDoot · गाइडेड डेमो"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
                         Text(tr("DEMO · sample village (fictional people) · every step is done live by the app",
                             "डेमो · नमूना गाँव (काल्पनिक लोग) · हर चरण ऐप खुद लाइव करता है"), Modifier.padding(12.dp), fontWeight = FontWeight.Bold)
@@ -340,23 +444,35 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     }
                     Text(tr("Mode now: ", "अभी मोड: ") + (if (cloudFirst) "☁ Cloud first" else "📱 Local first") + " · " +
                         (if (online) tr("online", "ऑनलाइन") else tr("offline", "ऑफ़लाइन")), fontWeight = FontWeight.Bold)
-                    if (!online) Text(tr("Offline now: the full demo runs on the phone; answers take longer.",
-                        "अभी ऑफ़लाइन: पूरा डेमो फ़ोन पर चलेगा; उत्तरों में ज़्यादा समय लगेगा।"), style = MaterialTheme.typography.bodySmall)
-                    Text(tr("Voice note: the owner's recording when bundled, else the typed note (labelled). The SAM 3.1 count runs only with its sample photo, internet and the Meta key.",
-                        "वॉइस नोट: मालिक की रिकॉर्डिंग हो तो वही, नहीं तो लिखा नोट (लिखा होगा)। SAM 3.1 गिनती सिर्फ़ नमूना फ़ोटो, इंटरनेट और Meta key से।"),
+                    if (!online) Text(tr("Offline now: the full demo runs on the phone; answers take longer. Cloud-only steps show as skipped.",
+                        "अभी ऑफ़लाइन: पूरा डेमो फ़ोन पर चलेगा; उत्तरों में ज़्यादा समय लगेगा। क्लाउड वाले चरण छूटे दिखेंगे।"), style = MaterialTheme.typography.bodySmall)
+                    Text((if (hiVoice && enVoice) "✓ " else "⚠ ") + tr("Offline voices: Hindi ", "ऑफ़लाइन आवाज़: हिन्दी ") +
+                        (if (hiVoice) tr("ready", "तैयार") else tr("missing", "नहीं है")) + " · " + tr("English ", "अंग्रेज़ी ") +
+                        (if (enVoice) tr("ready", "तैयार") else tr("missing", "नहीं है")),
+                        style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    if (!hiVoice || !enVoice) OutlinedButton(onClick = {
+                        runCatching { context.startActivity(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)) }
+                    }) { Text(tr("Install offline voice", "ऑफ़लाइन आवाज़ इंस्टॉल करें")) }
+                    Text(tr("Voice note: the owner's recording when bundled, else the typed note (labelled, speech-to-text skipped). Photos are picked by hand.",
+                        "वॉइस नोट: मालिक की रिकॉर्डिंग हो तो वही, नहीं तो लिखा नोट (लिखा होगा, बोल→लिख छूटेगा)। फ़ोटो हाथ से चुनी जाती हैं।"),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(12.dp))
+                    Text(tr("You move with Back / Replay / Next — no timer.", "आप Back / Replay / Next से चलेंगे — कोई टाइमर नहीं।"),
+                        style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    if (resumeAt in 1 until n) Button(onClick = { scene = resumeAt; started = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(tr("Resume from scene ${resumeAt + 1} of $n", "सीन ${resumeAt + 1} / $n से आगे बढ़ें"))
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedButton(onClick = onClose) { Text(tr("Close", "बंद")) }
                         Spacer(Modifier.weight(1f))
-                        Button(onClick = { startedAt = System.currentTimeMillis(); elapsed = 0; started = true }) { Text(tr("Start", "शुरू करें")) }
+                        Button(onClick = { scene = 0; started = true }) { Text(if (resumeAt in 1 until n) tr("Start over", "शुरू से") else tr("Start", "शुरू करें")) }
                     }
                 }
                 return@Surface
             }
             if (!ready) {
                 Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("▶ " + tr("ArogyaDoot · 3-minute demo", "ArogyaDoot · 3 मिनट डेमो"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("▶ " + tr("ArogyaDoot · guided demo", "ArogyaDoot · गाइडेड डेमो"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     if (status.isNotBlank()) Text(status)
                     Spacer(Modifier.weight(1f))
@@ -368,180 +484,115 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                 }
                 return@Surface
             }
-            Column(Modifier.fillMaxSize().padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("▶ " + tr("ArogyaDoot · 3-minute demo", "ArogyaDoot · 3 मिनट डेमो"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    // D2-lite: LIVE while the app works, then what it did and how long it took.
-                    if (busy) Text("🔴 LIVE", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                    else if (sceneMs != null) Text("✓ " + tr("done by app in ", "ऐप ने किया ") + secs(sceneMs!!), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                    Text("%d:%02d".format(elapsed / 60, elapsed % 60), style = MaterialTheme.typography.labelLarge)
+            if (ArogyaDemoNav.isEnd(scene, n)) {
+                val phoneTicks = ticks.filter { !it.cloud }; val cloudTicks = ticks.filter { it.cloud }
+                Column(Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+                        Text(tr("DEMO · sample village (fictional people)", "डेमो · नमूना गाँव (काल्पनिक लोग)"), Modifier.padding(12.dp), fontWeight = FontWeight.Bold)
+                    }
+                    Text("✓ " + tr("Demo complete — thank you", "डेमो पूरा — धन्यवाद"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(tr("${ticks.size} AI steps ran live: ${phoneTicks.size} on this phone, ${cloudTicks.size} on Meta's cloud.",
+                        "${ticks.size} AI चरण लाइव चले: ${phoneTicks.size} इसी फ़ोन पर, ${cloudTicks.size} Meta के क्लाउड पर।"))
+                    Text(tr("Built with Muse Code.", "Muse Code से बनाया गया।"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.weight(1f))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(onClick = { go(n - 1) }) { Text(tr("◀ Back", "◀ पीछे")) }
+                        Spacer(Modifier.weight(1f))
+                        Button(onClick = onClose) { Text(tr("Close", "बंद")) }
+                    }
                 }
-                LinearProgressIndicator(progress = (scene + 1) / scenes.size.toFloat(), modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
-                Text("${scene + 1}/${scenes.size} · " + (if (demoHindi) scenes[scene].hi else scenes[scene].title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(if (demoHindi) scenes[scene].narrationHi else scenes[scene].narration, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (busy) { LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp)) }
+                return@Surface
+            }
+            Column(Modifier.fillMaxSize().padding(14.dp)) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+                    Text(tr("DEMO · sample village (fictional people)", "डेमो · नमूना गाँव (काल्पनिक लोग)"),
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(ArogyaDemoNav.label(scene, n, demoHindi), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    FilterChip(selected = !demoHindi, onClick = { speech.stop(); demoHindi = false }, label = { Text("EN") })
+                    FilterChip(selected = demoHindi, onClick = { speech.stop(); demoHindi = true }, label = { Text("हिं") })
+                    FilterChip(selected = narrate, onClick = { speech.stop(); narrate = !narrate }, label = { Text("🔊") })
+                }
+                LinearProgressIndicator(progress = (scene + 1) / n.toFloat(), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                Text(if (demoHindi) scenes[scene].hi else scenes[scene].title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                // Captions: large, current sentence highlighted; "Next when ready" after the last.
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).weight(0.32f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    lines().forEachIndexed { i, s ->
+                        Text(s, style = MaterialTheme.typography.bodyLarge,
+                            color = if (i == caption && narrate) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().background(
+                                if (i == caption && narrate) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface))
+                    }
+                    if (narrDone) Text(tr("▶ Next when ready", "▶ तैयार हों तो Next"), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 4.dp))
                 if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val b = hero; val sp = spec
                     if (b == null || sp == null) { Text(tr("Preparing…", "तैयारी…")); return@Column }
-                    // D3: the persistent panel ticking each AI step live, with the engine that ran it.
                     if (ticks.isNotEmpty()) DemoCard("✨ " + tr("AI at work", "AI काम पर")) {
                         ticks.forEach { t -> Text("• " + (if (demoHindi) t.featureHi else t.feature) + " · ${t.model}" + (if (t.ms > 0) " · ${secs(t.ms)}" else ""),
                             style = MaterialTheme.typography.bodySmall) }
                     }
-                    when (scene) {
-                        0 -> DemoCard(tr("The problem", "समस्या")) {
-                            Text("• " + tr("Visits to plan, paper forms, registers and MCP cards by hand", "विज़िट तय करना, कागज़ी फ़ॉर्म, रजिस्टर और MCP कार्ड हाथ से"))
-                            Text("• " + tr("Hundreds of SOPs — hard to know which applies", "सैकड़ों SOP — कौन सा लागू है, जानना मुश्किल"))
-                            Text("• " + tr("Patchy network in the village", "गाँव में कमज़ोर नेटवर्क"))
-                            Text(tr("Sample village: ${data.beneficiaries.size} fictional people (counted live)", "नमूना गाँव: ${data.beneficiaries.size} काल्पनिक लोग (लाइव गिने)"),
-                                style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        }
-                        1 -> DemoCard(tr("Due this week (official schedules — rules, not AI)", "इस हफ़्ते बाकी (सरकारी शेड्यूल — नियम, AI नहीं)")) {
-                            val due = remember(data, visits) { ArogyaSchedule.dueList(data.beneficiaries, visits, LocalDate.now(), 7).filter { !it.done } }
-                            Text(tr("${due.size} visits due", "${due.size} विज़िट बाकी"), fontWeight = FontWeight.Bold)
-                            due.sortedBy { if (it.name.startsWith(ArogyaDemoScript.HERO_PREFIX)) 0 else 1 }.take(5).forEach { Text("• ${it.name} — ${it.label} (${it.due})") }
-                        }
-                        2 -> {
-                            DemoCard("${sp.title.substringBefore(" (")} · ${sp.columns[column]}") {
-                                Text(sp.source, style = MaterialTheme.typography.labelSmall)
-                                ArogyaOfficialForms.fieldsFor(sp, column).take(12).forEach { Text("☐ " + it.label + if (it.hint.isNotBlank()) "  — ${it.hint}" else "", style = MaterialTheme.typography.bodySmall) }
-                                Text(tr("…and ${ArogyaOfficialForms.fieldsFor(sp, column).size - 12} more rows", "…और ${ArogyaOfficialForms.fieldsFor(sp, column).size - 12} पंक्तियाँ"), style = MaterialTheme.typography.labelSmall)
+                    DemoSceneBody(scene, demoHindi, tr = { en, hi -> tr(en, hi) }, data = data, visits = visits, b = b, sp = sp, column = column,
+                        filled = filled, formModel = formModel, formMs = formMs, formConfirmed = formConfirmed, onConfirmForm = { formConfirmed = true },
+                        transcript = transcript, transcriptEngine = transcriptEngine, transcriptLive = transcriptLive,
+                        dangers = dangers, sop = sop, sopFollow = sopFollow, onOpenSource = { openSource = it }, secs = { secs(it) },
+                        demoMsg = demoMsg, onDemoMsg = { demoMsg = it }, anm = anm, anmModel = anmModel,
+                        guideDocs = guideDocs, onOpenLibrary = { libraryOpen = true },
+                        card = card, cardModel = cardModel, cardChecked = cardChecked, onCheckCard = { i, on ->
+                            cardChecked = if (on) cardChecked + i else cardChecked - i },
+                        cardApplied = cardApplied, onApplyCard = {
+                            val cur = store.state.value.beneficiaries.firstOrNull { it.id == b.id } ?: return@DemoSceneBody
+                            val fields = (card?.fields.orEmpty()).filterIndexed { i, _ -> i in cardChecked }
+                            val after = ArogyaCardApply.apply(cur, fields)
+                            vaccinesAdded = (after.mcp.vaccines.keys - cur.mcp.vaccines.keys).map { ArogyaSchedule.VACCINE_NAMES[it] ?: it }
+                            weightAdded = fields.firstOrNull { it.key == "weight" }?.value.orEmpty()
+                            store.update { reg -> reg.copy(beneficiaries = reg.beneficiaries.map { if (it.id == b.id) after else it }) }
+                            cardApplied = true
+                        }, vaccinesAdded = vaccinesAdded, weightAdded = weightAdded,
+                        onTakePhoto = { takePhoto(it) }, onChoosePhoto = { choosePhoto(it) },
+                        medScan = medScan, medEngine = medEngine, medMs = medMs, medOcrLen = medOcrLen, medMatched = medMatched,
+                        medSaved = medSaved, onSaveMed = {
+                            val s = medScan ?: return@DemoSceneBody
+                            val item = medMatched.ifBlank { s.name.ifBlank { return@DemoSceneBody } }
+                            val known = medMatched.isNotBlank()
+                            store.update { reg ->
+                                val items = if (known) reg.stockItems else reg.stockItems + StockItem(item, "units", 0)
+                                reg.copy(stockItems = items, stock = reg.stock + StockTxn(item = item,
+                                    qty = s.qty.coerceAtLeast(0), note = "Demo scan", kind = "receive",
+                                    batch = s.batch, expiry = ArogyaMedScan.normExpiry(s.expiry), source = tr("Demo", "डेमो")))
                             }
-                            if (onDeepLink != null) OutlinedButton(onClick = { onDeepLink("guided:${b.id}") }) { Text(tr("Open this visit ↗", "यह विज़िट खोलें ↗")) }
-                        }
-                        3 -> {
-                            DemoCard((if (transcriptLive) "🎤 " else "⌨ ") + tr("Voice note", "वॉइस नोट") + " · $transcriptEngine") {
-                                Text("“${transcript.ifBlank { tr("Listening…", "सुन रहे हैं…") }}”", style = MaterialTheme.typography.bodySmall) }
-                            if (filled.isNotEmpty()) DemoCard(tr("✨ AI filled ${filled.size} rows · $formModel · ${secs(formMs)}", "✨ AI ने ${filled.size} पंक्तियाँ भरीं · $formModel · ${secs(formMs)}")) {
-                                filled.forEach { (id, v) -> val f = sp.fields.firstOrNull { it.id == id } ?: return@forEach
-                                    Text("${f.label}: ${v.value}${if (f.type == QType.NUMBER && f.unit.isNotBlank()) " " + f.unit else ""}", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
-                                    Text("   ← “${v.evidence}”", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
+                            medSaved = true
+                        },
+                        samBitmap = samBitmap, samMsg = samMsg,
+                        saved = saved, savedReferral = savedReferral, shareMsg = shareMsg, onSharePdf = {
+                            val v = savedVisit
+                            if (v == null) { shareMsg = tr("Save finished without a visit record.", "सेव में विज़िट नहीं बना।"); return@DemoSceneBody }
+                            shareMsg = tr("Making the PDF…", "PDF बना रहे हैं…")
+                            manualJob = scope.launch {
+                                val ok = ArogyaShare.shareVisitPdf(context, v)
+                                shareMsg = if (ok) tr("PDF shared.", "PDF भेजा।") else tr("Could not make the PDF.", "PDF नहीं बना।")
                             }
-                        }
-                        4 -> DemoCard(if (dangers.isEmpty()) tr("✓ No danger signs", "✓ कोई खतरा नहीं") else tr("⚠ REFER NOW", "⚠ तुरंत रेफ़र करें"), danger = dangers.isNotEmpty()) {
-                            dangers.forEach { Text("• $it") }
-                            Text(tr("Rules printed on the form — not AI.", "फ़ॉर्म पर छपे नियम — AI नहीं।"), style = MaterialTheme.typography.labelSmall)
-                        }
-                        5 -> {
-                            DemoCard(tr("❓ Question (M1 Q7 — confirmed in both modes)", "❓ सवाल (M1 Q7 — दोनों मोड में पक्का)")) {
-                                Text(if (demoHindi) ArogyaDemoScript.QUESTION_HI else ArogyaDemoScript.QUESTION_EN) }
-                            sop?.let { r ->
-                                if (r.sources.isNotEmpty()) DemoCard(tr("Passages found", "मिले पैराग्राफ")) {
-                                    r.sources.take(3).forEach { s ->
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("📄 ${s.title} · ${s.locator}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                                            TextButton(onClick = { openSource = s }) { Text(tr("Open", "खोलें")) }
-                                        }
-                                        if (s.excerpt.isNotBlank()) ArogyaPassageText(s.copy(excerpt = s.excerpt.take(600) + if (s.excerpt.length > 600) "…" else ""))
-                                    }
-                                }
-                                DemoCard(tr("Answer from the official guides · ${r.provider}", "आधिकारिक गाइड से उत्तर · ${r.provider}")) {
-                                    Text(r.text.take(900), style = MaterialTheme.typography.bodySmall)
-                                    if (r.quote.isNotBlank()) Text("“${r.quote}” — ${r.quoteSource}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                    r.sources.firstOrNull()?.let { s -> Text(tr("Source: ", "स्रोत: ") + "${s.title}, ${s.locator}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall) }
-                                }
-                            }
-                        }
-                        6 -> {
-                            DemoCard(tr("Escalation", "सूचना")) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(onClick = { demoMsg = tr("Demo: not sent — in real use this calls 108.", "डेमो: भेजा नहीं — असल में 108 पर कॉल होगा।") }) { Text("📞 108") }
-                                    OutlinedButton(onClick = { demoMsg = tr("Demo: not sent — in real use this calls the ANM.", "डेमो: भेजा नहीं — असल में ANM को कॉल होगा।") }) { Text("📞 ANM") }
-                                    OutlinedButton(onClick = { demoMsg = tr("Demo: not sent — in real use this opens WhatsApp.", "डेमो: भेजा नहीं — असल में WhatsApp खुलेगा।") }) { Text("💬 WhatsApp") }
-                                }
-                                if (demoMsg.isNotBlank()) Text(demoMsg, fontWeight = FontWeight.Bold)
-                                Text(tr("Referral to PHC will be recorded when the visit is saved. (Demo: nothing is sent.)", "PHC रेफ़रल विज़िट सेव होने पर दर्ज होगा। (डेमो: कुछ भेजा नहीं जाता)"), style = MaterialTheme.typography.labelSmall)
-                            }
-                            if (anm.isNotBlank()) DemoCard(tr("✨ Message to ANM (AI draft, she edits before sending)", "✨ ANM को संदेश (AI ड्राफ़्ट)") + if (anmModel.isNotBlank()) " · $anmModel" else "") { Text(anm, style = MaterialTheme.typography.bodySmall) }
-                        }
-                        7 -> {
-                            DemoCard(tr("📷 Found on this phone", "📷 फ़ोन पर मिला")) { Text("Pictures/ArogyaDoot/${ArogyaDemoScript.CARD_FILE}", style = MaterialTheme.typography.bodySmall) }
-                            card?.let { r -> DemoCard(tr("✨ Read from the card (${r.fields.size} values, each found in the card's text)", "✨ कार्ड से पढ़ा (${r.fields.size})") + if (cardModel.isNotBlank()) " · $cardModel" else "") {
-                                r.fields.forEach { Text("${it.label}: ${it.value}", style = MaterialTheme.typography.bodySmall) }
-                                Text(if (vaccinesAdded.isEmpty()) tr("Already on the MCP card", "MCP कार्ड पर पहले से") else tr("Added to MCP card: ", "MCP कार्ड में जोड़ा: ") + vaccinesAdded.joinToString(), fontWeight = FontWeight.Bold)
-                            } }
-                        }
-                        8 -> {
-                            val nextDue = remember(saved) { ArogyaOfficialForms.nextDue(sp, b, column, LocalDate.now()) }
-                            OfficialFormGrid(ArogyaOfficialForms.table(sp, b, data.forms), column, hindi = demoHindi)
-                            DemoCard(tr("Saved", "सहेजा")) {
-                                Text("📄 ${sp.title.substringBefore(" (")} — ${sp.columns[column]}")
-                                Text("🗂 " + tr("MCP card: weight + vaccines", "MCP कार्ड: वज़न + टीके"))
-                                Text("📒 " + tr("Activity diary + visit list", "डायरी + विज़िट सूची"))
-                                Text("📅 " + tr("Next visit: ", "अगली विज़िट: ") + (nextDue?.toString() ?: "—"), fontWeight = FontWeight.Bold)
-                                if (savedReferral.isNotBlank()) Text("🏥 $savedReferral", fontWeight = FontWeight.Bold)
-                            }
-                            if (onDeepLink != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { onDeepLink("registers") }) { Text(tr("Open registers ↗", "रजिस्टर खोलें ↗")) }
-                                OutlinedButton(onClick = { onDeepLink("diary") }) { Text(tr("Open diary ↗", "डायरी खोलें ↗")) }
-                            }
-                        }
-                        9 -> {
-                            val month = YearMonth.now()
-                            val rep = remember(data, visits) { ArogyaRegistryLogic.monthlyReport(data, visits, month) }
-                            val inc = remember(data, visits) { ArogyaRegistryLogic.incentiveEstimate(data, visits, month) }
-                            val cur = data.beneficiaries.firstOrNull { it.id == b.id }
-                            DemoCard(tr("Updated automatically", "अपने आप अपडेट")) {
-                                Text(tr("Home visits this month: ${rep.homeVisits}", "इस महीने गृह भ्रमण: ${rep.homeVisits}"))
-                                Text(tr("Referrals this week: ${visits.count { it.referral == ArogyaReferral.NEEDED && it.date >= LocalDate.now().minusDays(7).toString() }}", "इस हफ़्ते रेफ़रल: ${visits.count { it.referral == ArogyaReferral.NEEDED && it.date >= LocalDate.now().minusDays(7).toString() }}"))
-                                Text(tr("Visit forms filled: ${data.forms.size}", "भरे गए फ़ॉर्म: ${data.forms.size}"))
-                                cur?.let { Text(tr("MCP card of ${it.name}: ${it.mcp.vaccines.size} vaccines, ${it.mcp.weights.size} weights", "${it.name} का MCP कार्ड: ${it.mcp.vaccines.size} टीके, ${it.mcp.weights.size} वज़न")) }
-                                Text(tr("Estimated incentive this month: ₹${inc.total}", "इस महीने अनुमानित प्रोत्साहन: ₹${inc.total}"), fontWeight = FontWeight.Bold)
-                            }
-                            if (onDeepLink != null) OutlinedButton(onClick = { onDeepLink("registers") }) { Text(tr("Open registers ↗", "रजिस्टर खोलें ↗")) }
-                        }
-                        10 -> {
-                            if (samMsg.isBlank()) Text(tr("Preparing…", "तैयारी…"))
-                            else DemoCard(tr("🔢 Drug-kit count", "🔢 दवा किट गिनती")) {
-                                samBitmap?.let { Image(it.asImageBitmap(), contentDescription = tr("ORS stock photo", "ORS स्टॉक फ़ोटो"), modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)) }
-                                Text(samMsg, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                        else -> {
-                            DemoCard(tr("Problem solved", "समस्या हल")) {
-                                Text("• " + tr("One note did the form, card, diary, registers and claim — with sources for every answer.", "एक नोट से फ़ॉर्म, कार्ड, डायरी, रजिस्टर और दावा — हर उत्तर के साथ स्रोत।"))
-                                Text("• " + tr("Danger rules and schedules stayed fixed rules, never AI guesses.", "खतरे के नियम और शेड्यूल तय नियम ही रहे, AI अंदाज़ा नहीं।"))
-                            }
-                            val phoneTicks = ticks.filter { !it.cloud }; val cloudTicks = ticks.filter { it.cloud }
-                            DemoCard(tr("This run: phone vs cloud", "इस बार: फ़ोन बनाम क्लाउड")) {
-                                Text("📱 " + tr("On this phone: ", "फ़ोन पर: ") + phoneTicks.map { if (demoHindi) it.featureHi else it.feature }.distinct().ifEmpty { listOf("—") }.joinToString(", "),
-                                    style = MaterialTheme.typography.bodySmall)
-                                Text("☁ " + tr("Meta cloud: ", "Meta क्लाउड: ") + cloudTicks.map { if (demoHindi) it.featureHi else it.feature }.distinct()
-                                    .ifEmpty { listOf(tr("none (offline run)", "कुछ नहीं (ऑफ़लाइन)")) }.joinToString(", "), style = MaterialTheme.typography.bodySmall)
-                            }
-                            DemoCard(tr("Meta models used", "इस्तेमाल हुए Meta मॉडल")) {
-                                val used = ticks.filter { it.cloud }.map { it.model }.distinct()
-                                if (used.isEmpty()) {
-                                    Text(tr("None this run — everything ran on the phone.", "इस बार कुछ नहीं — सब फ़ोन पर चला।"), style = MaterialTheme.typography.bodySmall)
-                                    Text(tr("When online, the app can also use Muse Spark answers, Muse Voice Transcribe and SAM 3.1 counting.",
-                                        "ऑनलाइन होने पर ऐप Muse Spark उत्तर, Muse Voice Transcribe और SAM 3.1 गिनती भी कर सकता है।"), style = MaterialTheme.typography.bodySmall)
-                                } else used.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-                                Text("• " + tr("Danger signs, schedules, incentives: fixed rules (no AI) — from official MoHFW guidelines; clinical review pending.",
-                                    "खतरे के संकेत, शेड्यूल, प्रोत्साहन: तय नियम (AI नहीं) — आधिकारिक MoHFW गाइडलाइन से; clinical review pending।"), style = MaterialTheme.typography.bodySmall)
-                            }
-                            DemoCard(tr("Setting now: ", "अभी सेटिंग: ") + (if (cloudFirst) "☁ Cloud first" else "📱 Local first") + " · " +
-                                (if (online) tr("online", "ऑनलाइन") else tr("offline", "ऑफ़लाइन")) + tr(" · ${elapsed / 60}:${"%02d".format(elapsed % 60)} total", " · कुल ${elapsed / 60}:${"%02d".format(elapsed % 60)}")) {
-                                Text(tr("No time-saved figure is shown — it was not measured.", "बचत का आँकड़ा नहीं दिखाया — नापा नहीं गया।"), style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                    if (scene == 1 || scene == 4 || scene == 9) DemoCard("📏 " + tr("Rules, not AI", "नियम, AI नहीं")) {
-                        Text(tr("Danger signs, visit schedules, incentive rates — from official MoHFW guidelines; clinical review pending.",
-                            "खतरे के संकेत, विज़िट शेड्यूल, प्रोत्साहन दरें — आधिकारिक MoHFW गाइडलाइन से; clinical review pending।"), style = MaterialTheme.typography.bodySmall)
-                    }
+                        },
+                        quizItems = quizItems, quizChoice = quizChoice, onAnswer = { qi, oi -> quizChoice = quizChoice + (qi to oi) },
+                        quizModel = quizModel, quizMs = quizMs, ticks = ticks, dangersRan = dangersRan, onDeepLink = onDeepLink)
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = { playing = !playing }) { Text(if (playing) tr("⏸ Pause", "⏸ रोकें") else tr("▶ Play", "▶ चलाएँ")) }
-                    OutlinedButton(onClick = { if (scene < scenes.lastIndex) scene++ }, enabled = scene < scenes.lastIndex) { Text(tr("Next ›", "आगे ›")) }
-                    FilterChip(selected = narrate, onClick = { narrate = !narrate }, label = { Text("🔊") })
-                    Spacer(Modifier.weight(1f))
-                    Button(onClick = onClose) { Text(tr("Close", "बंद")) }
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = { go(scene - 1) }, enabled = scene > 0, modifier = Modifier.weight(1f)) { Text(tr("◀ Back", "◀ पीछे")) }
+                    OutlinedButton(onClick = { replay() }, modifier = Modifier.weight(1f)) { Text(tr("⟳ Replay", "⟳ दोबारा")) }
+                    Button(onClick = { go(scene + 1) }, modifier = Modifier.weight(1f)) { Text(tr("Next ▶", "आगे ▶")) }
                 }
+                OutlinedButton(onClick = { exitAsk = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("Exit demo", "डेमो बंद करें")) }
             }
-            // R6-lite: read the passage page from the database offline, or open the official URL online.
-            openSource?.let { s -> AlertDialog(onDismissRequest = { openSource = null },
+            if (exitAsk) AlertDialog(onDismissRequest = { exitAsk = false },
+                title = { Text(tr("Exit the demo?", "डेमो बंद करें?")) },
+                text = { Text(tr("Your place (scene ${scene + 1} of $n) is saved — you can resume later.", "आपकी जगह (सीन ${scene + 1} / $n) सेव है — बाद में आगे बढ़ सकते हैं।")) },
+                confirmButton = { Button(onClick = { speech.stop(); manualJob?.cancel(); onClose() }) { Text(tr("Exit", "बंद करें")) } },
+                dismissButton = { TextButton(onClick = { exitAsk = false }) { Text(tr("Stay", "रुकें")) } })
+            openSource?.let { s -> AlertDialog(onDismissRequest = { openSource = null; sourceErr = "" },
                 title = { Text(s.title, style = MaterialTheme.typography.titleMedium) },
                 text = { Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (s.locator.isNotBlank()) Text(s.locator.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Bold)
@@ -549,10 +600,252 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     if (s.excerpt.isBlank()) Text(tr("The passage text was not recorded for this source.", "इस स्रोत का पाठ उपलब्ध नहीं है।")) else ArogyaPassageText(s)
                     if (s.highlights.isNotEmpty()) Text(tr("Highlighted: the sentences this answer came from.", "हाइलाइट: जिन वाक्यों से उत्तर बना।"), style = MaterialTheme.typography.bodySmall)
                     if (!s.url.startsWith("http")) Text(tr("No online copy is linked for this document.", "इस दस्तावेज़ की ऑनलाइन प्रति उपलब्ध नहीं है।"), style = MaterialTheme.typography.bodySmall)
+                    if (sourceErr.isNotBlank()) Text(sourceErr, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 } },
-                confirmButton = { if (s.url.startsWith("http")) Button(onClick = { runCatching { uriHandler.openUri(s.url) }.onFailure { Toast.makeText(context, "No browser or PDF viewer is available.", Toast.LENGTH_LONG).show() } }) { Text(tr("Open guideline", "गाइडलाइन खोलें")) } },
-                dismissButton = { TextButton(onClick = { openSource = null }) { Text(tr("Close", "बंद करें")) } }) }
+                confirmButton = { if (s.url.startsWith("http")) Button(onClick = {
+                    runCatching { uriHandler.openUri(s.url) }.onFailure { sourceErr = tr("No browser or PDF viewer is available.", "ब्राउज़र या PDF नहीं खुला।") }
+                }) { Text(tr("Open guideline", "गाइडलाइन खोलें")) } },
+                dismissButton = { TextButton(onClick = { openSource = null; sourceErr = "" }) { Text(tr("Close", "बंद करें")) } }) }
+            if (libraryOpen) ArogyaGuideLibrary(demoHindi, ai, store,
+                onAskGuide = { _, _ -> libraryOpen = false; go(6) }, onClose = { libraryOpen = false })
         }
+    }
+}
+
+@Composable
+private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> String,
+    data: RegistryData, visits: List<ArogyaVisit>, b: Beneficiary, sp: FormSpec, column: Int,
+    filled: Map<String, FilledValue>, formModel: String, formMs: Long, formConfirmed: Boolean, onConfirmForm: () -> Unit,
+    transcript: String, transcriptEngine: String, transcriptLive: Boolean,
+    dangers: List<String>, sop: ArogyaAiResult?, sopFollow: ArogyaAiResult?, onOpenSource: (ArogyaSource) -> Unit, secs: (Long) -> String,
+    demoMsg: String, onDemoMsg: (String) -> Unit, anm: String, anmModel: String,
+    guideDocs: List<GuideDoc>?, onOpenLibrary: () -> Unit,
+    card: ArogyaCardReading?, cardModel: String, cardChecked: Set<Int>, onCheckCard: (Int, Boolean) -> Unit,
+    cardApplied: Boolean, onApplyCard: () -> Unit, vaccinesAdded: List<String>, weightAdded: String,
+    onTakePhoto: (String) -> Unit, onChoosePhoto: (String) -> Unit,
+    medScan: MedScan?, medEngine: String, medMs: Long, medOcrLen: Int, medMatched: String, medSaved: Boolean, onSaveMed: () -> Unit,
+    samBitmap: Bitmap?, samMsg: String,
+    saved: Boolean, savedReferral: String, shareMsg: String, onSharePdf: () -> Unit,
+    quizItems: List<ArogyaQuizItem>, quizChoice: Map<Int, Int>, onAnswer: (Int, Int) -> Unit,
+    quizModel: String, quizMs: Long, ticks: List<ArogyaAiTick>, dangersRan: Boolean,
+    onDeepLink: ((String) -> Unit)?) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        when (scene) {
+            0 -> DemoCard(tr("The problem", "समस्या")) {
+                Text("• " + tr("Visits to plan, paper forms, registers and MCP cards by hand", "विज़िट तय करना, कागज़ी फ़ॉर्म, रजिस्टर और MCP कार्ड हाथ से"))
+                Text("• " + tr("Hundreds of SOPs — hard to know which applies", "सैकड़ों SOP — कौन सा लागू है, जानना मुश्किल"))
+                Text("• " + tr("Patchy network in the village", "गाँव में कमज़ोर नेटवर्क"))
+                Text(tr("Sample village: ${data.beneficiaries.size} fictional people (counted live)", "नमूना गाँव: ${data.beneficiaries.size} काल्पनिक लोग (लाइव गिने)"),
+                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            }
+            1 -> DemoCard(tr("Due this week (official schedules — rules, not AI)", "इस हफ़्ते बाकी (सरकारी शेड्यूल — नियम, AI नहीं)")) {
+                val due = remember(data, visits) { ArogyaSchedule.dueList(data.beneficiaries, visits, LocalDate.now(), 7).filter { !it.done } }
+                Text(tr("${due.size} visits due", "${due.size} विज़िट बाकी"), fontWeight = FontWeight.Bold)
+                due.sortedBy { if (it.name.startsWith(ArogyaDemoScript.HERO_PREFIX)) 0 else 1 }.take(5).forEach { Text("• ${it.name} — ${it.label} (${it.due})") }
+            }
+            2 -> {
+                DemoCard("${sp.title.substringBefore(" (")} · ${sp.columns[column]}") {
+                    Text(sp.source, style = MaterialTheme.typography.labelSmall)
+                    ArogyaOfficialForms.fieldsFor(sp, column).take(12).forEach { Text("☐ " + it.label + if (it.hint.isNotBlank()) "  — ${it.hint}" else "", style = MaterialTheme.typography.bodySmall) }
+                    Text(tr("…and ${ArogyaOfficialForms.fieldsFor(sp, column).size - 12} more rows", "…और ${ArogyaOfficialForms.fieldsFor(sp, column).size - 12} पंक्तियाँ"), style = MaterialTheme.typography.labelSmall)
+                }
+                if (onDeepLink != null) OutlinedButton(onClick = { onDeepLink("guided:${b.id}") }) { Text(tr("Open this visit ↗", "यह विज़िट खोलें ↗")) }
+            }
+            3 -> {
+                DemoCard((if (transcriptLive) "🎤 " else "⌨ ") + tr("Voice note", "वॉइस नोट") + " · $transcriptEngine") {
+                    Text("“${transcript.ifBlank { tr("Listening…", "सुन रहे हैं…") }}”", style = MaterialTheme.typography.bodySmall) }
+                if (filled.isNotEmpty()) DemoCard(tr("✨ AI filled ${filled.size} rows · $formModel · ${secs(formMs)}", "✨ AI ने ${filled.size} पंक्तियाँ भरीं · $formModel · ${secs(formMs)}")) {
+                    ConfirmChip(hindi)
+                    filled.forEach { (id, v) -> val f = sp.fields.firstOrNull { it.id == id } ?: return@forEach
+                        Text("${f.label}: ${v.value}${if (f.type == QType.NUMBER && f.unit.isNotBlank()) " " + f.unit else ""}", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+                        Text("   ← “${v.evidence}”", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
+                }
+                if (filled.isNotEmpty() && !formConfirmed) Button(onClick = onConfirmForm) { Text(tr("✓ Sunita confirms these values", "✓ सुनीता इन मानों को पक्का करती हैं")) }
+                if (formConfirmed) Text("✓ " + tr("Confirmed by Sunita — nothing saved before this.", "सुनीता ने पक्का किया — इससे पहले कुछ सेव नहीं।"),
+                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            }
+            4 -> {
+                DemoCard(if (dangers.isEmpty()) tr("✓ No danger signs", "✓ कोई खतरा नहीं") else tr("⚠ REFER NOW", "⚠ तुरंत रेफ़र करें"), danger = dangers.isNotEmpty()) {
+                    dangers.forEach { Text("• $it") }
+                    Text(tr("Rules printed on the form — not AI.", "फ़ॉर्म पर छपे नियम — AI नहीं।"), style = MaterialTheme.typography.labelSmall)
+                }
+                DemoCard(tr("Tell ANM + PHC", "ANM-PHC सूचना")) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onDemoMsg(tr("Demo: not sent — in real use this calls 108.", "डेमो: भेजा नहीं — असल में 108 पर कॉल होगा।")) }) { Text("📞 108") }
+                        OutlinedButton(onClick = { onDemoMsg(tr("Demo: not sent — in real use this calls the ANM.", "डेमो: भेजा नहीं — असल में ANM को कॉल होगा।")) }) { Text("📞 ANM") }
+                        OutlinedButton(onClick = { onDemoMsg(tr("Demo: not sent — in real use this opens WhatsApp.", "डेमो: भेजा नहीं — असल में WhatsApp खुलेगा।")) }) { Text("💬 WhatsApp") }
+                    }
+                    if (demoMsg.isNotBlank()) Text(demoMsg, fontWeight = FontWeight.Bold)
+                    Text(tr("Referral to PHC will be recorded when the visit is saved. (Demo: nothing is sent.)", "PHC रेफ़रल विज़िट सेव होने पर दर्ज होगा। (डेमो: कुछ भेजा नहीं जाता)"), style = MaterialTheme.typography.labelSmall)
+                }
+                if (anm.isNotBlank()) DemoCard(tr("✨ Message to ANM (AI draft, she edits before sending)", "✨ ANM को संदेश (AI ड्राफ़्ट)") + if (anmModel.isNotBlank()) " · $anmModel" else "") { Text(anm, style = MaterialTheme.typography.bodySmall) }
+            }
+            5 -> {
+                val docs = guideDocs
+                if (docs == null) Text(tr("Reading…", "पढ़ रहे हैं…"))
+                else if (docs.isEmpty()) Text(tr("Guide database not installed — install it from Home first.", "गाइड डेटाबेस नहीं है — होम से इंस्टॉल करें।"))
+                else {
+                    val (nd, pages, passages) = ArogyaGuideLibrary.totals(docs)
+                    DemoCard(tr("The pipeline", "पाइपलाइन")) {
+                        Text(tr("Government portals → $nd documents → $passages passages → stored on this phone",
+                            "सरकारी पोर्टल → $nd दस्तावेज़ → $passages हिस्से → इसी फ़ोन में"), fontWeight = FontWeight.Bold)
+                        Text(tr("$pages pages · works offline", "$pages पेज · ऑफ़लाइन चलता है"), style = MaterialTheme.typography.bodySmall)
+                    }
+                    Button(onClick = onOpenLibrary, modifier = Modifier.fillMaxWidth()) { Text(tr("📚 Guides used ($nd)", "📚 इस्तेमाल गाइड ($nd)")) }
+                    DemoCard(tr("On this phone", "इस फ़ोन पर")) {
+                        ArogyaGuideLibrary.grouped(docs).forEach { (g, ds) ->
+                            Text("$g (${ds.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                            ds.forEach { Text("• ${it.title.ifBlank { it.sourceName }}", style = MaterialTheme.typography.bodySmall) }
+                        }
+                    }
+                }
+            }
+            6 -> {
+                DemoCard("❓ " + (if (hindi) ArogyaDemoScript.QUESTION_HI else ArogyaDemoScript.QUESTION_EN)) {}
+                sop?.let { DemoSopAnswer(it, hindi, tr, onOpenSource, secs) }
+                DemoCard("❓ " + tr("Follow-up (the app remembers the first question)", "दोबारा सवाल (ऐप पहला सवाल याद रखता है)") + ": " +
+                    (if (hindi) ArogyaDemoScript.FOLLOWUP_HI else ArogyaDemoScript.FOLLOWUP_EN)) {}
+                sopFollow?.let { DemoSopAnswer(it, hindi, tr, onOpenSource, secs) }
+            }
+            7 -> {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { onTakePhoto("card") }) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
+                    OutlinedButton(onClick = { onChoosePhoto("card") }) { Text(tr("Choose MCP card photo", "MCP कार्ड फ़ोटो चुनें")) }
+                }
+                card?.let { r -> DemoCard(tr("✨ Read from the card (${r.fields.size} values, each found in the card's text)", "✨ कार्ड से पढ़ा (${r.fields.size})") + if (cardModel.isNotBlank()) " · $cardModel" else "") {
+                    ConfirmChip(hindi)
+                    r.fields.forEachIndexed { i, f -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(cardChecked.contains(i), { onCheckCard(i, it) })
+                        Text("${f.label}: ${f.value}", style = MaterialTheme.typography.bodySmall) } }
+                    if (!cardApplied) Button(onClick = onApplyCard, enabled = cardChecked.isNotEmpty()) {
+                        Text(tr("Apply ${cardChecked.size} values to the card", "${cardChecked.size} मान कार्ड में लगाएँ")) }
+                    else {
+                        Text("✓ " + tr("Applied to the MCP card", "MCP कार्ड में लगाया"), fontWeight = FontWeight.Bold)
+                        Text(if (vaccinesAdded.isEmpty()) tr("Vaccines already on the card — due list unchanged", "टीके कार्ड पर पहले से — बाकी सूची वैसी ही")
+                            else tr("Added to MCP card (they leave the due list): ", "MCP कार्ड में जोड़े (बाकी सूची से हटे): ") + vaccinesAdded.joinToString())
+                        if (weightAdded.isNotBlank()) Text(tr("Weight added: ", "वज़न जोड़ा: ") + weightAdded)
+                    }
+                } }
+            }
+            8 -> {
+                DemoCard("🔍 " + tr("Medicine scan (offline)", "दवा स्कैन (ऑफ़लाइन)")) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onTakePhoto("med") }) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
+                        OutlinedButton(onClick = { onChoosePhoto("med") }) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
+                    }
+                    medScan?.let { s ->
+                        AiResultChip("ML Kit text + $medEngine", !medEngine.contains("offline", ignoreCase = true), medMs, hindi)
+                        ConfirmChip(hindi)
+                        Text(tr("Name: ", "नाम: ") + s.name.ifBlank { "—" }, style = MaterialTheme.typography.bodySmall)
+                        Text(tr("Batch: ", "बैच: ") + s.batch.ifBlank { "—" } + " · " + tr("Expiry: ", "एक्सपायरी: ") + s.expiry.ifBlank { "—" } +
+                            " · " + tr("Qty: ", "मात्रा: ") + (if (s.qty > 0) s.qty.toString() else "—"), style = MaterialTheme.typography.bodySmall)
+                        Text(if (medMatched.isNotBlank()) tr("Matches kit item: $medMatched", "किट की दवा मिली: $medMatched")
+                            else tr("Not in the kit list — will be added as a new item.", "किट सूची में नहीं — नई दवा जुड़ेगी।"),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        if (!medSaved) Button(onClick = onSaveMed) {
+                            Text(if (medMatched.isNotBlank()) tr("Save as Stock received", "स्टॉक मिला — सहेजें") else tr("Add as new item", "नई दवा जोड़ें")) }
+                        else Text("✓ " + tr("In the stock register", "स्टॉक रजिस्टर में"), fontWeight = FontWeight.Bold)
+                    }
+                }
+                DemoCard("🔢 " + tr("Drug-kit count (SAM 3.1, online)", "दवा किट गिनती (SAM 3.1, ऑनलाइन)")) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onTakePhoto("sam") }) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
+                        OutlinedButton(onClick = { onChoosePhoto("sam") }) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
+                    }
+                    samBitmap?.let { Image(it.asImageBitmap(), contentDescription = tr("Drug-kit photo", "दवा किट फ़ोटो"), modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)) }
+                    if (samMsg.isNotBlank()) Text(samMsg, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            9 -> {
+                val nextDue = remember(saved) { ArogyaOfficialForms.nextDue(sp, b, column, LocalDate.now()) }
+                OfficialFormGrid(ArogyaOfficialForms.table(sp, b, data.forms), column, hindi = hindi)
+                DemoCard(tr("Saved", "सहेजा")) {
+                    Text("📄 ${sp.title.substringBefore(" (")} — ${sp.columns[column]}")
+                    Text("🗂 " + tr("MCP card: weight + vaccines", "MCP कार्ड: वज़न + टीके"))
+                    Text("📒 " + tr("Activity diary + visit list", "डायरी + विज़िट सूची"))
+                    Text("📅 " + tr("Next visit: ", "अगली विज़िट: ") + (nextDue?.toString() ?: "—"), fontWeight = FontWeight.Bold)
+                    if (savedReferral.isNotBlank()) Text("🏥 $savedReferral", fontWeight = FontWeight.Bold)
+                }
+                Button(onClick = onSharePdf, enabled = saved) { Text(tr("Share visit PDF", "विज़िट PDF भेजें")) }
+                if (shareMsg.isNotBlank()) Text(shareMsg, style = MaterialTheme.typography.bodySmall)
+                if (onDeepLink != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { onDeepLink("registers") }) { Text(tr("Open registers ↗", "रजिस्टर खोलें ↗")) }
+                    OutlinedButton(onClick = { onDeepLink("diary") }) { Text(tr("Open diary ↗", "डायरी खोलें ↗")) }
+                }
+            }
+            10 -> {
+                if (quizModel.isNotBlank()) AiResultChip(quizModel, !quizModel.startsWith("On-phone"), quizMs, hindi)
+                if (quizItems.isEmpty()) Text(tr("Making questions…", "सवाल बन रहे हैं…"))
+                quizItems.forEachIndexed { qi, item ->
+                    DemoCard("${qi + 1}. ${item.question}") {
+                        val chosen = quizChoice[qi]
+                        item.options.forEachIndexed { oi, opt ->
+                            val mark = when { chosen == null -> ""; oi == item.correct -> "✓ "; oi == chosen -> "✗ "; else -> "" }
+                            OutlinedButton(onClick = { if (chosen == null) onAnswer(qi, oi) }, modifier = Modifier.fillMaxWidth(),
+                                colors = if (chosen != null && oi == item.correct) ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer) else ButtonDefaults.outlinedButtonColors()) {
+                                Text(mark + "ABC"[oi] + ") " + opt, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        TextButton(onClick = { onOpenSource(item.source) }) {
+                            Text(tr("From: ", "स्रोत: ") + item.source.title.take(50) + " · " + item.source.locator, style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
+            11 -> {
+                val ctx = LocalContext.current
+                var policy by remember { mutableStateOf(AnswerPolicyStore(ctx.applicationContext).get()) }
+                DemoCard(tr("One setting", "एक सेटिंग")) {
+                    Text(tr("Now: ", "अभी: ") + (if (policy == AnswerPolicy.CLOUD_FIRST) "☁ Cloud first" else "📱 Local first"), fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { AnswerPolicyStore(ctx.applicationContext).set(AnswerPolicy.LOCAL_FIRST); policy = AnswerPolicy.LOCAL_FIRST }) { Text("📱 Local first") }
+                        OutlinedButton(onClick = { AnswerPolicyStore(ctx.applicationContext).set(AnswerPolicy.CLOUD_FIRST); policy = AnswerPolicy.CLOUD_FIRST }) { Text("☁ Cloud first") }
+                    }
+                    Text(tr("Everything works offline either way — the phone is the fallback.", "दोनों में सब ऑफ़लाइन चलता है — फ़ोन बैकअप है।"), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            12 -> {
+                DemoCard(tr("What AI did in this visit", "इस विज़िट में AI ने क्या किया")) {
+                    val rows = ArogyaDemoTicks.rows(ticks, dangersRan, hindi)
+                    if (rows.isEmpty()) Text(tr("Run the earlier scenes first — skipped steps stay out of this table.", "पहले पिछले सीन चलाएँ — छूटे चरण इस तालिका में नहीं आते।"))
+                    rows.forEach { r ->
+                        Text((if (r.cloud) "☁ " else "📱 ") + r.step, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                        Text("   " + r.benefit, style = MaterialTheme.typography.bodySmall)
+                        Text("   " + r.model + " · " + (if (r.ms > 0) secs(r.ms) else "—"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Text(tr("Built with Muse Code.", "Muse Code से बनाया गया।"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            else -> {
+                val rows = ArogyaDemoTicks.beforeAfter(ticks, hindi)
+                DemoCard(tr("Sunita's day, before and after", "सुनीता का दिन, पहले और अब")) {
+                    if (rows.isEmpty()) Text(tr("Nothing measured yet — run the earlier scenes first.", "अभी कुछ नापा नहीं — पहले पिछले सीन चलाएँ।"))
+                    rows.forEach { r ->
+                        Text(r.task, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                        Text(tr("Before: ", "पहले: ") + r.before, style = MaterialTheme.typography.bodySmall)
+                        Text(tr("After: ", "अब: ") + secs(r.afterMs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Text(tr("No invented percentages — only measured times.", "मनगढ़ंत प्रतिशत नहीं — सिर्फ़ नपे समय।"), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DemoSopAnswer(r: ArogyaAiResult, hindi: Boolean, tr: (String, String) -> String, onOpenSource: (ArogyaSource) -> Unit, secs: (Long) -> String) {
+    if (r.sources.isNotEmpty()) DemoCard(tr("Top passages", "मुख्य हिस्से")) {
+        r.sources.take(3).forEach { s ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("📄 ${s.title} · ${s.locator}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { onOpenSource(s) }) { Text(tr("Open", "खोलें")) }
+            }
+            if (s.excerpt.isNotBlank()) ArogyaPassageText(s.copy(excerpt = s.excerpt.take(600) + if (s.excerpt.length > 600) "…" else ""))
+        }
+    }
+    DemoCard(tr("Answer from the official guides · ${r.provider} · ${secs(r.elapsedMs)}", "आधिकारिक गाइड से उत्तर · ${r.provider} · ${secs(r.elapsedMs)}")) {
+        Text(r.text.take(900), style = MaterialTheme.typography.bodySmall)
+        if (r.quote.isNotBlank()) Text("“${r.quote}” — ${r.quoteSource}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+        r.sources.firstOrNull()?.let { s -> Text(tr("Source: ", "स्रोत: ") + "${s.title}, ${s.locator}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall) }
     }
 }
 
