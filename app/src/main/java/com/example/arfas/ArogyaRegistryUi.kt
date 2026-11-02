@@ -1088,7 +1088,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 }
                 val rep = remember(data, visits, month) { ArogyaRegistryLogic.monthlyReport(data, visits, month) }
                 val inc = remember(data, visits, month) { ArogyaRegistryLogic.incentiveEstimate(data, visits, month) }
-                val claim = rep.text + "\n\nINCENTIVE ESTIMATE (national list in your guide; state rates may differ — verify with ANM):\n" +
+                val claim = rep.text + "\n\nINCENTIVE ESTIMATE (ASHA Incentives 2025, NHSRC; rural rates; state rates may differ — verify with ANM):\n" +
                     inc.lines.filter { it.count > 0 }.joinToString("\n") { "${it.item}: ${it.count} × Rs ${it.rate} = Rs ${it.amount}" } + "\nEstimated total: Rs ${inc.total}"
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { FixedRuleChip(hindi); Text(tr("Fixed government rules", "तय सरकारी नियम"), style = MaterialTheme.typography.bodySmall) }
                 Card(Modifier.fillMaxWidth()) { Text(claim, Modifier.padding(12.dp)) }

@@ -206,7 +206,7 @@ object ArogyaRegistryLogic {
         rep.closing.forEach { (k, v) -> kv(tr("Closing: ", "बचा: ") + k, "$v") }
         section(tr("Vital events", "जन्म-मृत्यु"))
         rep.vitals.forEach { (k, v) -> kv(k.name, "$v") }
-        section(tr("Incentive estimate (national list — state rates may differ, verify with ANM)", "प्रोत्साहन अनुमान (राष्ट्रीय सूची — राज्य दर अलग हो सकती है, ANM से मिलाएँ)"))
+        section(tr("Incentive estimate — ASHA Incentives 2025, rural rates (state rates may differ, verify with ANM)", "प्रोत्साहन अनुमान — ASHA प्रोत्साहन 2025, ग्रामीण दरें (राज्य दर अलग हो सकती है, ANM से मिलाएँ)"))
         inc.lines.filter { it.count > 0 }.forEach { rows += listOf(it.item, "${it.count}", "Rs ${it.rate}", "Rs ${it.amount}") }
         rows += listOf(tr("Estimated total", "अनुमानित कुल"), "", "", "Rs ${inc.total}")
         return FormTable(tr("Monthly summary & claim", "मासिक सारांश और दावा") + " — $month",
@@ -268,34 +268,67 @@ object ArogyaRegistryLogic {
         }.sortedBy { edd(it.first) }
     fun eligibleCouples(bens: List<Beneficiary>) = bens.filter { it.active && it.category == BenCategory.ELIGIBLE_COUPLE }.sortedBy { it.name.lowercase() }
 
-    // ── Incentive estimate (national list 2025 in the guide: "ASHA Incentives under NHM"; state rates may differ) ──
+    // ── Incentive estimate: fixed rates from "ASHA Incentives under the National Health Mission (2025)" (NHSRC, in the guide DB) ──
     data class IncentiveLine(val item: String, val count: Int, val rate: Int) { val amount get() = count * rate }
     data class IncentiveEstimate(val month: YearMonth, val lines: List<IncentiveLine>) { val total get() = lines.sumOf { it.amount } }
+    /** key → (claim label, Rs). Counts come only from the linked records; rates are fixed rules, never AI. */
+    val INCENTIVE_2025 = listOf(
+        "hbnc" to ("HBNC visits completed (6/7 visits)" to 250),
+        "hbyc" to ("HBYC home visit" to 50),
+        "lbw" to ("LBW / SNCU quarterly follow-up" to 50),
+        "fullImm" to ("Full immunization under 1 year" to 100),
+        "imm2" to ("Complete immunization up to 2 years" to 75),
+        "dptb2" to ("DPT booster at 5–6 years" to 50),
+        "jsyAnc" to ("JSY: antenatal care, 4 ANC (rural)" to 300),
+        "jsyDel" to ("JSY: institutional delivery facilitated (rural)" to 300),
+        "rdt" to ("Malaria RDT testing" to 15),
+        "act" to ("ACT complete treatment (RDT positive)" to 200),
+        "childDeath" to ("Child death reported" to 50),
+        "vhnd" to ("VHND session mobilised" to 200),
+        "vhsnc" to ("VHSNC / MAS monthly meeting" to 150),
+        "phc" to ("Monthly meeting at PHC" to 150),
+        "vhr" to ("Village health register maintained" to 300),
+        "dueList" to ("Due list of children prepared" to 300),
+        "ancList" to ("ANC beneficiaries list prepared" to 300),
+        "ecList" to ("Eligible couples list prepared" to 300))
     fun incentiveEstimate(data: RegistryData, visits: List<ArogyaVisit>, month: YearMonth): IncentiveEstimate {
         fun inMonth(s: String) = d(s)?.let { YearMonth.from(it) == month } ?: false
         val end = month.atEndOfMonth()
         val byPerson = visits.filter { it.completed }.groupBy { it.personId }
-        var hbnc = 0; var hbyc = 0; var lbw = 0; var fullImm = 0
+        val n = mutableMapOf<String, Int>().withDefault { 0 }
+        fun add(k: String, c: Int) { n[k] = n.getValue(k) + c }
         data.beneficiaries.filter { it.active && it.category == BenCategory.CHILD }.forEach { b ->
             val items = ArogyaSchedule.forBeneficiary(b, byPerson[b.id].orEmpty(), end)
             val h = items.filter { it.kind == "HBNC" }
-            if (h.isNotEmpty() && h.all { it.done } && inMonth(h.maxOf { it.doneDate })) hbnc++
-            items.filter { it.kind == "HBYC" && it.done && inMonth(it.doneDate) }.forEach { if (it.label.contains("LBW")) lbw++ else hbyc++ }
+            if (h.isNotEmpty() && h.all { it.done } && inMonth(h.maxOf { it.doneDate })) add("hbnc", 1)
+            items.filter { it.kind == "HBYC" && it.done && inMonth(it.doneDate) }.forEach { if (it.label.contains("LBW")) add("lbw", 1) else add("hbyc", 1) }
             val dob = d(b.dob)
-            val firstYear = items.filter { it.kind == "VACCINE" }.take(5)
+            val vacc = items.filter { it.kind == "VACCINE" }
+            val firstYear = vacc.take(5)
             if (dob != null && firstYear.size == 5 && firstYear.all { it.done } && inMonth(firstYear.maxOf { it.doneDate }) &&
-                (d(firstYear.maxOf { it.doneDate })?.isBefore(dob.plusYears(1)) == true)) fullImm++
+                (d(firstYear.maxOf { it.doneDate })?.isBefore(dob.plusYears(1)) == true)) add("fullImm", 1)
+            if (vacc.any { it.done && inMonth(it.doneDate) && it.label.contains("16–24 months") }) add("imm2", 1)
+            if (vacc.any { it.done && inMonth(it.doneDate) && it.label.contains("5–6 years") }) add("dptb2", 1)
         }
+        data.beneficiaries.filter { it.active && it.category == BenCategory.PREGNANT }.forEach { b ->
+            if (b.mcp.anc.size >= 4 && b.mcp.anc.values.any { inMonth(it) } && inMonth(b.mcp.anc.values.maxOrNull().orEmpty())) add("jsyAnc", 1)
+        }
+        val vitals = data.vitals.filter { inMonth(it.date) }
+        add("jsyDel", vitals.count { it.kind == VitalKind.BIRTH && it.place.isNotBlank() && !it.place.equals("Home", true) })
+        add("childDeath", vitals.count { it.kind == VitalKind.INFANT_DEATH || it.kind == VitalKind.CHILD_DEATH })
+        val sickForms = data.forms.filter { it.formId == "sick" && inMonth(it.date) }
+        add("rdt", sickForms.sumOf { it.values["mal_rdt"]?.toDoubleOrNull()?.toInt() ?: 0 })
+        add("act", sickForms.count { it.values["rdt"] == "Yes" && (it.values["act"]?.toDoubleOrNull() ?: 0.0) > 0 })
         val diary = data.diary.filter { inMonth(it.date) }
-        return IncentiveEstimate(month, listOf(
-            IncentiveLine("HBNC visits completed (6/7 visits)", hbnc, 250),
-            IncentiveLine("HBYC home visit", hbyc, 50),
-            IncentiveLine("LBW / SNCU quarterly follow-up", lbw, 50),
-            IncentiveLine("Full immunization under 1 year", fullImm, 100),
-            IncentiveLine("VHND session mobilised", diary.count { it.kind == DiaryKind.VHND }, 200),
-            IncentiveLine("VHSNC / MAS monthly meeting", diary.count { it.kind == DiaryKind.VHSNC_MEETING }.coerceAtMost(1), 150),
-            IncentiveLine("Monthly meeting at PHC", diary.count { it.kind == DiaryKind.PHC_MEETING }.coerceAtMost(1), 150)
-        ))
+        add("vhnd", diary.count { it.kind == DiaryKind.VHND })
+        add("vhsnc", diary.count { it.kind == DiaryKind.VHSNC_MEETING }.coerceAtMost(1))
+        add("phc", diary.count { it.kind == DiaryKind.PHC_MEETING }.coerceAtMost(1))
+        val bens = data.beneficiaries.filter { it.active }
+        if (bens.isNotEmpty()) add("vhr", 1)
+        if (bens.any { it.category == BenCategory.CHILD }) add("dueList", 1)
+        if (bens.any { it.category == BenCategory.PREGNANT }) add("ancList", 1)
+        if (bens.any { it.category == BenCategory.ELIGIBLE_COUPLE }) add("ecList", 1)
+        return IncentiveEstimate(month, INCENTIVE_2025.map { (k, lr) -> IncentiveLine(lr.first, n.getValue(k), lr.second) })
     }
 
     private fun q(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
