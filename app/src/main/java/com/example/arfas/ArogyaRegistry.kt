@@ -24,7 +24,7 @@ import org.json.JSONObject
  */
 
 enum class BenCategory(val title: String, val titleHi: String = title) { ELIGIBLE_COUPLE("Eligible couple", "योग्य दंपति"), PREGNANT("Pregnant woman", "गर्भवती महिला"), MOTHER("Mother (postnatal)", "माँ (प्रसव बाद)"), CHILD("Child 0–6 years", "बच्चा 0–6 साल"), OTHER("Other", "अन्य") }
-enum class DiaryKind(val title: String, val titleHi: String = title) { HOME_VISIT("Home visit", "घर विज़िट"), VHND("VHND / immunization session", "VHND / टीकाकरण सत्र"), VHSNC_MEETING("VHSNC / MAS meeting", "VHSNC / MAS बैठक"), PHC_MEETING("Monthly meeting at PHC", "PHC पर मासिक बैठक"), ESCORT("Escort to facility", "अस्पताल साथ जाना"), SURVEY("Household survey / line listing", "घर सर्वे / सूची"), OTHER("Other", "अन्य") }
+enum class DiaryKind(val title: String, val titleHi: String = title) { HOME_VISIT("Home visit", "घर विज़िट"), VHND("VHND / immunization session", "VHND / टीकाकरण सत्र"), VHSNC_MEETING("VHSNC / MAS meeting", "VHSNC / MAS बैठक"), PHC_MEETING("Monthly meeting at PHC", "PHC पर मासिक बैठक"), ESCORT("Escort to facility", "अस्पताल साथ जाना"), SURVEY("Household survey / line listing", "घर सर्वे / सूची"), MEDICINE("Medicine given", "दवा दी"), OTHER("Other", "अन्य") }
 enum class VitalKind(val title: String, val titleHi: String = title) { BIRTH("Birth", "जन्म"), STILLBIRTH("Stillbirth", "मृत जन्म"), MATERNAL_DEATH("Maternal death", "मातृ मृत्यु"), INFANT_DEATH("Infant death (<1 y)", "शिशु मृत्यु (<1 साल)"), CHILD_DEATH("Child death (1–5 y)", "बाल मृत्यु (1–5 साल)"), OTHER_DEATH("Other death", "अन्य मृत्यु"),
     FEVER("Fever case", "बुखार"), DIARRHOEA("Diarrhoea case", "दस्त"), TB_SUSPECT("TB suspect", "TB संदिग्ध"), AEFI("AEFI (after immunization)", "AEFI (टीके के बाद)"), OTHER("Other surveillance", "अन्य निगरानी") }
 

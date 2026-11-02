@@ -174,9 +174,10 @@ fun StockWriteoffDialog(hindi: Boolean, items: List<StockItem>, balances: Map<St
 @Composable
 fun StockGiveDialog(
     hindi: Boolean, people: List<Beneficiary>, items: List<StockItem>, balances: Map<String, Int>,
-    fixedPerson: Beneficiary? = null, onDismiss: () -> Unit, onSave: (StockTxn) -> Unit
+    fixedPerson: Beneficiary? = null, onDismiss: () -> Unit, onSave: (item: String, qty: Int, person: Beneficiary, giveId: String) -> Unit
 ) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
+    val giveId = remember { java.util.UUID.randomUUID().toString() }
     var item by remember { mutableStateOf(items.firstOrNull()?.name.orEmpty()) }
     var qty by remember { mutableStateOf("") }
     var query by remember { mutableStateOf(fixedPerson?.name.orEmpty()) }
@@ -204,7 +205,7 @@ fun StockGiveDialog(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text(tr("Cancel", "रद्द करें")) }
-                    Button(onClick = { onSave(StockTxn(item = item, qty = -q, beneficiaryId = person!!.id, note = "Given to ${person!!.name}", kind = "give")) },
+                    Button(onClick = { onSave(item, q, person!!, giveId) },
                         enabled = item.isNotBlank() && q > 0 && q <= bal && person != null, modifier = Modifier.weight(1f)) { Text(tr("Save", "सहेजें")) }
                 }
             }

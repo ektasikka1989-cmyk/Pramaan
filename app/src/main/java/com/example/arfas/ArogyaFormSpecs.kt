@@ -330,6 +330,37 @@ object ArogyaOfficialForms {
     fun stockKey(note: String): Pair<String, Int>? =
         STOCK_KEY.find(note)?.let { it.groupValues[1] to it.groupValues[2].toInt() }
 
+    const val IFA_ITEM = "IFA tablets (adult)"
+
+    private val GIVE_KEY = Regex("\\[give#([A-Za-z0-9_-]+)\\]\\s*$")
+
+    /** The give id of a drug-kit "Give to person" line, or null. Same keyed pattern as [stockKey]. */
+    fun giveKey(note: String): String? = GIVE_KEY.find(note)?.groupValues?.get(1)
+
+    fun giveNote(name: String, giveId: String) = "Given to $name [give#$giveId]"
+
+    /**
+     * Drug-kit "Give to person" through the same linked path as a visit save: the stock
+     * line, the person's MCP card (IFA total), a diary line and the record update — together.
+     * Re-saving with the same [giveId] replaces that give's lines instead of doubling them.
+     */
+    fun applyGive(r: RegistryData, b: Beneficiary, item: String, qty: Int, giveId: String,
+                  origin: String = "manual", today: LocalDate = LocalDate.now()): RegistryData {
+        val d = today.toString()
+        val oldQty = r.stock.filter { it.beneficiaryId == b.id && giveKey(it.note) == giveId }.sumOf { -it.qty.coerceAtMost(0) }
+        val txn = StockTxn(date = d, item = item, qty = -qty, beneficiaryId = b.id, note = giveNote(b.name, giveId), kind = "give", source = origin)
+        val stock = r.stock.filterNot { it.beneficiaryId == b.id && giveKey(it.note) == giveId } + txn
+        val diary = r.diary.filterNot { it.beneficiaryId == b.id && giveKey(it.note) == giveId } +
+            DiaryEntry(date = d, kind = DiaryKind.MEDICINE, beneficiaryId = b.id, note = "Given: $item × $qty [give#$giveId]")
+        val bens = r.beneficiaries.map { x ->
+            if (x.id != b.id) x else {
+                val m = if (item == IFA_ITEM) x.mcp.copy(ifaTablets = (x.mcp.ifaTablets - oldQty + qty).coerceAtLeast(0)) else x.mcp
+                x.copy(mcp = m, updatedAt = System.currentTimeMillis())
+            }
+        }
+        return r.copy(beneficiaries = bens, stock = stock, diary = diary)
+    }
+
     /** Save one visit column: the form entry (replacing the same column), the MCP card, the drug kit and the diary — together. */
     fun apply(r: RegistryData, b: Beneficiary, spec: FormSpec, column: Int, values: Map<String, String>, sources: Map<String, String>,
               vaccinesGiven: Set<String>, today: LocalDate = LocalDate.now()): RegistryData {
@@ -337,7 +368,7 @@ object ArogyaOfficialForms {
         val next = nextDue(spec, b, column, today)?.toString().orEmpty()
         val entry = FormEntry(beneficiaryId = b.id, formId = spec.id, column = column, date = d, values = values.filterValues { it.isNotBlank() } + ("_next" to next), sources = sources)
         val forms = r.forms.filterNot { it.beneficiaryId == b.id && it.formId == spec.id && it.column == column } + entry
-        val stock = STOCK.mapNotNull { (k, item) -> values[k]?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }?.let { StockTxn(date = d, item = item, qty = -it, beneficiaryId = b.id, note = stockNote(spec, column), kind = "give") } }
+        val stock = STOCK.mapNotNull { (k, item) -> values[k]?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }?.let { StockTxn(date = d, item = item, qty = -it, beneficiaryId = b.id, note = stockNote(spec, column), kind = "give", source = "visit") } }
         // Re-saving a column replaces only that column's stock lines (keyed by form + column),
         // and clears them when the re-save drops the item — the card and the kit stay consistent.
         // Pre-key lines migrate on re-save: same label + same item is replaced, never doubled.

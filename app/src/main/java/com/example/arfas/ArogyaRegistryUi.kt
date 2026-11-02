@@ -763,8 +763,8 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
             dismissButton = { TextButton(onClick = { ancEdit = null }) { Text(tr("Cancel", "रद्द करें")) } })
     }
     if (giveOpen) StockGiveDialog(hindi, emptyList(), ArogyaRegistryLogic.catalog(data.stockItems),
-        ArogyaRegistryLogic.stockBalance(data.stock), fixedPerson = b, onDismiss = { giveOpen = false }) { txn ->
-        if (save { r -> r.copy(stock = r.stock + txn) }) giveOpen = false }
+        ArogyaRegistryLogic.stockBalance(data.stock), fixedPerson = b, onDismiss = { giveOpen = false }) { item, qty, person, giveId ->
+        if (save { r -> ArogyaOfficialForms.applyGive(r, person, item, qty, giveId) }) giveOpen = false }
     if (eventOpen) EventDialog(hindi, onDismiss = { eventOpen = false }) { kind, place, note ->
         if (save { r -> r.copy(vitals = r.vitals + VitalEvent(kind = kind, beneficiaryId = b.id, place = place, note = note)) }) eventOpen = false }
     viewForm?.let { f -> ArogyaFormViewer(f, hindi, ArogyaRegistryStore.get(context)) { viewForm = null } }
@@ -926,8 +926,8 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                     if (save { r -> r.copy(stock = r.stock + txn) }) adjustOpen = false }
                 if (writeoffOpen) StockWriteoffDialog(hindi, cat, bal, onDismiss = { writeoffOpen = false }) { txn ->
                     if (save { r -> r.copy(stock = r.stock + txn) }) writeoffOpen = false }
-                if (giveOpen) StockGiveDialog(hindi, data.beneficiaries, cat, bal, onDismiss = { giveOpen = false }) { txn ->
-                    if (save { r -> r.copy(stock = r.stock + txn) }) giveOpen = false }
+                if (giveOpen) StockGiveDialog(hindi, data.beneficiaries, cat, bal, onDismiss = { giveOpen = false }) { item, qty, person, giveId ->
+                    if (save { r -> ArogyaOfficialForms.applyGive(r, person, item, qty, giveId) }) giveOpen = false }
                 if (historyItem.isNotBlank()) StockHistoryDialog(hindi, historyItem,
                     ArogyaRegistryLogic.stockHistory(data.stock, historyItem), names, onDismiss = { historyItem = "" })
                 viewer?.let { f -> ArogyaFormViewer(f, hindi, store) { viewer = null } }
