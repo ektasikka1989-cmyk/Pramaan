@@ -415,6 +415,27 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
      * route()) only fills what is missing. Every kept value is grounded in the OCR text.
      * Returns the scan, the engine label and the parse time (OCR time is measured by the caller).
      */
+    /**
+     * Add-person photo/PDF: copy the person's details off OCR text. Aadhaar numbers
+     * are masked before the model sees the text; every kept value is grounded in it.
+     * Returns the field map, the engine label and the time.
+     */
+    suspend fun extractPersonFields(ocr: String): Triple<Map<String, String>, String, Long> = mutex.withLock {
+        val t = System.currentTimeMillis()
+        val clean = ArogyaPersonExtract.maskAadhaar(ocr)
+        check(clean.trim().length >= 4) { "No readable text was found. Take a closer photo in good light." }
+        val det = mutableMapOf<String, String>()
+        Regex("""(?<!\d)(\d{10})(?!\d)""").find(clean)?.let { det["phone"] = it.groupValues[1] }
+        var by = "On-phone rules (offline): patterns"
+        val (opt, label) = route("person_extract", ArogyaPersonExtract.prompt(clean), 300) { out ->
+            ArogyaPersonExtract.ground(ArogyaPersonExtract.parse(out), clean)
+        }
+        opt?.let { by = label }
+        val fields = ArogyaPersonExtract.ground(det + (opt ?: emptyMap()), clean)
+        Log.i(TAG, "AROGYA_TIMING event=person_extract ms=${System.currentTimeMillis() - t} fields=${fields.size}")
+        Triple(fields, by, System.currentTimeMillis() - t)
+    }
+
     suspend fun scanMedicine(ocr: String): Triple<MedScan, String, Long> = mutex.withLock {
         val t = System.currentTimeMillis()
         check(ocr.trim().length >= 4) { "No readable text was found. Take a closer photo in good light." }

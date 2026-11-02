@@ -363,6 +363,7 @@ fun ArogyaRegistryHub(hindi: Boolean, initial: String, visits: List<ArogyaVisit>
     var tab by rememberSaveable { mutableStateOf(initial) }
     var openPatient by remember { mutableStateOf<String?>(null) }
     var editPatient by remember { mutableStateOf<Beneficiary?>(null) }
+    var addOpen by remember { mutableStateOf(false) }
     val today = LocalDate.now()
     fun toast(m: String) = Toast.makeText(context, m, Toast.LENGTH_LONG).show()
     fun save(change: (RegistryData) -> RegistryData) = runCatching { store.update(change) }.onFailure { toast(it.message ?: "Could not save") }.isSuccess
@@ -379,7 +380,7 @@ fun ArogyaRegistryHub(hindi: Boolean, initial: String, visits: List<ArogyaVisit>
                 Box(Modifier.weight(1f)) {
                     when (tab) {
                         "due" -> DueTab(hindi, data, visits, today, store) { openPatient = it }
-                        "patients" -> PatientsTab(hindi, data, visits, today, onOpen = { openPatient = it }, onAdd = { editPatient = Beneficiary() })
+                        "patients" -> PatientsTab(hindi, data, visits, today, onOpen = { openPatient = it }, onAdd = { addOpen = true })
                         "registers" -> RegistersTab(hindi, data, visits, store, today, onOpen = { openPatient = it }, ai = ai) { c -> save(c) }
                         else -> BackupTab(hindi, store, queue)
                     }
@@ -395,6 +396,7 @@ fun ArogyaRegistryHub(hindi: Boolean, initial: String, visits: List<ArogyaVisit>
         if (save { r -> if (r.beneficiaries.any { it.id == updated.id }) r.copy(beneficiaries = r.beneficiaries.map { if (it.id == updated.id) updated.copy(updatedAt = System.currentTimeMillis()) else it })
                 else r.copy(beneficiaries = r.beneficiaries + updated) }) { editPatient = null; openPatient = updated.id }
     } }
+    if (addOpen) AddPersonSheet(hindi, ai, data, visits, { c -> save(c) }, onClose = { addOpen = false })
 }
 
 @Composable
@@ -457,48 +459,90 @@ private fun PatientsTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaV
     }
 }
 
+/** Text field with a mic button: dictation follows the Offline/Online setting. */
+@Composable
+internal fun MicField(value: String, onValue: (String) -> Unit, label: String, dictate: (((String) -> Unit)) -> Unit,
+    singleLine: Boolean = true, modifier: Modifier = Modifier.fillMaxWidth()) {
+    OutlinedTextField(value, onValue, label = { Text(label) }, singleLine = singleLine, modifier = modifier,
+        trailingIcon = { IconButton(onClick = { dictate { t -> onValue(t.take(200)) } }) { Text("🎤") } })
+}
+
+/** Shared editable person fields for add, edit and the import review screen. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun PatientFormFields(hindi: Boolean, b: Beneficiary, weight: String, onWeight: (String) -> Unit,
+    onChange: (Beneficiary) -> Unit, villages: List<String>, dictate: (((String) -> Unit)) -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    var villageMenu by remember { mutableStateOf(false) }
+    var villageNew by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(tr("Register as", "दर्ज करें"))
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            BenCategory.values().forEach { c -> FilterChip(selected = b.category == c, onClick = { onChange(b.copy(category = c, sex = if (c == BenCategory.CHILD) b.sex else "F")) }, label = { Text(if (hindi) c.titleHi else c.title) }) }
+        }
+        MicField(b.name, { onChange(b.copy(name = it.take(80))) }, tr("Name *", "नाम *"), dictate)
+        MicField(b.relativeName, { onChange(b.copy(relativeName = it.take(80))) }, tr("Husband / mother / father", "पति / माँ / पिता"), dictate)
+        MicField(b.household, { onChange(b.copy(household = it.take(60))) }, tr("Household (house no. / family head) — from line listing", "परिवार (मकान नं. / मुखिया) — सूची से"), dictate)
+        if (villages.isNotEmpty() && !villageNew) {
+            ExposedDropdownMenuBox(expanded = villageMenu, onExpandedChange = { villageMenu = it }) {
+                OutlinedTextField(b.village, {}, readOnly = true, label = { Text(tr("Village / hamlet", "गाँव / टोला")) }, singleLine = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(villageMenu) }, modifier = Modifier.menuAnchor().fillMaxWidth())
+                ExposedDropdownMenu(villageMenu, { villageMenu = false }) {
+                    (villages + tr("＋ New village", "＋ नया गाँव")).forEach { v ->
+                        DropdownMenuItem({ Text(v) }, {
+                            if (v.startsWith("＋")) villageNew = true else onChange(b.copy(village = v))
+                            villageMenu = false
+                        })
+                    }
+                }
+            }
+        } else MicField(b.village, { onChange(b.copy(village = it.take(80))) }, tr("Village / hamlet", "गाँव / टोला"), dictate)
+        if (b.category != BenCategory.CHILD) OutlinedTextField(b.age, { onChange(b.copy(age = it.filter { c -> c.isDigit() }.take(3))) }, label = { Text(tr("Age (years)", "उम्र (साल)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        MicField(b.phone, { onChange(b.copy(phone = it.filter { c -> c.isDigit() || c == '+' }.take(15))) }, tr("Phone", "फ़ोन"), dictate)
+        MicField(b.rchId, { onChange(b.copy(rchId = it.take(30))) }, tr("RCH ID (if any)", "RCH ID (हो तो)"), dictate)
+        if (b.category == BenCategory.CHILD) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("F" to tr("Girl", "लड़की"), "M" to tr("Boy", "लड़का")).forEach { (s, l) -> FilterChip(selected = b.sex == s, onClick = { onChange(b.copy(sex = s)) }, label = { Text(l) }) } }
+            DateBox(tr("Date of birth *", "जन्मतिथि *"), b.dob, Modifier.fillMaxWidth()) { onChange(b.copy(dob = it)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("INSTITUTION" to tr("Hospital birth", "अस्पताल में जन्म"), "HOME" to tr("Home birth", "घर पर जन्म")).forEach { (p, l) -> FilterChip(selected = b.deliveryPlace == p, onClick = { onChange(b.copy(deliveryPlace = p)) }, label = { Text(l) }) } }
+            OutlinedTextField(weight, { onWeight(it.filter { c -> c.isDigit() || c == '.' }.take(5)) }, label = { Text(tr("Birth weight (kg)", "जन्म वज़न (किलो)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(b.preterm, { onChange(b.copy(preterm = it)) }); Text(tr("Born preterm", "समय से पहले जन्म")) }
+            DateBox(tr("SNCU/NBSU discharge (if admitted)", "SNCU/NBSU छुट्टी (भर्ती हुए तो)"), b.sncuDischarge, Modifier.fillMaxWidth()) { onChange(b.copy(sncuDischarge = it)) }
+            if (b.sncuDischarge.isNotBlank()) TextButton(onClick = { onChange(b.copy(sncuDischarge = "")) }) { Text(tr("Clear discharge date", "छुट्टी तारीख़ हटाएँ")) }
+        }
+        if (b.category == BenCategory.PREGNANT) {
+            DateBox(tr("LMP *", "अंतिम माहवारी *"), b.lmp, Modifier.fillMaxWidth()) { onChange(b.copy(lmp = it)) }
+            ArogyaRegistryLogic.edd(b)?.let { Text(tr("EDD: ", "प्रसव तिथि: ") + it) }
+            MicField(b.ancNumber, { onChange(b.copy(ancNumber = it.take(10))) }, tr("ANC number", "ANC नंबर"), dictate)
+            DateBox(tr("Delivery date (after birth)", "प्रसव तारीख़ (जन्म के बाद)"), b.deliveryDate, Modifier.fillMaxWidth()) { onChange(b.copy(deliveryDate = it)) }
+        }
+        if (b.category == BenCategory.ELIGIBLE_COUPLE || b.category == BenCategory.MOTHER)
+            MicField(b.familyPlanning, { onChange(b.copy(familyPlanning = it.take(60))) }, tr("Family planning method", "परिवार नियोजन साधन"), dictate)
+        MicField(b.notes, { onChange(b.copy(notes = it.take(1000))) }, tr("Notes", "नोट"), dictate, singleLine = false)
+    }
+}
+
 @Composable
 private fun PatientForm(hindi: Boolean, initial: Beneficiary, onDismiss: () -> Unit, onSave: (Beneficiary) -> Unit) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
+    val context = LocalContext.current
     var b by remember { mutableStateOf(initial) }
     var weight by remember { mutableStateOf(initial.birthWeightKg?.toString().orEmpty()) }
+    var dictateTarget by remember { mutableStateOf<((String) -> Unit)?>(null) }
+    if (dictateTarget != null) ArogyaDictationDialog(onDismiss = { dictateTarget = null },
+        cloudVoice = { s, l -> ArogyaCloud.transcribe(context, s, l) },
+        cloudFirst = ArogyaCloud.cloudFirst(context), hindi = hindi,
+        onAccept = { dictateTarget?.invoke(it); dictateTarget = null })
     AlertDialog(onDismissRequest = onDismiss, title = { Text(if (initial.name.isBlank()) tr("Add patient", "रोगी जोड़ें") else tr("Edit patient", "रोगी सुधारें")) }, text = {
         Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(tr("Use fictional names in demos.", "डेमो में काल्पनिक नाम लिखें।"), style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(b.name, { b = b.copy(name = it.take(80)) }, label = { Text(tr("Name *", "नाम *")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.relativeName, { b = b.copy(relativeName = it.take(80)) }, label = { Text(tr("Husband / mother / father", "पति / माँ / पिता")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.household, { b = b.copy(household = it.take(60)) }, label = { Text(tr("Household (house no. / family head) — from line listing", "परिवार (मकान नं. / मुखिया) — सूची से")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.village, { b = b.copy(village = it.take(80)) }, label = { Text(tr("Village / hamlet", "गाँव / टोला")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            if (b.category != BenCategory.CHILD) OutlinedTextField(b.age, { b = b.copy(age = it.filter { c -> c.isDigit() }.take(3)) }, label = { Text(tr("Age (years)", "उम्र (साल)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.phone, { b = b.copy(phone = it.filter { c -> c.isDigit() || c == '+' }.take(15)) }, label = { Text(tr("Phone", "फ़ोन")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.rchId, { b = b.copy(rchId = it.take(30)) }, label = { Text(tr("RCH ID (if any)", "RCH ID (हो तो)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Text(tr("Register as", "दर्ज करें"))
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                BenCategory.values().forEach { c -> FilterChip(selected = b.category == c, onClick = { b = b.copy(category = c, sex = if (c == BenCategory.CHILD) b.sex else "F") }, label = { Text(if (hindi) c.titleHi else c.title) }) }
-            }
-            if (b.category == BenCategory.CHILD) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("F" to tr("Girl", "लड़की"), "M" to tr("Boy", "लड़का")).forEach { (s, l) -> FilterChip(selected = b.sex == s, onClick = { b = b.copy(sex = s) }, label = { Text(l) }) } }
-                DateBox(tr("Date of birth *", "जन्मतिथि *"), b.dob, Modifier.fillMaxWidth()) { b = b.copy(dob = it) }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("INSTITUTION" to tr("Hospital birth", "अस्पताल में जन्म"), "HOME" to tr("Home birth", "घर पर जन्म")).forEach { (p, l) -> FilterChip(selected = b.deliveryPlace == p, onClick = { b = b.copy(deliveryPlace = p) }, label = { Text(l) }) } }
-                OutlinedTextField(weight, { weight = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text(tr("Birth weight (kg)", "जन्म वज़न (किलो)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(b.preterm, { b = b.copy(preterm = it) }); Text(tr("Born preterm", "समय से पहले जन्म")) }
-                DateBox(tr("SNCU/NBSU discharge (if admitted)", "SNCU/NBSU छुट्टी (भर्ती हुए तो)"), b.sncuDischarge, Modifier.fillMaxWidth()) { b = b.copy(sncuDischarge = it) }
-                if (b.sncuDischarge.isNotBlank()) TextButton(onClick = { b = b.copy(sncuDischarge = "") }) { Text(tr("Clear discharge date", "छुट्टी तारीख़ हटाएँ")) }
-            }
-            if (b.category == BenCategory.PREGNANT) {
-                DateBox(tr("LMP *", "अंतिम माहवारी *"), b.lmp, Modifier.fillMaxWidth()) { b = b.copy(lmp = it) }
-                ArogyaRegistryLogic.edd(b)?.let { Text(tr("EDD: ", "प्रसव तिथि: ") + it) }
-                DateBox(tr("Delivery date (after birth)", "प्रसव तारीख़ (जन्म के बाद)"), b.deliveryDate, Modifier.fillMaxWidth()) { b = b.copy(deliveryDate = it) }
-            }
-            if (b.category == BenCategory.ELIGIBLE_COUPLE || b.category == BenCategory.MOTHER)
-                OutlinedTextField(b.familyPlanning, { b = b.copy(familyPlanning = it.take(60)) }, label = { Text(tr("Family planning method", "परिवार नियोजन साधन")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(b.notes, { b = b.copy(notes = it.take(1000)) }, label = { Text(tr("Notes", "नोट")) }, modifier = Modifier.fillMaxWidth())
+            PatientFormFields(hindi, b, weight, { weight = it }, { b = it }, emptyList()) { dictateTarget = it }
         }
     }, confirmButton = {
         val ok = b.name.isNotBlank() && (b.category != BenCategory.CHILD || b.dob.isNotBlank()) && (b.category != BenCategory.PREGNANT || b.lmp.isNotBlank())
         Button(onClick = { onSave(b.copy(birthWeightKg = weight.toDoubleOrNull()?.takeIf { it in 0.3..8.0 })) }, enabled = ok) { Text(tr("Save", "सहेजें")) }
     }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "रद्द करें")) } })
 }
+
 
 @Composable
 private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, visits: List<ArogyaVisit>, today: LocalDate, ai: ArogyaVisitAi?, onClose: () -> Unit, onEdit: () -> Unit,

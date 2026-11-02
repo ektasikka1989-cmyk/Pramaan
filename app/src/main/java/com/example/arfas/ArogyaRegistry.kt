@@ -42,7 +42,7 @@ data class Beneficiary(
     val age: String = "",
     val sex: String = "F", val category: BenCategory = BenCategory.OTHER, val dob: String = "", val lmp: String = "", val deliveryDate: String = "",
     val deliveryPlace: String = "", val birthWeightKg: Double? = null, val preterm: Boolean = false, val sncuDischarge: String = "", val motherId: String = "",
-    val rchId: String = "", val familyPlanning: String = "", val notes: String = "", val active: Boolean = true, val mcp: McpCard = McpCard(),
+    val rchId: String = "", val ancNumber: String = "", val familyPlanning: String = "", val notes: String = "", val active: Boolean = true, val mcp: McpCard = McpCard(),
     val demo: Boolean = false, val createdAt: Long = System.currentTimeMillis(), val updatedAt: Long = System.currentTimeMillis()
 )
 data class DiaryEntry(val id: String = java.util.UUID.randomUUID().toString(), val date: String = LocalDate.now().toString(), val kind: DiaryKind = DiaryKind.HOME_VISIT,
@@ -518,7 +518,7 @@ object ArogyaRegistryCodec {
     private fun ben(b: Beneficiary) = JSONObject().put("id", b.id).put("name", b.name).put("relative", b.relativeName).put("household", b.household).put("age", b.age).put("village", b.village).put("phone", b.phone)
         .put("sex", b.sex).put("category", b.category.name).put("dob", b.dob).put("lmp", b.lmp).put("deliveryDate", b.deliveryDate).put("deliveryPlace", b.deliveryPlace)
         .put("birthWeightKg", b.birthWeightKg ?: JSONObject.NULL).put("preterm", b.preterm).put("sncuDischarge", b.sncuDischarge).put("motherId", b.motherId)
-        .put("rchId", b.rchId).put("familyPlanning", b.familyPlanning).put("notes", b.notes).put("active", b.active).put("demo", b.demo)
+        .put("rchId", b.rchId).put("ancNumber", b.ancNumber).put("familyPlanning", b.familyPlanning).put("notes", b.notes).put("active", b.active).put("demo", b.demo)
         .put("createdAt", b.createdAt).put("updatedAt", b.updatedAt)
         .put("mcp", JSONObject().put("vaccines", JSONObject(b.mcp.vaccines)).put("anc", JSONObject(b.mcp.anc.mapKeys { it.key.toString() }))
             .put("weights", JSONArray().also { a -> b.mcp.weights.forEach { a.put(JSONObject().put("date", it.date).put("kg", it.kg)) } })
@@ -535,7 +535,7 @@ object ArogyaRegistryCodec {
             Beneficiary(j.getString("id"), j.optString("name"), j.optString("relative"), j.optString("village"), j.optString("phone"), j.optString("household"), j.optString("age"), j.optString("sex", "F"),
                 runCatching { BenCategory.valueOf(j.optString("category")) }.getOrDefault(BenCategory.OTHER), j.optString("dob"), j.optString("lmp"),
                 j.optString("deliveryDate"), j.optString("deliveryPlace"), if (j.isNull("birthWeightKg")) null else j.optDouble("birthWeightKg"),
-                j.optBoolean("preterm"), j.optString("sncuDischarge"), j.optString("motherId"), j.optString("rchId"), j.optString("familyPlanning"), j.optString("notes"),
+                j.optBoolean("preterm"), j.optString("sncuDischarge"), j.optString("motherId"), j.optString("rchId"), j.optString("ancNumber"), j.optString("familyPlanning"), j.optString("notes"),
                 j.optBoolean("active", true),
                 McpCard(strMap(m.optJSONObject("vaccines")), strMap(m.optJSONObject("anc")).mapKeys { it.key.toInt() },
                     (m.optJSONArray("weights") ?: JSONArray()).let { w -> (0 until w.length()).map { WeightEntry(w.getJSONObject(it).getString("date"), w.getJSONObject(it).getDouble("kg")) } },
