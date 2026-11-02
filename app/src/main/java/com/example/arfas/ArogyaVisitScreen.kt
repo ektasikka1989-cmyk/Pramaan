@@ -219,12 +219,22 @@ fun ArogyaVisitScreen(
         showOnlineOptions=false;familyText="";askedQuestionForWarning="";aiDraft="";ai?.clearAttachments();qFiles=emptyList();aiCapture=emptyList();aiResult=null;aiError="";aiPrevious="";aiCopy="";aiOpen=true
     }
     DisposableEffect(Unit) { onDispose { if(aiBusy) onCancelAi();aiJob?.cancel() } }
+    // Gap item 2: when the network dies mid-call, drop in-flight cloud calls now; the phone continues.
+    DisposableEffect(ai) { ArogyaNetWatch.onLost={ ai?.cancelCloud() }; onDispose { ArogyaNetWatch.onLost=null } }
     var exportVisitId by rememberSaveable { mutableStateOf<String?>(null) }
     var exportRevision by rememberSaveable { mutableStateOf<Long?>(null) }
     var attachmentVisitId by rememberSaveable { mutableStateOf<String?>(null) }
     var ttsReady by remember { mutableStateOf(false) }
     val tts=remember { TextToSpeech(context.applicationContext) { ttsReady=it==TextToSpeech.SUCCESS } }
     var voiceMissing by remember { mutableStateOf<String?>(null) }
+    var lastSpoken by remember { mutableStateOf("") }
+    var speakRetried by remember { mutableStateOf(false) }
+    fun pickVoice(text: String, online: Boolean): android.speech.tts.Voice? {
+        val all=if(ttsReady) tts.voices.orEmpty().toList() else emptyList()
+        val lang2=if(text.any { it.code in 0x0900..0x097F }) "hi" else "en"
+        val at2=runCatching { ArogyaLang.rankVoice(all.map { Triple(it.locale,it.quality,it.isNetworkConnectionRequired) },lang2,online) }.getOrDefault(-1)
+        return if(at2 in all.indices) all[at2] else null
+    }
     fun speak(text: String) {
         val lang=if(text.any { it in '\u0900'..'\u097F' }) "hi" else "en"
         // Cloud first + signal: the better online Android voice; otherwise (or as fallback) the offline voice.
@@ -234,9 +244,21 @@ fun ArogyaVisitScreen(
         val at=runCatching { ArogyaLang.rankVoice(all.map { Triple(it.locale,it.quality,it.isNetworkConnectionRequired) },lang,online) }.getOrDefault(-1)
         val pick=if(at in all.indices) all[at] else null
         if(pick==null) voiceMissing=lang
-        else { tts.voice=pick; tts.setSpeechRate(0.9f); tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"arogya-step") }
+        else { tts.voice=pick; tts.setSpeechRate(0.9f); lastSpoken=text; tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"arogya-step") }
     }
     DisposableEffect(tts) {
+        // Gap item 2: a failed utterance retries once with the best offline voice.
+        tts.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+            override fun onStart(id: String?) {}
+            override fun onDone(id: String?) { speakRetried=false }
+            override fun onError(id: String?) {
+                if(!speakRetried && lastSpoken.isNotBlank()) {
+                    speakRetried=true
+                    val off=pickVoice(lastSpoken,false)
+                    if(off!=null) { tts.voice=off; tts.setSpeechRate(0.9f); tts.speak(lastSpoken,TextToSpeech.QUEUE_FLUSH,null,"arogya-step-retry") }
+                }
+            }
+        })
         val owner=context as? LifecycleOwner
         val observer=LifecycleEventObserver { _,event -> if(event==Lifecycle.Event.ON_STOP) { tts.stop(); voice=false } }
         owner?.lifecycle?.addObserver(observer)
@@ -1052,7 +1074,7 @@ fun ArogyaVisitScreen(
                 OutlinedTextField(message,{message=it.take(1500)},modifier=Modifier.fillMaxWidth(),minLines=5)
                 var anmBusy by remember { mutableStateOf(false) }
                 if(ai!=null) TextButton(onClick={ anmBusy=true; scope.launch {
-                    try { message=ai.anmMessage(ArogyaShare.anmMessage(visit,escalateConcern)+"\nVisit notes: "+visit.notes.take(1500)+(if(visit.referralNote.isNotBlank()) "\nActions: "+visit.referralNote.take(500) else "")) }
+                    try { message=ai.anmMessage(ArogyaShare.anmMessage(visit,escalateConcern)+"\nVisit notes: "+visit.notes.take(1500)+(if(visit.referralNote.isNotBlank()) "\nActions: "+visit.referralNote.take(500) else ""),visit) }
                     catch(e:CancellationException) { throw e } catch(e:Exception) { toast(e.message ?: "Could not draft the message.") }
                     finally { anmBusy=false } } },enabled=!anmBusy) { Text(if(anmBusy) tr("Writing…","लिखा जा रहा है…") else tr("✨ Write it from my notes (AI)","✨ मेरे नोट्स से लिखें (AI)")) }
                 if(ai!=null) AiBadge("Message to ANM")

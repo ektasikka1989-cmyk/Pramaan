@@ -292,6 +292,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ArogyaNetWatch.register(applicationContext)
         savedInstanceState?.let { showArogyaVisits = it.getBoolean("showArogyaVisits", true) }
         ARController.setContext(this)
         Log.i(TAG, "AR_CAPABILITY offlineReady=${ARController.isArCoreReadyForOfflineUse()}")
@@ -962,6 +963,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        if (isFinishing) ArogyaNetWatch.unregister(applicationContext)
         thinkingWatchdog?.cancel()
         AndroVoiceAssistant.setVisualFrameProvider(null)
         AndroVoiceAssistant.setVisualContextProvider(null)

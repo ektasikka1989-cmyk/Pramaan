@@ -66,13 +66,14 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
      * ready or its reply is unusable. [accept] checks each reply (grounding etc.); returns the result and who made it.
      */
     private suspend fun <T> route(feature: String, prompt: String, maxTokens: Int, cloudPrompt: String = prompt,
-                                  system: String = "Follow the instructions exactly.", accept: (String) -> T?): Pair<T?, String> {
+                                  system: String = "Follow the instructions exactly.", cloud: Boolean = true,
+                                  accept: (String) -> T?): Pair<T?, String> {
         val c = runCatching { withContext(Dispatchers.IO) { cloudChoice?.invoke() } }.getOrNull()
         val ep = c?.endpoint; val key = c?.key.orEmpty()
         suspend fun cloud(): Pair<T?, String>? {
-            if (ep == null || key.isBlank()) return null
+            if (!cloud || ep == null || key.isBlank()) return null
             val t = System.currentTimeMillis()
-            val raw = ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS) { OpenAiCompatibleClient(ep, { key }, CLOUD_DEADLINE_MS.toInt()).complete(system, cloudPrompt, maxTokens) }
+            val raw = ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS, feature) { OpenAiCompatibleClient(ep, { key }, CLOUD_DEADLINE_MS.toInt()).complete(system, cloudPrompt, maxTokens) }
             Log.i(TAG, "AROGYA_ROUTE feature=$feature engine=cloud model=${ep.model} ok=${raw != null} ms=${System.currentTimeMillis() - t}")
             return raw?.let { r -> accept(r)?.let { it to ep.label } }
         }
@@ -82,12 +83,14 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             Log.i(TAG, "AROGYA_ROUTE feature=$feature engine=phone ms=${System.currentTimeMillis() - t} chars=${raw.length}")
             accept(raw)?.let { it to "On-phone model (offline): " + (model.loadedModelFileName?.substringBeforeLast('.') ?: "local") }
         } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.w(TAG, "AROGYA_ROUTE feature=$feature engine=phone failed ${e.message?.take(120)}"); null }
-        for (engine in ArogyaRouting.order(c?.cloudFirst == true, ep != null && key.isNotBlank())) {
+        for (engine in ArogyaRouting.order(c?.cloudFirst == true, cloud && ep != null && key.isNotBlank())) {
             (if (engine == "cloud") cloud() else phone())?.let { return it }
         }
         return null to ""
     }
     fun cancel() { runtime.requestCancelActiveGeneration("arogya_user_cancel"); runtime.localModelManager?.requestCancelActiveGeneration("arogya_user_cancel") }
+    /** Gap item 2: drop the in-flight cloud call when the network dies; local work continues. */
+    fun cancelCloud() { runtime.cancelCloudCall() }
 
     /**
      * Ask SOP "New conversation": drops this visit's runtime session context (pocketRagSessions
@@ -230,9 +233,10 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             try {
                 doChat()
             } catch (e: Exception) {
-                // A real cancel (back button, Stop) must never trigger a retry.
-                if (e is CancellationException && e !is TimeoutCancellationException) throw e
-                if (runtime.answerPolicy() != AnswerPolicy.CLOUD_FIRST) throw e
+                // A real cancel (back button, Stop) must never trigger a retry — but a cancel
+                // caused by the network dying mid-call falls back to the phone instead.
+                if (e is CancellationException && e !is TimeoutCancellationException && !ArogyaNetWatch.justLost()) throw e
+                if (runtime.answerPolicy() != AnswerPolicy.CLOUD_FIRST && !ArogyaNetWatch.justLost()) throw e
                 Log.w(TAG, "AROGYA_ASK_FALLBACK cloud failed (${e.message?.take(100)}), retrying on the phone")
                 // In-memory override only: the saved setting is never touched, so a
                 // crash mid-retry cannot leave it changed.
@@ -397,6 +401,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             return null
         }
         val pairs = refs.take(3).mapNotNull { ref ->
+            if (!ArogyaNetWatch.online) { Log.i(TAG, "AROGYA_NET_LOST cancelled=tier2_fetch"); return null }
             val f = runCatching { withTimeoutOrNull(9_000) { ArogyaOfficialSources.fetch(ref.url) } }.getOrNull()
             if (f == null || f.text.isBlank()) null else ref to f
         }
@@ -480,7 +485,8 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     /** Same, plus the engine label + time for the A5 result chip. */
     suspend fun familyExplainDetailed(answer: String, quote: String, hindi: Boolean): Triple<String, String, Long> = mutex.withLock {
         val t = System.currentTimeMillis()
-        val (opt, by) = route("family_explain", ArogyaAiExtras.familyPrompt(answer, quote, hindi), 220) { out ->
+        val (opt, by) = route("family_explain", ArogyaAiExtras.familyPrompt(answer, quote, hindi), 220,
+            ArogyaAiExtras.familyPrompt(ArogyaOnlinePolicy.scrubGeneric(answer), ArogyaOnlinePolicy.scrubGeneric(quote), hindi)) { out ->
             ArogyaAiExtras.groundedSentences(out, answer + "\n" + quote, max = 4).takeIf { it.isNotBlank() } }
         val clean = opt.orEmpty()
         Log.i(TAG, "AROGYA_TIMING event=family_explain ms=${System.currentTimeMillis() - t} chars=${clean.length}")
@@ -489,12 +495,13 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     }
 
     /** A short ANM message drafted from the visit facts only; the worker edits it before sending. */
-    suspend fun anmMessage(facts: String): String = anmMessageDetailed(facts).first
+    suspend fun anmMessage(facts: String, visit: ArogyaVisit? = null): String = anmMessageDetailed(facts, visit).first
 
     /** Same, plus the engine label that ran it (for the demo's honest "AI at work" panel). */
-    suspend fun anmMessageDetailed(facts: String): Pair<String, String> = mutex.withLock {
+    suspend fun anmMessageDetailed(facts: String, visit: ArogyaVisit? = null): Pair<String, String> = mutex.withLock {
         val t = System.currentTimeMillis()
-        val (opt, by) = route("anm_message", ArogyaAiExtras.anmPrompt(facts), 200) { out ->
+        val scrubbed = if (visit != null) ArogyaOnlinePolicy.scrub(facts, visit) else ArogyaOnlinePolicy.scrubGeneric(facts)
+        val (opt, by) = route("anm_message", ArogyaAiExtras.anmPrompt(facts), 200, ArogyaAiExtras.anmPrompt(scrubbed)) { out ->
             ArogyaAiExtras.groundedSentences(out, facts, max = 8, lineMode = true).takeIf { it.length >= 30 } }
         val clean = opt.orEmpty()
         Log.i(TAG, "AROGYA_TIMING event=anm_message ms=${System.currentTimeMillis() - t} chars=${clean.length}")
@@ -536,8 +543,9 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         try {
             val text = listOf(staged.extractedText, staged.localVisualContext).filter { it.isNotBlank() }.joinToString("\n").trim()
             check(text.length >= 15) { "No readable text was found. Take a closer photo in good light, card flat." }
-            // Only values found in the card's own text are kept, whichever model reads it.
-            val (opt, by) = route("card_read", ArogyaAiExtras.cardPrompt(text.take(3500)), 380) { out ->
+            // Only values found in the card's own text are kept. Local-only: a card photo
+            // is identifiers by design, and names must never reach a cloud prompt.
+            val (opt, by) = route("card_read", ArogyaAiExtras.cardPrompt(text.take(3500)), 380, cloud = false) { out ->
                 ArogyaAiExtras.parseCard(out, text).takeIf { it.isNotEmpty() } }
             val fields = opt.orEmpty()
             Log.i(TAG, "AROGYA_TIMING event=card_read ms=${System.currentTimeMillis() - t} ocrChars=${text.length} fields=${fields.size}")
@@ -563,7 +571,8 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val det = mutableMapOf<String, String>()
         Regex("""(?<!\d)(\d{10})(?!\d)""").find(clean)?.let { det["phone"] = it.groupValues[1] }
         var by = "On-phone rules (offline): patterns"
-        val (opt, label) = route("person_extract", ArogyaPersonExtract.prompt(clean), 300) { out ->
+        // Local-only: the OCR is identifiers by design, and names must never reach a cloud prompt.
+        val (opt, label) = route("person_extract", ArogyaPersonExtract.prompt(clean), 300, cloud = false) { out ->
             ArogyaPersonExtract.ground(ArogyaPersonExtract.parse(out), clean)
         }
         opt?.let { by = label }
@@ -578,7 +587,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         var scan = ArogyaMedScan.parse(ocr)
         var by = "On-phone rules (offline): regex"
         if (scan.name.isBlank() || scan.batch.isBlank() || scan.expiry.isBlank()) {
-            val (opt, label) = route("medicine_scan", ArogyaMedScan.prompt(ocr), 120) { out ->
+            val (opt, label) = route("medicine_scan", ArogyaMedScan.prompt(ocr), 120, ArogyaMedScan.prompt(ArogyaOnlinePolicy.scrubGeneric(ocr))) { out ->
                 ArogyaMedScan.ground(ArogyaMedScan.parse(out), ocr)
             }
             opt?.let {
@@ -604,7 +613,8 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         var lines = ArogyaVoiceStock.ground(ArogyaVoiceStock.parseRules(transcript, catalog), transcript, catalog)
         var by = "On-phone rules (offline): patterns"
         if (lines.isEmpty()) {
-            val (opt, label) = route("voice_stock", ArogyaVoiceStock.prompt(transcript, catalog), 200) { out ->
+            val (opt, label) = route("voice_stock", ArogyaVoiceStock.prompt(transcript, catalog), 200,
+                ArogyaVoiceStock.prompt(ArogyaOnlinePolicy.scrubGeneric(transcript), catalog)) { out ->
                 ArogyaVoiceStock.ground(ArogyaVoiceStock.parseModel(out), transcript, catalog).takeIf { it.isNotEmpty() }
             }
             opt?.let { lines = it; by = label }
@@ -625,7 +635,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         check(notes.length <= 6000) { "These notes are too long for one review. Shorten them first." }
         val t = System.currentTimeMillis()
         val (ai, by) = route("finish_visit", ArogyaFinishVisit.extractionPrompt(notes), 600, ArogyaFinishVisit.extractionPrompt(ArogyaOnlinePolicy.scrub(notes, visit)),
-            "You extract structured fields from health-worker notes. Reply with JSON only.") { raw -> ArogyaFinishVisit.parseExtraction(raw, notes).takeIf { it.isNotEmpty() } }
+            system = "You extract structured fields from health-worker notes. Reply with JSON only.") { raw -> ArogyaFinishVisit.parseExtraction(raw, notes).takeIf { it.isNotEmpty() } }
         val fields = ai.orEmpty()
         val rules = ArogyaFinishVisit.ruleFallback(notes).filter { r -> fields.none { it.key == r.key } }
         val ms = System.currentTimeMillis() - t
@@ -649,7 +659,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         var label = ""; var meta = false; var msg = ""
         val cloudReady = endpoint != null && key.isNotBlank()
         suspend fun cloud(): Map<String, FilledValue>? = try {
-            val raw = ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS) {
+            val raw = ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS, "fill_form") {
                 OpenAiCompatibleClient(endpoint!!, { key }, CLOUD_DEADLINE_MS.toInt()).complete("You fill official health forms from notes. Reply with JSON only.",
                     ArogyaOfficialForms.prompt(spec, column, ArogyaOfficialForms.scrub(b, text)), 900)
             } ?: error("no reply within ${CLOUD_DEADLINE_MS / 1000} s")

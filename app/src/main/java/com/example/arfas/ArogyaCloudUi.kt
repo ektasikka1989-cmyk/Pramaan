@@ -45,6 +45,7 @@ import javax.crypto.spec.GCMParameterSpec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -93,11 +94,25 @@ object ArogyaCloud {
         val (ep, key) = textChoice(c); return ArogyaCloudChoice(ep, key, cloudFirst(c))
     }
 
-    /** Runs a blocking network call but gives up waiting after [ms] (weak village signal); null = too slow or failed. */
-    suspend fun <T> withDeadline(ms: Long, block: () -> T): T? {
+    /**
+     * Runs a blocking network call but gives up waiting after [ms] (weak village signal); null = too slow or failed.
+     * Also returns immediately when the network drops mid-call ([ArogyaNetWatch.generation] moves), so the
+     * caller continues on the phone instead of waiting out the timeout; the stray socket dies at its own read timeout.
+     */
+    suspend fun <T> withDeadline(ms: Long, feature: String = "cloud", block: () -> T): T? {
         val job = CoroutineScope(Dispatchers.IO).async { runCatching(block) }
-        val r = withTimeoutOrNull(ms) { job.await() } ?: run { job.cancel(); Log.w(TAG, "AROGYA_CLOUD_TIMEOUT ms=$ms"); return null }
-        return r.onFailure { Log.w(TAG, "AROGYA_CLOUD_FAILED ${it.message?.take(200)}") }.getOrNull()
+        val gen = ArogyaNetWatch.generation
+        val t = System.currentTimeMillis()
+        while (!job.isCompleted && System.currentTimeMillis() - t < ms) {
+            if (ArogyaNetWatch.generation != gen) {
+                job.cancel()
+                Log.i(TAG, "AROGYA_NET_LOST cancelled=$feature after=${System.currentTimeMillis() - t}ms")
+                return null
+            }
+            delay(100)
+        }
+        if (!job.isCompleted) { job.cancel(); Log.w(TAG, "AROGYA_CLOUD_TIMEOUT ms=$ms feature=$feature"); return null }
+        return job.await().onFailure { Log.w(TAG, "AROGYA_CLOUD_FAILED feature=$feature ${it.message?.take(200)}") }.getOrNull()
     }
 
     /** The app's own Settings choice (Local first / Cloud first) — the same one Ask SOP uses. */
@@ -117,7 +132,7 @@ object ArogyaCloud {
         val wav = java.io.File(c.cacheDir, "arogya_note_${System.currentTimeMillis()}.wav")
         try {
             MetaOnline.writeWav(samples, samples.size, 16_000, wav)
-            val text = withDeadline(30_000) { kotlinx.coroutines.runBlocking { MetaOnline.api(c).transcribe("arogya_voice_note", wav, languages = languages, diarize = false).text } }
+            val text = withDeadline(15_000, "muse_voice") { kotlinx.coroutines.runBlocking { MetaOnline.api(c).transcribe("arogya_voice_note", wav, languages = languages, diarize = false).text } }
             Log.i(TAG, "AROGYA_VOICE_CLOUD model=muse-voice-transcribe ms=${System.currentTimeMillis() - t} sec=${samples.size / 16000} chars=${text?.length ?: -1} lang=${languages.joinToString("+")}")
             text?.ifBlank { null }
         } finally { wav.delete() }
@@ -300,10 +315,13 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, vision: M
     fun runSam31(jpegBytes: ByteArray) {
         busy = true; phase = "counting"; prog = null
         msg = tr("SAM 3.1 is finding each item…", "SAM 3.1 हर सामान ढूँढ रहा है…")
+        var delegated = false
         scope.launch {
             try {
                 val t = System.currentTimeMillis()
-                val found = MetaOnline.api(context).sam("arogya_kit_count", jpegBytes, phrase.ifBlank { "packet" })
+                val found = ArogyaCloud.withDeadline(20_000, "sam_count") {
+                    kotlinx.coroutines.runBlocking { MetaOnline.api(context).sam("arogya_kit_count", jpegBytes, phrase.ifBlank { "packet" }) }
+                } ?: error("SAM 3.1 did not answer")
                 val conf = found.filter { (it.confidence ?: 1f) >= 0.5f }
                 val boxes = conf.map {
                     val w = it.imageWidth.coerceAtLeast(1).toFloat(); val h = it.imageHeight.coerceAtLeast(1).toFloat()
@@ -317,10 +335,23 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, vision: M
                 else tr("Found ${dots.size}. Tap a dot to remove it, tap empty space to add.",
                     "${dots.size} मिला। हटाने के लिए निशान दबाएँ, जोड़ने के लिए खाली जगह दबाएँ।")
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
-                phase = "manual"
-                msg = tr("Could not count", "गिन नहीं पाए") + ": ${e.message?.take(140)}. " + tr("Tap each item yourself.", "हर सामान खुद दबाएँ।")
                 Log.w("ArogyaDemo", "AROGYA_SAM_FAILED ${e.message?.take(200)}")
-            } finally { busy = false }
+                // SAM failed: the on-phone counter is next (with the teach step when needed); tapping stays last.
+                val bmp = bitmap
+                val canPhone = vision != null && vision.has(MetaModelStore.Component.DINOV2)
+                if (bmp != null && canPhone && vision!!.rememberedLabels().any { it.equals(item, ignoreCase = true) }) {
+                    delegated = true
+                    msg = tr("Online count failed — counting on the phone…", "ऑनलाइन गिनती नहीं हुई — फ़ोन पर गिन रहे हैं…")
+                    runPhone(bmp)
+                } else if (bmp != null && canPhone) {
+                    phase = "teach"
+                    msg = tr("Online count failed. Tap one $item in the photo, so the phone counts instead.",
+                        "ऑनलाइन गिनती नहीं हुई। फ़ोटो में एक $item दबाएँ, फ़ोन गिन लेगा।")
+                } else {
+                    phase = "manual"
+                    msg = tr("Could not count", "गिन नहीं पाए") + ": ${e.message?.take(140)}. " + tr("Tap each item yourself.", "हर सामान खुद दबाएँ।")
+                }
+            } finally { if (!delegated) busy = false }
         }
     }
 

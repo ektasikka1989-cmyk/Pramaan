@@ -26,6 +26,12 @@ object ArogyaOnlinePolicy {
         return ArogyaOnlineQuery(question,step?.title.orEmpty(),request.visit.kind.title,request.hindi,
             step?.sourceId?.let {ArogyaSources.all[it]})
     }
+    /** Context-free scrub for cloud prompts built without a visit/beneficiary: e-mails, phone-like numbers, long digit runs. */
+    fun scrubGeneric(text: String): String = text
+        .replace(Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"), "[email removed]")
+        .replace(Regex("(?<!\\d)(?:\\+?\\d[ -]?){10,14}(?!\\d)"), "[number removed]")
+        .replace(Regex("\\b\\d{10,}\\b"), "[number removed]")
+
     /** Removes the visit's known identifiers, e-mail addresses and phone numbers from text leaving the device. */
     fun scrub(text:String,visit:ArogyaVisit):String {
         var question=text

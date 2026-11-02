@@ -15,7 +15,7 @@ fun main() {
     a(rows[1].cloud == "Muse Spark 1.3 (Meta)", "cloud box names the configured endpoint: '${rows[1].cloud}'")
     a(rows[0].phone == "Whisper (on-device)" && rows[0].cloud == "Muse Voice Transcribe 1.0", "speech engines exact")
     // 2. Active column follows the mode.
-    a(rows.filterIndexed { i, _ -> i != 9 }.all { it.active == 1 } && rows[9].active == 0, "cloud first + ready -> cloud active except phone-only read-aloud")
+    a(rows.filterIndexed { i, _ -> i != 9 && i != 4 }.all { it.active == 1 } && rows[9].active == 0 && rows[4].active == 0, "cloud first + ready -> cloud active except phone-only read-aloud + card photo")
     val local = ArogyaAiTable.rows(full.copy(cloudFirst = false), false)
     a(local.filterIndexed { i, _ -> i != 9 && i != 3 }.all { it.active == 0 } && local[9].active == 0, "local first -> phone active except read-aloud + cloud-only check-online")
     a(local[3].active == 1, "cloud-only row highlights cloud in either mode")
@@ -42,6 +42,7 @@ fun main() {
     // 5. Count row has both engines; read-aloud is phone-only; check-online is cloud-only.
     a(rows[6].phone == "MobileSAM + DINOv2 (estimate)" && rows[6].cloud == "SAM 3.1", "count row engines: '${rows[6].phone}' / '${rows[6].cloud}'")
     a(rows[9].cloud == "—" && rows[9].active == 0, "read-aloud is phone-only, phone active")
+    a(rows[4].cloud == "—" && !rows[4].cloudOk && rows[4].active == 0 && rows[4].safety.contains("never go online"), "card photo is phone-only, names never online")
     a(rows[3].phone == "—" && !rows[3].phoneOk && rows[3].cloud == "Muse Spark 1.3 (Meta) + official GoI websites (allowlist)" && rows[3].cloudOk,
         "check-online row: '${rows[3].phone}' / '${rows[3].cloud}'")
     a(!off[3].cloudOk && off[3].cloud.contains("(offline)") && off[3].active == -1, "check-online offline: '${off[3].cloud}'")

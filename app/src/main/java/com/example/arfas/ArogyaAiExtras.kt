@@ -440,7 +440,7 @@ data class AiTableRow(val icon: String, val feature: String, val does: String, v
 object ArogyaAiTable {
     private data class Def(val icon: String, val en: String, val hi: String, val doesEn: String, val doesHi: String,
         val safeEn: String, val safeHi: String, val kind: Int)
-    // kind: 0 = speech (Whisper / Muse Voice), 1 = phone Llama + cloud text, 2 = count (phone vision / cloud SAM), 3 = phone-only, 4 = cloud-only.
+    // kind: 0 = speech (Whisper / Muse Voice), 1 = phone Llama + cloud text, 2 = count (phone vision / cloud SAM), 3 = phone-only, 4 = cloud-only, 5 = phone Llama only (names never go online).
     private val DEFS = listOf(
         Def("🎤", "Speak instead of typing", "बोलकर लिखें",
             "Turns Hindi/English speech into text", "हिन्दी/अंग्रेज़ी बोली को लिखता है",
@@ -456,7 +456,7 @@ object ArogyaAiTable {
             "Official GoI domains only (allowlist); grounded + you confirm", "सिर्फ़ आधिकारिक डोमेन (सूची); सबूत के साथ + आप पक्का करती हैं", 4),
         Def("🪪", "MCP card photo", "MCP कार्ड फ़ोटो",
             "Reads the card into dates, vaccines, weights", "कार्ड से तारीख़ें, टीके, वज़न पढ़ता है",
-            "Only card text is kept; you tick each value", "सिर्फ़ कार्ड का अक्षर रखा जाता है; आप हर मान चुनती हैं", 1),
+            "Only card text is kept; you tick each value; names never go online", "सिर्फ़ कार्ड का अक्षर रखा जाता है; आप हर मान चुनती हैं; नाम ऑनलाइन नहीं जाते", 5),
         Def("🔍", "Scan medicine", "दवा स्कैन",
             "Reads a strip label into name, batch, expiry, qty", "पत्ते से नाम, बैच, एक्सपायरी, मात्रा पढ़ता है",
             "Only label text is kept; you confirm the entry", "सिर्फ़ लेबल का अक्षर रखा जाता है; आप एंट्री पक्का करती हैं", 1),
@@ -521,6 +521,8 @@ object ArogyaAiTable {
                 }
                 3 -> AiTableRow(d.icon, feature, does, tr("Android offline voice", "Android ऑफ़लाइन आवाज़"),
                     "—", true, false, 0, safety)
+                5 -> AiTableRow(d.icon, feature, does, llamaPhone,
+                    "—", s.llamaReady, false, if (s.llamaReady) 0 else -1, safety)
                 // Cloud-only: the cloud column highlights whenever it is usable, in either mode.
                 else -> {
                     val box = if (s.cloudText.isBlank()) noCloudText

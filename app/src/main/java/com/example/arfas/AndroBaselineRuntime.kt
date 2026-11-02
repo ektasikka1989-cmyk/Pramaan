@@ -8076,6 +8076,11 @@ class AndroBaselineRuntime(
         try { groqProvider.cancelActiveCall() } catch (_: Throwable) {}
     }
 
+    /** Gap item 2: cancel only the in-flight cloud call (network lost); local generation continues. */
+    fun cancelCloudCall() {
+        try { groqProvider.cancelActiveCall() } catch (_: Throwable) {}
+    }
+
     @Deprecated("Cancel the AndroTurnCoordinator job instead of native LiteRT directly")
     fun cancelActiveGeneration() = requestCancelActiveGeneration("legacy_runtime_cancel")
 
