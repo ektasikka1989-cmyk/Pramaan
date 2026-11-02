@@ -35,6 +35,8 @@ docs/benchmark/device/
 app/src/main/assets/**
 !app/src/main/assets/demo/
 !app/src/main/assets/demo/**
+!app/src/main/assets/doc_templates/
+!app/src/main/assets/doc_templates/**
 !app/src/main/assets/kb_parity.json
 *.gguf
 *.bin

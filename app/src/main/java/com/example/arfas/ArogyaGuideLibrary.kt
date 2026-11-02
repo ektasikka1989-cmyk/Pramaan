@@ -103,13 +103,21 @@ fun ArogyaGuideLibrary(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        var listBusy by remember { mutableStateOf(false) }
                         OutlinedButton(onClick = {
-                            val form = FormTable(tr("Official guides used by ArogyaDoot", "ArogyaDoot की आधिकारिक गाइड"),
-                                tr("Installed guide pack", "इंस्टॉल गाइड"),
-                                listOf(tr("Title", "शीर्षक"), tr("Issuing body", "विभाग"), tr("Link", "लिंक")),
-                                list.map { listOf(it.title.ifBlank { it.sourceName }, it.authority, ArogyaGuideLibrary.link(it)) })
-                            if (!store.shareFormPdf(form)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show()
-                        }, modifier = Modifier.weight(1f)) { Text(tr("Share list (PDF)", "सूची भेजें (PDF)"), maxLines = 1) }
+                            listBusy = true
+                            scope.launch {
+                                try {
+                                    val form = FormTable(tr("Official guides used by ArogyaDoot", "ArogyaDoot की आधिकारिक गाइड"),
+                                        tr("Installed guide pack", "इंस्टॉल गाइड"),
+                                        listOf(tr("Title", "शीर्षक"), tr("Issuing body", "विभाग"), tr("Link", "लिंक")),
+                                        list.map { listOf(it.title.ifBlank { it.sourceName }, it.authority, ArogyaGuideLibrary.link(it)) })
+                                    if (!store.shareFormPdf(form)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show()
+                                } finally {
+                                    listBusy = false
+                                }
+                            }
+                        }, enabled = !listBusy, modifier = Modifier.weight(1f)) { Text(if (listBusy) tr("Making PDF…", "PDF बन रही है…") else tr("Share list (PDF)", "सूची भेजें (PDF)"), maxLines = 1) }
                         OutlinedButton(onClick = {
                             ArogyaShare.shareText(context, tr("Official guides", "आधिकारिक गाइड"),
                                 list.joinToString("\n\n") { "• ${it.title.ifBlank { it.sourceName }}\n  ${it.authority}" +

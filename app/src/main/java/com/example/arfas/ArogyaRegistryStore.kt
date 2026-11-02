@@ -153,69 +153,54 @@ class ArogyaRegistryStore private constructor(private val context: Context, priv
         }.getOrDefault(false)
     }
 
-    /** Renders an official form as a ruled table (A4 landscape) and opens the share sheet. */
-    fun shareFormPdf(form: FormTable): Boolean {
-        val bytes = renderFormPdf(form) ?: return false
-        return shareFile(form.title.substringBefore(" ·").replace(Regex("[^A-Za-z0-9]+"), "-") + "-${LocalDate.now()}.pdf", "application/pdf", bytes)
+    // Item 7: one document renderer — the same filled HTML shows in the viewer and goes
+    // to PDF/print. Templates: assets/doc_templates; filling: ArogyaDocRender (pure).
+    /** Any ruled table (official forms, RI forms, stock card, registers, lists) as a document. */
+    fun tableDoc(form: FormTable, highlightCol: Int? = null): ArogyaDocRender.FilledDoc {
+        val t = ArogyaDocPdf.templates(context)
+        return ArogyaDocRender.tableDoc(form, ArogyaDocPdf.header(context), "Date", ArogyaDocPdf.todayStr(),
+            t["table"].orEmpty(), t["css"].orEmpty(), highlightCol)
     }
 
-    /** Headless render for the device tests: the same drawing code, no share sheet. Null = failed. */
-    fun renderFormPdf(form: FormTable): ByteArray? = runCatching {
-        val doc = android.graphics.pdf.PdfDocument()
-        try { drawFormTable(doc, form); java.io.ByteArrayOutputStream().also { doc.writeTo(it) }.toByteArray() } finally { doc.close() }
-    }.getOrNull()
+    /** Renders a filled document to PDF bytes (WebView pipeline, works offline). Null = failed. */
+    suspend fun renderDoc(doc: ArogyaDocRender.FilledDoc): ByteArray? = ArogyaDocPdf.render(context, doc)
 
-    private fun drawFormTable(doc: android.graphics.pdf.PdfDocument, form: FormTable) {
-        val w = 842; val h = 595; val m = 24f
-        val title = android.graphics.Paint().apply { textSize = 13f; isFakeBoldText = true; isAntiAlias = true }
-        val small = android.graphics.Paint().apply { textSize = 7.5f; isAntiAlias = true }
-        val head = android.graphics.Paint().apply { textSize = 7.5f; isFakeBoldText = true; isAntiAlias = true }
-        val line = android.graphics.Paint().apply { strokeWidth = 0.6f; style = android.graphics.Paint.Style.STROKE }
-        val cols = form.headers.size
-        val weights = form.headers.mapIndexed { i, hd -> if (i == 0 || hd.length > 18 || hd.contains("Name") || hd.contains("Ask")) 2.2f else 1f }
-        val unit = (w - 2 * m) / weights.sum()
-        val widths = weights.map { it * unit }
-        fun clip(t: String, cw: Float, p: android.graphics.Paint): String { var x = t; while (x.isNotEmpty() && p.measureText(x) > cw - 4) x = x.dropLast(1); return x }
-        var pageNo = 0; var row = 0
-        while (row < form.rows.size || pageNo == 0) {
-            val page = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(w, h, ++pageNo).create()); val c = page.canvas
-            c.drawText(form.title, m, m + 10, title); c.drawText("Format: ${form.source} · test data · page $pageNo", m, m + 22, small)
-            var y = m + 32f; var x = m
-            val hh = 22f
-            form.headers.forEachIndexed { i, hd -> c.drawRect(x, y, x + widths[i], y + hh, line)
-                val words = hd.split(" "); val half = (words.size + 1) / 2
-                c.drawText(clip(words.take(half).joinToString(" "), widths[i], head), x + 2, y + 9, head); c.drawText(clip(words.drop(half).joinToString(" "), widths[i], head), x + 2, y + 18, head); x += widths[i] }
-            y += hh
-            while (row < form.rows.size && y + 14 < h - m - 14) {
-                x = m; form.rows[row].take(cols).forEachIndexed { i, cell -> c.drawRect(x, y, x + widths[i], y + 14, line); c.drawText(clip(cell, widths[i], small), x + 2, y + 10, small); x += widths[i] }
-                y += 14; row++
-            }
-            if (row >= form.rows.size && form.note.isNotBlank()) c.drawText(clip(form.note, (w - 2 * m), small), m, h - m, small)
-            doc.finishPage(page)
-            if (form.rows.isEmpty()) break
-        }
+    /** Renders an official form as a ruled document and opens the share sheet. */
+    suspend fun shareFormPdf(form: FormTable): Boolean {
+        val bytes = renderDoc(tableDoc(form)) ?: return false
+        return shareFile(ArogyaDocPdf.fileName(form.title.substringBefore(" ·") + "-" + LocalDate.now(), ".pdf"), "application/pdf", bytes)
     }
 
-    /** MCP card sections as a simple PDF. */
-    fun shareCardPdf(name: String, sections: List<Pair<String, List<String>>>): Boolean = sharePdf("MCP-card-" + name.replace(Regex("[^A-Za-z0-9]+"), "-") + ".pdf") { doc ->
-        val text = "MOTHER AND CHILD PROTECTION CARD (format: MoHFW/MWCD revised 2018) — test data\n$name\n\n" + sections.joinToString("\n\n") { (t, l) -> t + "\n" + l.joinToString("\n") { "   $it" } }
-        val paint = android.text.TextPaint().apply { textSize = 10f; isAntiAlias = true }
-        val layout = android.text.StaticLayout.Builder.obtain(text, 0, text.length, paint, 515).build()
-        var line = 0; var n = 0
-        while (line < layout.lineCount) {
-            val top = layout.getLineTop(line); var end = line + 1
-            while (end < layout.lineCount && layout.getLineBottom(end) - top <= 760) end++
-            val page = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, ++n).create())
-            page.canvas.save(); page.canvas.translate(40f, 40f - top); page.canvas.clipRect(0, top, 515, layout.getLineBottom(end - 1)); layout.draw(page.canvas); page.canvas.restore()
-            doc.finishPage(page); line = end
-        }
+    /** Headless render for the device tests: the same pipeline, no share sheet. Null = failed. */
+    suspend fun renderFormPdf(form: FormTable): ByteArray? = renderDoc(tableDoc(form))
+
+    /** MCP card in the printed card's shape (viewer + PDF share the same document). */
+    fun mcpDoc(b: Beneficiary, all: List<Beneficiary>, today: LocalDate): ArogyaDocRender.FilledDoc {
+        val t = ArogyaDocPdf.templates(context)
+        return ArogyaDocRender.mcpDoc(b, all, today, ArogyaDocPdf.header(context), ArogyaDocPdf.todayStr(),
+            t["mcp"].orEmpty(), t["css"].orEmpty())
     }
 
-    private fun sharePdf(name: String, draw: (android.graphics.pdf.PdfDocument) -> Unit): Boolean = runCatching {
-        val doc = android.graphics.pdf.PdfDocument()
-        val bytes = try { draw(doc); java.io.ByteArrayOutputStream().also { doc.writeTo(it) }.toByteArray() } finally { doc.close() }
-        shareFile(name, "application/pdf", bytes)
-    }.getOrDefault(false)
+    /** MCP card shared as a PDF. */
+    suspend fun shareMcpPdf(b: Beneficiary, all: List<Beneficiary>, today: LocalDate): Boolean {
+        val bytes = renderDoc(mcpDoc(b, all, today)) ?: return false
+        return shareFile(ArogyaDocPdf.fileName("MCP-card-${b.name}", ".pdf"), "application/pdf", bytes)
+    }
+
+    /** An Ask SOP answer with its numbered sources. */
+    fun answerDoc(question: String, segments: List<ArogyaOfficialAnswer.CitedSegment>, answerFallback: String,
+                  sources: List<ArogyaSource>): ArogyaDocRender.FilledDoc {
+        val t = ArogyaDocPdf.templates(context)
+        return ArogyaDocRender.answerDoc(question, segments, answerFallback, sources, ArogyaDocPdf.header(context),
+            ArogyaDocPdf.todayStr(), t["answer"].orEmpty(), t["css"].orEmpty())
+    }
+
+    /** An Ask SOP answer shared as a PDF. */
+    suspend fun shareAnswerPdf(question: String, segments: List<ArogyaOfficialAnswer.CitedSegment>, answerFallback: String,
+                               sources: List<ArogyaSource>): Boolean {
+        val bytes = renderDoc(answerDoc(question, segments, answerFallback, sources)) ?: return false
+        return shareFile(ArogyaDocPdf.fileName("SOP-answer", ".pdf"), "application/pdf", bytes)
+    }
 
     /** 1000 synthetic patients for scale testing / demo (marked demo, removable). */
     fun loadSyntheticPatients(n: Int = 1000) {

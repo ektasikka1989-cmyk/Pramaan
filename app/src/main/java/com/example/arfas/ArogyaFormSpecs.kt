@@ -476,6 +476,7 @@ object ArogyaOfficialForms {
         val dateRow = listOf("Date of ASHA's visit") + spec.columns.indices.map { c -> if (current?.first == c) LocalDate.now().toString() else mine.filter { it.column == c }.maxByOrNull { it.date }?.date.orEmpty() }
         val nextRow = listOf("Next visit due") + spec.columns.indices.map { c -> if (current?.first == c) current.second["_next"].orEmpty() else mine.filter { it.column == c }.maxByOrNull { it.date }?.values?.get("_next").orEmpty() }
         val rows = listOf(dateRow) + spec.fields.map { f -> listOf(f.label + if (f.unit.isNotBlank() && f.type == QType.NUMBER) " (${f.unit})" else "") + spec.columns.indices.map { c -> cell(c, f.id) } } + listOf(nextRow)
-        return FormTable("${spec.title} · ${b.name}", spec.source, listOf("Ask / Examine") + spec.columns, rows, spec.note)
+        return FormTable("${spec.title} · ${b.name}", spec.source, listOf("Ask / Examine") + spec.columns, rows, spec.note,
+            sample = b.demo, sign = true)
     }
 }

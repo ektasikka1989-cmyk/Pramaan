@@ -176,6 +176,39 @@ object ArogyaRegistryLogic {
     data class MonthlyReport(val month: YearMonth, val homeVisits: Int, val scheduledDone: Map<String, Int>, val diary: Map<DiaryKind, Int>, val received: Map<String, Int>,
         val distributed: Map<String, Int>, val closing: Map<String, Int>, val vitals: Map<VitalKind, Int>, val newRegistrations: Int, val text: String)
 
+    /** Monthly summary + incentive claim as a printable table (section rows span full width). */
+    fun monthlyTable(rep: MonthlyReport, inc: IncentiveEstimate, month: YearMonth, hindi: Boolean, sample: Boolean): FormTable {
+        fun tr(en: String, hi: String) = if (hindi) hi else en
+        val rows = ArrayList<List<String>>()
+        fun section(s: String) {
+            rows += listOf(s)
+        }
+        fun kv(k: String, v: String) {
+            rows += listOf(k, v, "", "")
+        }
+        section(tr("Home visits", "घर विज़िट") + " — $month")
+        kv(tr("Home visits done", "घर विज़िट"), "${rep.homeVisits}")
+        rep.scheduledDone.forEach { (k, v) -> kv(k, "$v") }
+        kv(tr("New registrations", "नए पंजीकरण"), "${rep.newRegistrations}")
+        section(tr("Diary (activities)", "डायरी (काम)"))
+        rep.diary.forEach { (k, v) -> kv(if (hindi) k.titleHi else k.title, "$v") }
+        section(tr("Drug kit", "दवा किट"))
+        rep.received.forEach { (k, v) -> kv(tr("Received: ", "मिला: ") + k, "$v") }
+        rep.distributed.forEach { (k, v) -> kv(tr("Given: ", "दिया: ") + k, "$v") }
+        rep.closing.forEach { (k, v) -> kv(tr("Closing: ", "बचा: ") + k, "$v") }
+        section(tr("Vital events", "जन्म-मृत्यु"))
+        rep.vitals.forEach { (k, v) -> kv(k.name, "$v") }
+        section(tr("Incentive estimate (national list — state rates may differ, verify with ANM)", "प्रोत्साहन अनुमान (राष्ट्रीय सूची — राज्य दर अलग हो सकती है, ANM से मिलाएँ)"))
+        inc.lines.filter { it.count > 0 }.forEach { rows += listOf(it.item, "${it.count}", "Rs ${it.rate}", "Rs ${it.amount}") }
+        rows += listOf(tr("Estimated total", "अनुमानित कुल"), "", "", "Rs ${inc.total}")
+        return FormTable(tr("Monthly summary & claim", "मासिक सारांश और दावा") + " — $month",
+            "ArogyaDoot register",
+            listOf(tr("Item", "मद"), tr("Count", "संख्या"), tr("Rate (Rs)", "दर (रु)"), tr("Amount (Rs)", "राशि (रु)")),
+            rows, tr("Use it to fill the monthly claim / RCH portal entry with your ANM. Check against your paper records.",
+                "ANM के साथ मासिक दावा / RCH भरने में काम लें। कागज़ी रिकॉर्ड से मिलाएँ."),
+            sample = sample, sign = true)
+    }
+
     fun monthlyReport(data: RegistryData, visits: List<ArogyaVisit>, month: YearMonth): MonthlyReport {
         fun inMonth(s: String) = d(s)?.let { YearMonth.from(it) == month } ?: false
         val homeVisits = visits.count { it.completed && inMonth(it.date) }
@@ -291,6 +324,8 @@ object ArogyaSchedule {
     val VACCINE_NAMES = mapOf("BCG" to "BCG", "OPV0" to "OPV-0", "HEPB0" to "Hep B birth dose", "OPV1" to "OPV-1", "PENTA1" to "Penta-1", "RVV1" to "Rotavirus-1", "FIPV1" to "fIPV-1",
         "PCV1" to "PCV-1", "OPV2" to "OPV-2", "PENTA2" to "Penta-2", "RVV2" to "Rotavirus-2", "OPV3" to "OPV-3", "PENTA3" to "Penta-3", "RVV3" to "Rotavirus-3", "FIPV2" to "fIPV-2",
         "PCV2" to "PCV-2", "MR1" to "MR-1", "VITA1" to "Vitamin A-1", "PCVB" to "PCV booster", "MR2" to "MR-2", "DPTB1" to "DPT booster-1", "OPVB" to "OPV booster", "DPTB2" to "DPT booster-2")
+    /** Age labels per contact, parallel to [VACCINE_CONTACTS] (MCP card + printed card share it). */
+    val VACCINE_AGES = listOf("Birth", "1½ months", "2½ months", "3½ months", "9 months", "16–24 months", "5–6 years")
 
     private val HBNC_DAYS = listOf(3L, 7L, 14L, 21L, 28L, 42L)
 
@@ -499,8 +534,8 @@ object ArogyaRegisterTables {
         return if (asc) sorted else sorted.reversed()
     }
 
-    fun toFormTable(title: String, source: String, table: RegTable, note: String = ""): FormTable =
-        FormTable(title, source, table.headers, table.rows.map { it.cells }, note)
+    fun toFormTable(title: String, source: String, table: RegTable, note: String = "", sample: Boolean = false): FormTable =
+        FormTable(title, source, table.headers, table.rows.map { it.cells }, note, sample = sample)
 }
 
 object ArogyaRegistryCodec {
@@ -709,7 +744,11 @@ object ArogyaSampleVillage {
 
 
 /** A filled official form: title, source document, columns, rows. Rendered on screen and as PDF. */
-data class FormTable(val title: String, val source: String, val headers: List<String>, val rows: List<List<String>>, val note: String = "")
+data class FormTable(val title: String, val source: String, val headers: List<String>, val rows: List<List<String>>, val note: String = "",
+    /** Item 7: sample people inside → light diagonal SAMPLE watermark on the printed page. */
+    val sample: Boolean = false,
+    /** Item 7: official forms submitted upward carry an ASHA signature line; lists do not. */
+    val sign: Boolean = false)
 
 /**
  * Official formats, filled from the registers. Layouts follow:
@@ -730,7 +769,8 @@ object ArogyaForms {
         }
         return FormTable("House to House Survey Form — RI Form 3", "Immunization Handbook for Health Workers (2018), Unit 4",
             listOf("A House No.", "B Head of household", "C Father's / husband's name", "D Total members", "E Pregnant woman", "F Newborn (<1 month)", "G Child 1 month–1 year", "H Child 1–2 years"), rows,
-            "D counts people entered in the app for this household. Signature of ASHA / verified by ASHA Facilitator / verified by ANM on paper.")
+            "D counts people entered in the app for this household. Signature of ASHA / verified by ASHA Facilitator / verified by ANM on paper.",
+            sample = bens.any { it.demo }, sign = true)
     }
 
     fun riForm4(bens: List<Beneficiary>, today: LocalDate): FormTable {
@@ -740,7 +780,8 @@ object ArogyaForms {
                 b.mcp.anc[1]?.let(::dd).orEmpty(), b.mcp.anc[2]?.let(::dd).orEmpty(), b.mcp.anc[3]?.let(::dd).orEmpty(), b.mcp.anc[4]?.let(::dd).orEmpty())
         }
         return FormTable("Pregnant Women Survey Listing — RI Form 4", "Immunization Handbook for Health Workers (2018), Unit 4",
-            listOf("House No.", "Name of the pregnant woman", "Age", "Husband's name", "Mobile", "MCP card", "EDD / LMP", "TT/Td-1", "TT/Td-2", "TT-Booster", "1st ANC", "2nd ANC", "3rd ANC", "4th ANC"), rows)
+            listOf("House No.", "Name of the pregnant woman", "Age", "Husband's name", "Mobile", "MCP card", "EDD / LMP", "TT/Td-1", "TT/Td-2", "TT-Booster", "1st ANC", "2nd ANC", "3rd ANC", "4th ANC"), rows,
+            sample = bens.any { it.demo }, sign = true)
     }
 
     /** Annexure 9: the visit day columns are filled from completed visits; measurements from the visit notes. */
@@ -767,11 +808,12 @@ object ArogyaForms {
         return FormTable("Home Visit Form — Examination of Mother and Newborn (Annexure 9) · ${child.name}", "Handbook for ASHA Facilitators, Annexure 9",
             listOf("Ask / Examine", "Day 1", "Day 3", "Day 7", "Day 14", "Day 21", "Day 28", "Day 42"), rows,
             "Filled from the ASHA's completed visits in the app (blank = not recorded). Mother's examination rows are on the paper form." +
-                if (child.sncuDischarge.isNotBlank()) " Days counted from SNCU discharge (${dd(child.sncuDischarge)})." else "")
+                if (child.sncuDischarge.isNotBlank()) " Days counted from SNCU discharge (${dd(child.sncuDischarge)})." else "",
+            sample = child.demo, sign = true)
     }
 
     /** Annexure 5: for each refill date, the balance left before the refill and the refill given. */
-    fun drugKitCard(stock: List<StockTxn>): FormTable {
+    fun drugKitCard(stock: List<StockTxn>, sample: Boolean = false): FormTable {
         // Corrections are not refills: only receive lines open a refill column.
         val refills = stock.filter { it.qty > 0 && ArogyaRegistryLogic.txnKind(it) == "receive" }.map { it.date }.distinct().sorted().take(6)
         val items = (ArogyaRegistryLogic.DRUG_KIT + stock.map { it.item }).distinct().filter { i -> stock.any { it.item == i } }
@@ -784,7 +826,8 @@ object ArogyaForms {
         }
         return FormTable("Drug Kit Stock Card (Annexure 5)", "Handbook for ASHA Facilitators, Annexure 5",
             listOf("S. No.", "Name of drug") + refills.flatMap { listOf("Balance ${dd(it)}", "Refill given ${dd(it)}") } + listOf("Balance now"), rows,
-            "Balance: what was left in the kit at the time of refill. Refill: what was put into the kit. Card is updated by the person providing the refill.")
+            "Balance: what was left in the kit at the time of refill. Refill: what was put into the kit. Card is updated by the person providing the refill.",
+            sample = sample, sign = true)
     }
 
     /** MCP card in the official section order; each section is a list of "label: value" lines. */
@@ -812,7 +855,7 @@ object ArogyaForms {
             val hb = ArogyaSchedule.forBeneficiary(b, visits, today).filter { it.kind == "HBNC" }
             out += "8–9. Postnatal care (home visits)" to hb.map { "${it.label}: " + if (it.done) "done ${dd(it.doneDate)}" else if (it.overdue(today)) "missed" else "due ${dd(it.due.toString())}" }
             val dob = runCatching { LocalDate.parse(b.dob) }.getOrNull()
-            val ages = listOf("Birth", "1½ months", "2½ months", "3½ months", "9 months", "16–24 months", "5–6 years")
+            val ages = ArogyaSchedule.VACCINE_AGES
             out += "10. Child immunization (date given / next date)" to ArogyaSchedule.VACCINE_CONTACTS.zip(ages).flatMap { (c, age) ->
                 c.codes.map { code -> "${ArogyaSchedule.VACCINE_NAMES[code] ?: code} ($age): " + (b.mcp.vaccines[code]?.let { "given ${dd(it)}" } ?: dob?.let { "next ${dd(c.due(it).toString())}" } ?: "—") }
             }

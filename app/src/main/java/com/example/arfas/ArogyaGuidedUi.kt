@@ -275,8 +275,11 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
                                 if (dangers.isNotEmpty()) Text(tr("⚠ Referral needed", "⚠ रेफ़रल ज़रूरी"), color = MaterialTheme.colorScheme.error)
                                 Text(next?.let { tr("📅 Next visit: $it (${spec.columns.getOrElse(column + 1) { "follow-up" }})", "📅 अगली विज़िट: $it") } ?: tr("📅 This form is complete after today", "📅 आज के बाद फ़ॉर्म पूरा"), fontWeight = FontWeight.Bold)
                             } }
-                            if (saved) OutlinedButton(onClick = { if (!store.shareFormPdf(ArogyaOfficialForms.table(spec, b, store.state.value.forms))) Toast.makeText(context, "Could not create the PDF", Toast.LENGTH_LONG).show() },
-                                modifier = Modifier.fillMaxWidth()) { Text(tr("📤 Share form as PDF (to ANM / print)", "📤 फ़ॉर्म PDF भेजें")) }
+                            if (saved) OutlinedButton(onClick = {
+                                scope.launch {
+                                    if (!store.shareFormPdf(ArogyaOfficialForms.table(spec, b, store.state.value.forms))) Toast.makeText(context, "Could not create the PDF", Toast.LENGTH_LONG).show()
+                                }
+                            }, modifier = Modifier.fillMaxWidth()) { Text(tr("📤 Share form as PDF (to ANM / print)", "📤 फ़ॉर्म PDF भेजें")) }
                         }
                     }
                 }
@@ -299,6 +302,6 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
         }
     }
     if (showCard) AlertDialog(onDismissRequest = { showCard = false }, confirmButton = { TextButton(onClick = { showCard = false }) { Text(tr("Close", "बंद")) } },
-        dismissButton = { TextButton(onClick = { store.shareFormPdf(ArogyaOfficialForms.table(spec, b, data.forms)) }) { Text(tr("Share PDF", "PDF भेजें")) } },
+        dismissButton = { TextButton(onClick = { scope.launch { store.shareFormPdf(ArogyaOfficialForms.table(spec, b, data.forms)) } }) { Text(tr("Share PDF", "PDF भेजें")) } },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) { OfficialFormGrid(ArogyaOfficialForms.table(spec, b, data.forms, if (saved) null else column to values), column) } })
 }

@@ -2,6 +2,7 @@ package com.example.arfas
 
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -217,6 +219,14 @@ fun SopAnswerCard(
     var srcOpen by remember(result) { mutableStateOf(false) }
     var hl by remember(result) { mutableStateOf("") }
     fun cite(id: String) { srcOpen = true; hl = id }
+    var shareOpen by remember(result) { mutableStateOf(false) }
+    var ansDoc by remember(result) { mutableStateOf<ArogyaDocRender.FilledDoc?>(null) }
+    var ansBusy by remember(result) { mutableStateOf(false) }
+    val ansScope = rememberCoroutineScope()
+    // The share sheet covers the visible tab (offline or online).
+    val shareText = if (tab == 1) result.onlineText else result.text
+    val shareSegments = if (tab == 1) result.onlineSegments else result.segments
+    val shareSources = if (tab == 1) result.onlineSources else result.sources
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (tab == 1) AiResultChip(result.onlineProvider.ifBlank { "ArogyaDoot • online" }, true, result.onlineMs, hindi)
         else AiResultChip(result.provider, result.online, result.elapsedMs, hindi)
@@ -300,12 +310,7 @@ fun SopAnswerCard(
             }
             if (!hasOnline && !result.online && !ArogyaOnlinePolicy.localOnly(question)) Button(onClick = onCheckOnline, enabled = !busy && pending == 0 && asked.isNotBlank()) { Text(tr("☁ Check online", "☁ ऑनलाइन जाँचें")) }
             if (!result.sourceOnly) OutlinedButton(onClick = onMoreDetail, enabled = !busy && pending == 0 && asked.isNotBlank()) { Text(tr("More detail", "और विस्तार")) }
-            OutlinedButton(onClick = {
-                val entry = ArogyaGuideEntry(System.currentTimeMillis(), question, result.text, result.quote, result.quoteSource,
-                    result.sources, result.provider, result.elapsedMs, "", result.tier,
-                    result.onlineText, result.onlineSources, result.onlineTier)
-                ArogyaShare.shareText(context, "Guide answer", ArogyaShare.guideEntryText(entry))
-            }) { Text(tr("Share answer", "उत्तर भेजें")) }
+            OutlinedButton(onClick = { shareOpen = true }) { Text(tr("Share answer", "उत्तर भेजें")) }
         }
         if (warning != null && inVisit) Button(onClick = { onEscalate(question) }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), modifier = Modifier.fillMaxWidth()) { Text(tr("Escalate to ANM", "ANM को सूचित करें")) }
         if (showFamily && ai != null && !result.sourceOnly && familyText.isNotBlank()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
@@ -320,5 +325,76 @@ fun SopAnswerCard(
         Text((if (tab == 1 || result.online) tr("Online", "ऑनलाइन") else tr("Offline on this phone", "इस फ़ोन पर ऑफ़लाइन")) +
             " · ${(if (tab == 1) result.onlineMs else result.elapsedMs) / 1000}s · " +
             tr("Not a diagnosis — ask your ANM if unsure.", "यह निदान नहीं है — शंका हो तो ANM से पूछें।"), style = MaterialTheme.typography.bodySmall)
+        if (shareOpen) {
+            val store = remember { ArogyaRegistryStore.get(context) }
+            fun toast(m: String) = Toast.makeText(context, m, Toast.LENGTH_LONG).show()
+            AlertDialog(onDismissRequest = { if (!ansBusy) shareOpen = false },
+                title = { Text(tr("Share answer", "उत्तर भेजें")) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            val entry = ArogyaGuideEntry(System.currentTimeMillis(), question, shareText, result.quote,
+                                result.quoteSource, shareSources, result.provider, result.elapsedMs, "", result.tier)
+                            ArogyaShare.shareText(context, "Guide answer", ArogyaShare.guideEntryText(entry))
+                            shareOpen = false
+                        }, modifier = Modifier.fillMaxWidth()) { Text(tr("Share as text", "टेक्स्ट भेजें")) }
+                        OutlinedButton(onClick = {
+                            ansDoc = store.answerDoc(question, shareSegments, shareText, shareSources)
+                            shareOpen = false
+                        }, modifier = Modifier.fillMaxWidth()) { Text(tr("View printable", "छपने वाला देखें")) }
+                        Button(onClick = {
+                            ansBusy = true
+                            ansScope.launch {
+                                try {
+                                    if (!store.shareAnswerPdf(question, shareSegments, shareText, shareSources)) toast(tr("Could not create the PDF", "PDF नहीं बना"))
+                                    else shareOpen = false
+                                } finally {
+                                    ansBusy = false
+                                }
+                            }
+                        }, enabled = !ansBusy, modifier = Modifier.fillMaxWidth()) { Text(if (ansBusy) tr("Making PDF…", "PDF बन रही है…") else tr("Share PDF", "PDF भेजें")) }
+                        OutlinedButton(onClick = {
+                            ansBusy = true
+                            ansScope.launch {
+                                try {
+                                    val bytes = store.renderDoc(store.answerDoc(question, shareSegments, shareText, shareSources))
+                                    if (bytes == null || !ArogyaPrint.printPdf(context, "SOP answer", bytes)) toast(tr("Print failed", "छपाई नहीं हुई"))
+                                    else shareOpen = false
+                                } finally {
+                                    ansBusy = false
+                                }
+                            }
+                        }, enabled = !ansBusy, modifier = Modifier.fillMaxWidth()) { Text(tr("Print", "छापें")) }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { if (!ansBusy) shareOpen = false }) { Text(tr("Close", "बंद")) } })
+        }
+        ansDoc?.let { d ->
+            var viewBusy by remember { mutableStateOf(false) }
+            val store = remember { ArogyaRegistryStore.get(context) }
+            fun toast(m: String) = Toast.makeText(context, m, Toast.LENGTH_LONG).show()
+            ArogyaDocPdf.Viewer(d, tr("Answer — printable", "उत्तर — छपने वाला"), viewBusy, hindi, { ansDoc = null },
+                onSharePdf = {
+                    viewBusy = true
+                    ansScope.launch {
+                        try {
+                            if (!store.shareAnswerPdf(question, shareSegments, shareText, shareSources)) toast(tr("Could not create the PDF", "PDF नहीं बना"))
+                        } finally {
+                            viewBusy = false
+                        }
+                    }
+                },
+                onPrint = {
+                    viewBusy = true
+                    ansScope.launch {
+                        try {
+                            val bytes = store.renderDoc(d)
+                            if (bytes == null || !ArogyaPrint.printPdf(context, "SOP answer", bytes)) toast(tr("Print failed", "छपाई नहीं हुई"))
+                        } finally {
+                            viewBusy = false
+                        }
+                    }
+                })
+        }
     }
 }

@@ -413,7 +413,7 @@ private fun DueTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaVisit>
         if (due.isEmpty()) Text(tr("Nothing due. Add patients with dates of birth or LMP to build the schedule.", "कुछ बाकी नहीं। जन्मतिथि या LMP के साथ लोग जोड़ें ताकि सूची बने।"), Modifier.padding(8.dp))
         else ArogyaRegisterTable(hindi, tr("Due visits", "बाकी विज़िट"), table, store, statusCol = 4, villageCol = 1, statusFilter = true,
             onOpenPerson = onOpen, colWidths = listOf(120.dp, 84.dp, 190.dp, 130.dp, 96.dp), maxHeight = 520.dp,
-            note = tr("Tap a row to open the person, then Start visit. Overdue rows come first.", "पंक्ति दबाकर व्यक्ति खोलें, फिर विज़िट शुरू करें। छूटी पंक्तियाँ पहले।"))
+            note = tr("Tap a row to open the person, then Start visit. Overdue rows come first.", "पंक्ति दबाकर व्यक्ति खोलें, फिर विज़िट शुरू करें। छूटी पंक्तियाँ पहले।"), sample = data.beneficiaries.any { it.demo })
     }
 }
 
@@ -544,6 +544,26 @@ private fun PatientForm(hindi: Boolean, initial: Beneficiary, onDismiss: () -> U
 }
 
 
+/** One filled visit form: mini preview (tap = full-screen viewer) + PDF share. */
+@Composable
+private fun FilledFormRow(hindi: Boolean, t: FormTable, onOpen: (FormTable) -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var formBusy by remember { mutableStateOf(false) }
+    Box(Modifier.clickable { onOpen(t) }) { OfficialFormGrid(t, null, hindi = hindi) }
+    OutlinedButton(onClick = {
+        formBusy = true
+        scope.launch {
+            try {
+                if (!ArogyaRegistryStore.get(context).shareFormPdf(t)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show()
+            } finally {
+                formBusy = false
+            }
+        }
+    }, enabled = !formBusy) { Text(if (formBusy) tr("Making PDF…", "PDF बन रही है…") else tr("Share this form (PDF)", "यह फ़ॉर्म भेजें (PDF)")) }
+}
+
 @Composable
 private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, visits: List<ArogyaVisit>, today: LocalDate, ai: ArogyaVisitAi?, onClose: () -> Unit, onEdit: () -> Unit,
                           onStartVisit: () -> Unit, save: ((RegistryData) -> RegistryData) -> Boolean) {
@@ -618,15 +638,56 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
                             lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = if (it.contains("missed") || it.endsWith("YES")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) }
                         } }
                     }
-                    OutlinedButton(onClick = { if (!ArogyaRegistryStore.get(context).shareCardPdf(b.name, official)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show() }) { Text(tr("Share MCP card (PDF)", "MCP कार्ड भेजें (PDF)")) }
+                    var mcpBusy by remember { mutableStateOf(false) }
+                    var mcpDoc by remember { mutableStateOf<ArogyaDocRender.FilledDoc?>(null) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { mcpDoc = ArogyaRegistryStore.get(context).mcpDoc(b, data.beneficiaries, today) }, modifier = Modifier.weight(1f)) { Text(tr("View printable card", "छपने वाला कार्ड देखें")) }
+                        OutlinedButton(onClick = {
+                            mcpBusy = true
+                            scope.launch {
+                                try {
+                                    if (!ArogyaRegistryStore.get(context).shareMcpPdf(b, data.beneficiaries, today)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show()
+                                } finally {
+                                    mcpBusy = false
+                                }
+                            }
+                        }, enabled = !mcpBusy, modifier = Modifier.weight(1f)) { Text(if (mcpBusy) tr("Making PDF…", "PDF बन रही है…") else tr("Share MCP card (PDF)", "MCP कार्ड भेजें (PDF)")) }
+                    }
+                    mcpDoc?.let { d ->
+                        var shareBusy by remember { mutableStateOf(false) }
+                        ArogyaDocPdf.Viewer(d, tr("MCP card — ", "MCP कार्ड — ") + b.name, shareBusy, hindi, { mcpDoc = null },
+                            onSharePdf = {
+                                shareBusy = true
+                                scope.launch {
+                                    try {
+                                        if (!ArogyaRegistryStore.get(context).shareMcpPdf(b, data.beneficiaries, today)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show()
+                                    } finally {
+                                        shareBusy = false
+                                    }
+                                }
+                            },
+                            onPrint = {
+                                shareBusy = true
+                                scope.launch {
+                                    try {
+                                        val bytes = ArogyaRegistryStore.get(context).renderDoc(d)
+                                        if (bytes == null || !ArogyaPrint.printPdf(context, "MCP card", bytes)) Toast.makeText(context, tr("Print failed", "छपाई नहीं हुई"), Toast.LENGTH_LONG).show()
+                                    } finally {
+                                        shareBusy = false
+                                    }
+                                }
+                            })
+                    }
                     val filled = ArogyaOfficialForms.ALL.filter { sp -> data.forms.any { it.beneficiaryId == b.id && it.formId == sp.id } }
                     filled.forEach { sp ->
                         Text(tr("Visit form — filled over visits (tap to open full-screen)", "विज़िट फ़ॉर्म — विज़िटों में भरा (पूरी स्क्रीन में खोलने के लिए दबाएँ)"), fontWeight = FontWeight.Bold)
-                        val t = ArogyaOfficialForms.table(sp, b, data.forms)
-                        Box(Modifier.clickable { viewForm = t }) { OfficialFormGrid(t, null, hindi = hindi) }
-                        OutlinedButton(onClick = { if (!ArogyaRegistryStore.get(context).shareFormPdf(t)) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show() }) { Text(tr("Share this form (PDF)", "यह फ़ॉर्म भेजें (PDF)")) }
+                        FilledFormRow(hindi, ArogyaOfficialForms.table(sp, b, data.forms), { viewForm = it })
                     }
-                    if (filled.none { it.id == "annex9" } && b.category == BenCategory.CHILD && b.dob.isNotBlank()) OutlinedButton(onClick = { ArogyaRegistryStore.get(context).shareFormPdf(ArogyaForms.homeVisitForm(b, visits)) }) { Text(tr("Share Home Visit Form (Annexure 9, PDF)", "होम विज़िट फ़ॉर्म भेजें (Annexure 9, PDF)")) }
+                    if (filled.none { it.id == "annex9" } && b.category == BenCategory.CHILD && b.dob.isNotBlank()) OutlinedButton(onClick = {
+                        scope.launch {
+                            ArogyaRegistryStore.get(context).shareFormPdf(ArogyaForms.homeVisitForm(b, visits))
+                        }
+                    }) { Text(tr("Share Home Visit Form (Annexure 9, PDF)", "होम विज़िट फ़ॉर्म भेजें (Annexure 9, PDF)")) }
                 }
                 if (updateMode) {
                 Text(tr("Schedule", "सूची"), fontWeight = FontWeight.Bold)
@@ -753,7 +814,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 val babies = data.beneficiaries.filter { it.active && it.category == BenCategory.CHILD && (ArogyaRegistryLogic.ageDays(it, today) ?: 999) <= 60 }
                 Text(tr("Official formats filled with this register's data. Share as PDF to print or send to your ANM.", "आधिकारिक खाके इस रजिस्टर के डेटा से भरे। छापने या ANM को भेजने के लिए PDF भेजें।"), style = MaterialTheme.typography.bodySmall)
                 listOf(tr("House to House Survey — RI Form 3", "घर-घर सर्वे — RI फ़ॉर्म 3") to { ArogyaForms.riForm3(data.beneficiaries, today) }, tr("Pregnant Women Listing — RI Form 4", "गर्भवती सूची — RI फ़ॉर्म 4") to { ArogyaForms.riForm4(data.beneficiaries, today) },
-                    tr("Drug Kit Stock Card — Annexure 5", "दवा किट स्टॉक कार्ड — Annexure 5") to { ArogyaForms.drugKitCard(data.stock) }).forEach { (label, make) ->
+                    tr("Drug Kit Stock Card — Annexure 5", "दवा किट स्टॉक कार्ड — Annexure 5") to { ArogyaForms.drugKitCard(data.stock, data.beneficiaries.any { it.demo }) }).forEach { (label, make) ->
                     OutlinedButton(onClick = { viewer = make() }, modifier = Modifier.fillMaxWidth()) { Text(label) }
                 }
                 babies.filter { nb -> data.forms.none { it.beneficiaryId == nb.id && it.formId == "annex9" } }.forEach { nb -> OutlinedButton(onClick = { viewer = if (data.forms.any { it.beneficiaryId == nb.id && it.formId == "annex9" }) ArogyaOfficialForms.table(ArogyaOfficialForms.ANNEX9, nb, data.forms) else ArogyaForms.homeVisitForm(nb, visits) }, modifier = Modifier.fillMaxWidth()) { Text(tr("Home Visit Form (Annexure 9) — ", "होम विज़िट फ़ॉर्म (Annexure 9) — ") + nb.name) } }
@@ -776,7 +837,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 val deaths = data.vitals.count { it.kind.name.endsWith("DEATH") && it.date.startsWith(YearMonth.from(today).toString()) }
                 Text(tr("This month: ", "इस महीने: ") + tr("births ", "जन्म ") + births + " · " + tr("deaths ", "मृत्यु ") + deaths + tr(" (record in Vital events)", " (घटना में दर्ज करें)"))
                 val vhr = remember(data) { ArogyaRegisterTables.villageTable(data.beneficiaries, today, hindi) }
-                ArogyaRegisterTable(hindi, tr("Village health register", "गाँव स्वास्थ्य रजिस्टर"), vhr, store, statusCol = 5, onOpenPerson = onOpen)
+                ArogyaRegisterTable(hindi, tr("Village health register", "गाँव स्वास्थ्य रजिस्टर"), vhr, store, statusCol = 5, onOpenPerson = onOpen, sample = data.beneficiaries.any { it.demo })
             }
             "lists" -> {
                 var immMonth by remember { mutableStateOf(YearMonth.from(today).plusMonths(1)) }
@@ -789,9 +850,9 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                     TextButton(onClick = { immMonth = immMonth.plusMonths(1) }) { Text("▶") }
                 }
                 ArogyaRegisterTable(hindi, tr("Immunization due", "टीकाकरण बाकी") + " $immMonth", imm, store, statusCol = 6, villageCol = 2, statusFilter = true, onOpenPerson = onOpen,
-                    colWidths = listOf(120.dp, 110.dp, 84.dp, 56.dp, 150.dp, 100.dp, 96.dp))
-                ArogyaRegisterTable(hindi, tr("ANC beneficiaries", "ANC लाभार्थी"), anc, store, statusCol = 4, villageCol = 1, statusFilter = true, onOpenPerson = onOpen)
-                ArogyaRegisterTable(hindi, tr("Eligible couples", "योग्य दंपति"), ecs, store, statusCol = 3, villageCol = 1, statusFilter = true, onOpenPerson = onOpen)
+                    colWidths = listOf(120.dp, 110.dp, 84.dp, 56.dp, 150.dp, 100.dp, 96.dp), sample = data.beneficiaries.any { it.demo })
+                ArogyaRegisterTable(hindi, tr("ANC beneficiaries", "ANC लाभार्थी"), anc, store, statusCol = 4, villageCol = 1, statusFilter = true, onOpenPerson = onOpen, sample = data.beneficiaries.any { it.demo })
+                ArogyaRegisterTable(hindi, tr("Eligible couples", "योग्य दंपति"), ecs, store, statusCol = 3, villageCol = 1, statusFilter = true, onOpenPerson = onOpen, sample = data.beneficiaries.any { it.demo })
                 Text(tr("Share these with your ANM at the monthly meeting.", "मासिक बैठक में ANM को ये भेजें।"), style = MaterialTheme.typography.bodySmall)
             }
             "rch" -> {
@@ -806,7 +867,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 Text(tr("Activity diary — visits are added automatically from completed visits", "कार्य डायरी — पूरी विज़िट अपने आप जुड़ती हैं"), fontWeight = FontWeight.Bold)
                 Button(onClick = { diaryOpen = true }) { Text(tr("+ Add activity (VHND, meeting, escort…)", "+ काम जोड़ें (VHND, बैठक…)")) }
                 val dt = remember(data, visits) { ArogyaRegisterTables.diaryTable(visits, data.diary, names + visits.associate { it.personId to it.name }, hindi) }
-                ArogyaRegisterTable(hindi, tr("Activity diary", "कार्य डायरी"), dt, store, monthCol = 0, onOpenPerson = onOpen)
+                ArogyaRegisterTable(hindi, tr("Activity diary", "कार्य डायरी"), dt, store, monthCol = 0, onOpenPerson = onOpen, sample = data.beneficiaries.any { it.demo })
             }
             "drugs" -> {
                 var stockMonth by remember { mutableStateOf(YearMonth.from(today)) }
@@ -837,7 +898,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     if (ai != null) OutlinedButton(onClick = { scanOpen = true }) { Text(tr("🔍 Scan medicine", "🔍 दवा स्कैन करें"), maxLines = 1) }
                     OutlinedButton(onClick = { samOpen = true }) { Text(tr("📷 Count from photo", "📷 फ़ोटो से गिनें"), maxLines = 1) }
-                    OutlinedButton(onClick = { viewer = ArogyaForms.drugKitCard(data.stock) }) { Text(tr("Annexure 5", "Annexure 5"), maxLines = 1) }
+                    OutlinedButton(onClick = { viewer = ArogyaForms.drugKitCard(data.stock, data.beneficiaries.any { it.demo }) }) { Text(tr("Annexure 5", "Annexure 5"), maxLines = 1) }
                 }
                 if (reg.rows.any { it.status == "OUT" || it.status == "LOW" || it.status == "EXPIRED" || it.status == "EXPIRING" }) {
                     Button(onClick = { ArogyaShare.shareText(context, tr("Drug kit refill request", "दवा किट रिफिल अनुरोध"),
@@ -848,7 +909,8 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 ArogyaRegisterTable(hindi, tr("Drug kit stock", "दवा किट स्टॉक") + " $stockMonth", reg, store, statusCol = 8,
                     onRowKey = { historyItem = it },
                     colWidths = listOf(150.dp, 80.dp, 80.dp, 80.dp, 80.dp, 80.dp, 90.dp, 104.dp, 110.dp),
-                    note = tr("Opening = before this month. Tap a row for its full history.", "शुरुआत = इस महीने से पहले। पूरी जानकारी के लिए पंक्ति दबाएँ।"))
+                    note = tr("Opening = before this month. Tap a row for its full history.", "शुरुआत = इस महीने से पहले। पूरी जानकारी के लिए पंक्ति दबाएँ।"),
+                    sample = data.beneficiaries.any { it.demo })
                 if (scanOpen && ai != null) MedScanDialog(hindi, ai, cat,
                     onReceive = { s, m -> scanOpen = false; scanReceive = s to m; receiveOpen = true },
                     onAdd = { s -> scanOpen = false; scanAdd = s; addOpen = true },
@@ -874,7 +936,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 Text(tr("Vital events & surveillance", "घटनाएँ और निगरानी"), fontWeight = FontWeight.Bold)
                 Button(onClick = { eventOpen = true }) { Text(tr("+ Record event", "+ घटना दर्ज करें")) }
                 val vt = remember(data) { ArogyaRegisterTables.vitalTable(data.vitals, names, hindi) }
-                ArogyaRegisterTable(hindi, tr("Vital events & surveillance", "घटनाएँ और निगरानी"), vt, store, monthCol = 0, onOpenPerson = onOpen)
+                ArogyaRegisterTable(hindi, tr("Vital events & surveillance", "घटनाएँ और निगरानी"), vt, store, monthCol = 0, onOpenPerson = onOpen, sample = data.beneficiaries.any { it.demo })
             }
             "report" -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -888,7 +950,24 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                     inc.lines.filter { it.count > 0 }.joinToString("\n") { "${it.item}: ${it.count} × Rs ${it.rate} = Rs ${it.amount}" } + "\nEstimated total: Rs ${inc.total}"
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { FixedRuleChip(hindi); Text(tr("Fixed government rules", "तय सरकारी नियम"), style = MaterialTheme.typography.bodySmall) }
                 Card(Modifier.fillMaxWidth()) { Text(claim, Modifier.padding(12.dp)) }
-                Button(onClick = { ArogyaShare.shareText(context, "ASHA monthly summary $month", claim) }) { Text(tr("Share summary & claim", "सारांश और दावा भेजें")) }
+                var repViewer by remember { mutableStateOf<FormTable?>(null) }
+                var repBusy by remember { mutableStateOf(false) }
+                val repScope = rememberCoroutineScope()
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { ArogyaShare.shareText(context, "ASHA monthly summary $month", claim) }) { Text(tr("Share summary & claim", "सारांश और दावा भेजें")) }
+                    OutlinedButton(onClick = { repViewer = ArogyaRegistryLogic.monthlyTable(rep, inc, month, hindi, data.beneficiaries.any { it.demo }) }) { Text(tr("Printable", "छपने वाला")) }
+                    OutlinedButton(onClick = {
+                        repBusy = true
+                        repScope.launch {
+                            try {
+                                if (!store.shareFormPdf(ArogyaRegistryLogic.monthlyTable(rep, inc, month, hindi, data.beneficiaries.any { it.demo }))) Toast.makeText(context, tr("Could not create the PDF", "PDF नहीं बना"), Toast.LENGTH_LONG).show()
+                            } finally {
+                                repBusy = false
+                            }
+                        }
+                    }, enabled = !repBusy) { Text(if (repBusy) tr("Making PDF…", "PDF बन रही है…") else tr("Share PDF", "PDF भेजें")) }
+                }
+                repViewer?.let { f -> ArogyaFormViewer(f, hindi, store) { repViewer = null } }
                 Text(tr("Use it to fill the monthly claim / RCH portal entry with your ANM. Check against your paper records.", "ANM के साथ मासिक दावा / RCH भरने में काम लें। कागज़ी रिकॉर्ड से मिलाएँ।"), style = MaterialTheme.typography.bodySmall)
             }
         }

@@ -22,7 +22,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -55,10 +57,14 @@ fun ArogyaRegisterTable(
     onRowKey: ((String) -> Unit)? = null,
     colWidths: List<Dp>? = null,
     maxHeight: Dp = 360.dp,
-    note: String = ""
+    note: String = "",
+    /** Item 7: sample people inside → SAMPLE watermark on the PDF. */
+    sample: Boolean = false
 ) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pdfBusy by remember { mutableStateOf(false) }
     fun toast(m: String) = Toast.makeText(context, m, Toast.LENGTH_LONG).show()
     var sortCol by remember(table.headers) { mutableStateOf(-1) }
     var sortAsc by remember(table.headers) { mutableStateOf(true) }
@@ -146,19 +152,33 @@ fun ArogyaRegisterTable(
         }
         if (note.isNotBlank()) Text(note, style = MaterialTheme.typography.bodySmall)
         if (shown.isNotEmpty()) {
-            val form = remember(title, table, shown) {
+            val form = remember(title, table, shown, sample) {
                 ArogyaRegisterTables.toFormTable(title, "ArogyaDoot register · ${java.time.LocalDate.now()}",
-                    RegTable(table.headers, shown), note)
+                    RegTable(table.headers, shown), note, sample)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
-                    val bytes = store.renderFormPdf(form)
-                    val uri = bytes?.let { store.saveFile(form.title.replace(Regex("[^A-Za-z0-9]+"), "-") + ".pdf", "application/pdf", it) }
-                    toast(if (uri != null) tr("Saved in Downloads/ArogyaDoot", "Downloads/ArogyaDoot में सहेजा") else tr("Could not create the PDF", "PDF नहीं बना"))
-                }, modifier = Modifier.weight(1f)) { Text(tr("Export PDF", "PDF निकालें"), maxLines = 1) }
+                    pdfBusy = true
+                    scope.launch {
+                        try {
+                            val bytes = store.renderFormPdf(form)
+                            val uri = bytes?.let { store.saveFile(form.title.replace(Regex("[^A-Za-z0-9]+"), "-") + ".pdf", "application/pdf", it) }
+                            toast(if (uri != null) tr("Saved in Downloads/ArogyaDoot", "Downloads/ArogyaDoot में सहेजा") else tr("Could not create the PDF", "PDF नहीं बना"))
+                        } finally {
+                            pdfBusy = false
+                        }
+                    }
+                }, enabled = !pdfBusy, modifier = Modifier.weight(1f)) { Text(if (pdfBusy) tr("Making PDF…", "PDF बन रही है…") else tr("Export PDF", "PDF निकालें"), maxLines = 1) }
                 OutlinedButton(onClick = {
-                    if (!store.shareFormPdf(form)) toast(tr("Could not create the PDF", "PDF नहीं बना"))
-                }, modifier = Modifier.weight(1f)) { Text(tr("Share PDF", "PDF भेजें"), maxLines = 1) }
+                    pdfBusy = true
+                    scope.launch {
+                        try {
+                            if (!store.shareFormPdf(form)) toast(tr("Could not create the PDF", "PDF नहीं बना"))
+                        } finally {
+                            pdfBusy = false
+                        }
+                    }
+                }, enabled = !pdfBusy, modifier = Modifier.weight(1f)) { Text(tr("Share PDF", "PDF भेजें"), maxLines = 1) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
@@ -166,9 +186,16 @@ fun ArogyaRegisterTable(
                     ArogyaShare.shareText(context, title, "$title\n$tsv")
                 }, modifier = Modifier.weight(1f)) { Text(tr("Share text", "टेक्स्ट भेजें"), maxLines = 1) }
                 OutlinedButton(onClick = {
-                    val bytes = store.renderFormPdf(form)
-                    if (bytes == null || !ArogyaPrint.printPdf(context, title, bytes)) toast(tr("Print failed", "छपाई नहीं हुई"))
-                }, modifier = Modifier.weight(1f)) { Text(tr("Print", "छापें"), maxLines = 1) }
+                    pdfBusy = true
+                    scope.launch {
+                        try {
+                            val bytes = store.renderFormPdf(form)
+                            if (bytes == null || !ArogyaPrint.printPdf(context, title, bytes)) toast(tr("Print failed", "छपाई नहीं हुई"))
+                        } finally {
+                            pdfBusy = false
+                        }
+                    }
+                }, enabled = !pdfBusy, modifier = Modifier.weight(1f)) { Text(tr("Print", "छापें"), maxLines = 1) }
             }
         }
     }
@@ -314,9 +341,9 @@ fun ArogyaGrid(
 }
 
 /**
- * Full-screen official-form viewer: title, source, ruled grid, note, with
- * Share PDF, Print and Back. Opened by tapping any form (RI 3/4, stock card,
- * home visit forms, filled visit forms).
+ * Full-screen official-form viewer: the same HTML document as the PDF (preview = PDF),
+ * pinch-zoom, with Share PDF, Print and Back. Opened by tapping any form (RI 3/4, stock
+ * card, home visit forms, filled visit forms).
  */
 @Composable
 fun ArogyaFormViewer(
@@ -328,40 +355,30 @@ fun ArogyaFormViewer(
 ) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
     fun toast(m: String) = Toast.makeText(context, m, Toast.LENGTH_LONG).show()
-    Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onBack) { Text(tr("‹ Back", "‹ पीछे")) }
-                    Column(Modifier.weight(1f)) {
-                        Text(form.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(tr("Format: ", "खाका: ") + form.source, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                Box(Modifier.weight(1f)) {
-                    ArogyaGrid(
-                        headers = form.headers, rows = form.rows, maxLines = 4,
-                        colWidths = form.headers.mapIndexed { i, hd ->
-                            when {
-                                i == 0 || hd.contains("Name", true) || hd.contains("Ask", true) -> 170.dp
-                                else -> 96.dp
-                            }
-                        },
-                        highlightCol = highlightCol
-                    )
-                }
-                if (form.note.isNotBlank()) Text(form.note, style = MaterialTheme.typography.bodySmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        if (!store.shareFormPdf(form)) toast(tr("Could not create the PDF", "PDF नहीं बना"))
-                    }, modifier = Modifier.weight(1f)) { Text(tr("Share PDF", "PDF भेजें")) }
-                    OutlinedButton(onClick = {
-                        val bytes = store.renderFormPdf(form)
-                        if (bytes == null || !ArogyaPrint.printPdf(context, form.title, bytes)) toast(tr("Print failed", "छपाई नहीं हुई"))
-                    }, modifier = Modifier.weight(1f)) { Text(tr("Print", "छापें")) }
+    val doc = remember(form, highlightCol) { store.tableDoc(form, highlightCol) }
+    ArogyaDocPdf.Viewer(doc, form.title, busy, hindi, onBack,
+        onSharePdf = {
+            busy = true
+            scope.launch {
+                try {
+                    if (!store.shareFormPdf(form)) toast(tr("Could not create the PDF", "PDF नहीं बना"))
+                } finally {
+                    busy = false
                 }
             }
-        }
-    }
+        },
+        onPrint = {
+            busy = true
+            scope.launch {
+                try {
+                    val bytes = store.renderFormPdf(form)
+                    if (bytes == null || !ArogyaPrint.printPdf(context, form.title, bytes)) toast(tr("Print failed", "छपाई नहीं हुई"))
+                } finally {
+                    busy = false
+                }
+            }
+        })
 }

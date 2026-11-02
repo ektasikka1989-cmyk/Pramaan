@@ -1169,11 +1169,19 @@ fun ArogyaVisitScreen(
         onDeepLink={ target -> demoOpen=false; tts.stop(); if(target.startsWith("guided:")) guidedFor=reg.beneficiaries.firstOrNull { it.id==target.removePrefix("guided:") } else hubOpen=target })
     if(profileOpen) {
         var n by remember { mutableStateOf(ashaName) }; var v by remember { mutableStateOf(ashaVillage) }
-        AlertDialog(onDismissRequest={profileOpen=false},title={Text(tr("Your details","आपकी जानकारी"))},text={ Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        var st by remember { mutableStateOf(profilePrefs.getString("state","").orEmpty()) }
+        var dist by remember { mutableStateOf(profilePrefs.getString("district","").orEmpty()) }
+        var blk by remember { mutableStateOf(profilePrefs.getString("block","").orEmpty()) }
+        var sc by remember { mutableStateOf(profilePrefs.getString("subcentre","").orEmpty()) }
+        AlertDialog(onDismissRequest={profileOpen=false},title={Text(tr("Your details","आपकी जानकारी"))},text={ Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(n,{n=it.take(40)},label={Text(tr("Your name","आपका नाम"))},singleLine=true)
             OutlinedTextField(v,{v=it.take(40)},label={Text(tr("Village / area","गाँव / क्षेत्र"))},singleLine=true)
-            Text(tr("Kept only on this phone.","केवल इस फ़ोन पर रहता है।"),style=MaterialTheme.typography.bodySmall)
-        } },confirmButton={TextButton(onClick={ ashaName=n.trim(); ashaVillage=v.trim(); profilePrefs.edit().putString("name",ashaName).putString("village",ashaVillage).apply(); profileOpen=false }) {Text(tr("Save","सहेजें"))}},
+            OutlinedTextField(st,{st=it.take(40)},label={Text(tr("State","राज्य"))},singleLine=true)
+            OutlinedTextField(dist,{dist=it.take(40)},label={Text(tr("District","ज़िला"))},singleLine=true)
+            OutlinedTextField(blk,{blk=it.take(40)},label={Text(tr("Block","ब्लॉक"))},singleLine=true)
+            OutlinedTextField(sc,{sc=it.take(40)},label={Text(tr("Sub-centre","उप-केंद्र"))},singleLine=true)
+            Text(tr("Kept only on this phone. These print on every document header.","केवल इस फ़ोन पर रहता है। हर दस्तावेज़ के ऊपर छपता है।"),style=MaterialTheme.typography.bodySmall)
+        } },confirmButton={TextButton(onClick={ ashaName=n.trim(); ashaVillage=v.trim(); profilePrefs.edit().putString("name",ashaName).putString("village",ashaVillage).putString("state",st.trim()).putString("district",dist.trim()).putString("block",blk.trim()).putString("subcentre",sc.trim()).apply(); profileOpen=false }) {Text(tr("Save","सहेजें"))}},
             dismissButton={TextButton(onClick={profileOpen=false}) {Text(tr("Cancel","रद्द करें"))}})
     }
     hubOpen?.let { tab -> ArogyaRegistryHub(hindi,tab,visits,queue,onClose={hubOpen=null},ai=ai) { b -> hubOpen=null; guidedFor=b } }
