@@ -809,8 +809,8 @@ object ArogyaForms {
                 if (people.any { it.category == BenCategory.PREGNANT && it.deliveryDate.isBlank() }) "Yes" else "No",
                 if (child(0, 31)) "Yes" else "No", if (child(31, 365)) "Yes" else "No", if (child(365, 730)) "Yes" else "No")
         }
-        return FormTable("House to House Survey Form — RI Form 3", "Immunization Handbook for Health Workers (2018), Unit 4",
-            listOf("A House No.", "B Head of household", "C Father's / husband's name", "D Total members", "E Pregnant woman", "F Newborn (<1 month)", "G Child 1 month–1 year", "H Child 1–2 years"), rows,
+        return FormTable("House to House Survey Form — RI Form 3", "Immunization Handbook for Health Workers (2018), Unit 4, RI Form 3, pp. 56–57",
+            listOf("A House No.", "B Head of household", "C Father's name", "D Total members", "E Pregnant woman", "F Newborn (<1 month)", "G Child 1 month–1 year", "H Child 1–2 years"), rows,
             "D counts people entered in the app for this household. Signature of ASHA / verified by ASHA Facilitator / verified by ANM on paper.",
             sample = bens.any { it.demo }, sign = true)
     }
@@ -819,10 +819,12 @@ object ArogyaForms {
         val rows = bens.filter { it.active && it.category == BenCategory.PREGNANT && it.deliveryDate.isBlank() }.sortedBy { it.household }.map { b ->
             listOf(b.household.substringBefore(" "), b.name, b.age, b.relativeName, b.phone, "Yes", "${ArogyaRegistryLogic.edd(b)?.toString()?.let(::dd).orEmpty()} / ${dd(b.lmp)}",
                 b.mcp.tdDates.getOrNull(0)?.let(::dd).orEmpty(), b.mcp.tdDates.getOrNull(1)?.let(::dd).orEmpty(), b.mcp.tdDates.getOrNull(2)?.let(::dd).orEmpty(),
-                b.mcp.anc[1]?.let(::dd).orEmpty(), b.mcp.anc[2]?.let(::dd).orEmpty(), b.mcp.anc[3]?.let(::dd).orEmpty(), b.mcp.anc[4]?.let(::dd).orEmpty())
+                b.mcp.anc[1]?.let(::dd).orEmpty(), b.mcp.anc[2]?.let(::dd).orEmpty(), b.mcp.anc[3]?.let(::dd).orEmpty(), b.mcp.anc[4]?.let(::dd).orEmpty(),
+                if (b.mcp.tdDates.size < 2) "Yes" else "No", if (b.mcp.anc.size < 4) "Yes" else "No")
         }
-        return FormTable("Pregnant Women Survey Listing — RI Form 4", "Immunization Handbook for Health Workers (2018), Unit 4",
-            listOf("House No.", "Name of the pregnant woman", "Age", "Husband's name", "Mobile", "MCP card", "EDD / LMP", "TT/Td-1", "TT/Td-2", "TT-Booster", "1st ANC", "2nd ANC", "3rd ANC", "4th ANC"), rows,
+        return FormTable("Pregnant Women Survey Listing — RI Form 4", "Immunization Handbook for Health Workers (2018), Unit 4, RI Form 4, pp. 57–59",
+            listOf("House No.", "Name of the pregnant woman", "Age", "Husband's name", "Mobile", "MCP card", "EDD / LMP", "TT/Td-1", "TT/Td-2", "TT-Booster", "1st ANC", "2nd ANC", "3rd ANC", "4th ANC", "TT due", "ANC due"), rows,
+            "TT due / ANC due are the form's ANM columns, filled here from the app's records.",
             sample = bens.any { it.demo }, sign = true)
     }
 
@@ -855,19 +857,25 @@ object ArogyaForms {
     }
 
     /** Annexure 5: for each refill date, the balance left before the refill and the refill given. */
+    /** Annexure 5 Symbol column: the printed card uses pasted pictorials; these marks are app presentation. */
+    val DRUG_SYMBOLS = mapOf("ORS" to "🥤", "Zinc tablets" to "⬜", "IFA tablets (adult)" to "🩸", "IFA syrup (child)" to "🍼",
+        "Paracetamol" to "💊", "Albendazole" to "🪱", "Condoms" to "⭕", "Oral contraceptive pills" to "📆",
+        "Emergency contraceptive pill" to "🆘", "Sanitary napkins" to "🩹", "Pregnancy test kit" to "🧪",
+        "Cotrimoxazole" to "🟡", "Chloroquine / ACT" to "🦟", "Rapid diagnostic test (malaria)" to "🔬",
+        "Calcium tablets" to "🦴", "Cotton / bandage" to "🧻")
     fun drugKitCard(stock: List<StockTxn>, sample: Boolean = false): FormTable {
         // Corrections are not refills: only receive lines open a refill column.
         val refills = stock.filter { it.qty > 0 && ArogyaRegistryLogic.txnKind(it) == "receive" }.map { it.date }.distinct().sorted().take(6)
         val items = (ArogyaRegistryLogic.DRUG_KIT + stock.map { it.item }).distinct().filter { i -> stock.any { it.item == i } }
         val rows = items.mapIndexed { i, item ->
-            listOf("${i + 1}", item) + refills.flatMap { date ->
+            listOf("${i + 1}", item, DRUG_SYMBOLS[item] ?: "📦") + refills.flatMap { date ->
                 val before = stock.filter { it.item == item && it.date < date }.sumOf { it.qty }
                 val given = stock.filter { it.item == item && it.date == date && it.qty > 0 && ArogyaRegistryLogic.txnKind(it) == "receive" }.sumOf { it.qty }
                 listOf("$before", if (given > 0) "$given" else "")
             } + listOf("${stock.filter { it.item == item }.sumOf { it.qty }}")
         }
-        return FormTable("Drug Kit Stock Card (Annexure 5)", "Handbook for ASHA Facilitators, Annexure 5",
-            listOf("S. No.", "Name of drug") + refills.flatMap { listOf("Balance ${dd(it)}", "Refill given ${dd(it)}") } + listOf("Balance now"), rows,
+        return FormTable("Drug Kit Stock Card (Annexure 5)", "Handbook for ASHA Facilitators, Annexure 5, p. 53",
+            listOf("S. No.", "Name of drug", "Symbol") + refills.flatMap { listOf("Balance ${dd(it)}", "Refill given ${dd(it)}") } + listOf("Balance now"), rows,
             "Balance: what was left in the kit at the time of refill. Refill: what was put into the kit. Card is updated by the person providing the refill.",
             sample = sample, sign = true)
     }

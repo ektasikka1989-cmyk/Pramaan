@@ -48,7 +48,7 @@ fun main() {
     val prev = FormEntry(beneficiaryId = "b1", formId = "annex9", column = 0, date = "2026-10-25", values = mapOf("temp" to "36.8"))
     val t = ArogyaOfficialForms.table(ArogyaOfficialForms.ANNEX9, baby, listOf(prev), 2 to mapOf("temp" to "38.3"))
     check("headers", t.headers.size == 8 && t.headers[3] == "Day 7")
-    check("rows", t.rows.size == ArogyaOfficialForms.ANNEX9.fields.size + 2 && t.rows.last()[0] == "Next visit due")
+    check("rows", t.rows.size == ArogyaOfficialForms.ANNEX9.fields.size + 2 && t.rows.last()[0] == "Next visit due (app addition)")
     val tr = t.rows.first { it[0].startsWith("Baby's temperature") }; check("history col", tr[1] == "36.8"); check("current col", tr[3] == "38.3")
     check("date row", t.rows[0][1] == "2026-10-25")
 

@@ -12,7 +12,7 @@ import org.json.JSONObject
  *  - ANNEX9:   Home Visit Form — Examination of Mother and Newborn (Handbook for ASHA Facilitators, Annexure 9)
  *  - HBYC:     HBYC card (Handbook for ASHA on HBYC, p.90)
  *  - MCP_ANC:  MCP card antenatal record + pregnancy danger signs (MCP card 2018, sections 3–5)
- *  - SICK:     Sick child — general danger signs, fever, pneumonia, diarrhoea (HBYC Handbook §5.4, p.63–66)
+ *  - SICK:     Sick child checklist (HBYC Handbook §5.4, pp.63–66)
  *  - FP:       Eligible couple / family planning entry (MCP card FP page; state register formats vary)
  */
 data class FieldSpec(val id: String, val label: String, val hi: String, val type: QType, val unit: String = "", val section: String = "",
@@ -26,10 +26,10 @@ object ArogyaOfficialForms {
     private fun yn(id: String, en: String, hi: String, sec: String, danger: String = "", hint: String = "") = FieldSpec(id, en, hi, QType.YESNO, section = sec, dangerIf = danger, hint = hint)
 
     val ANNEX9 = FormSpec("annex9", "Home Visit Form — Examination of Mother and Newborn (Annexure 9)", "गृह भ्रमण फ़ॉर्म — माँ और नवजात की जाँच (अनुलग्नक 9)",
-        "Handbook for ASHA Facilitators, Annexure 9", listOf("Day 1", "Day 3", "Day 7", "Day 14", "Day 21", "Day 28", "Day 42"), listOf(
+        "Handbook for ASHA Facilitators, Annexure 9, pp. 60–63", listOf("Day 1", "Day 3", "Day 7", "Day 14", "Day 21", "Day 28", "Day 42"), listOf(
             FieldSpec("m_meals", "No. of times mother takes full meal in 24 hrs", "माँ 24 घंटे में कितनी बार पूरा खाना खाती है", QType.NUMBER, "times", "A. Ask mother", hint = "Less than 4 → advise"),
             FieldSpec("m_pads", "Bleeding: pads changed in a day", "खून: दिन में कितने पैड बदले", QType.NUMBER, "pads", "A. Ask mother", hint = "More than 5 → refer mother"),
-            yn("warm", "Baby kept warm (near mother, clothed, wrapped)", "बच्चे को गर्म रखा (माँ के पास, कपड़े, लपेटा)", "A. Ask mother", "No"),
+            yn("warm", "During the cold season: baby kept warm (near mother, clothed, wrapped)", "ठंड के मौसम में: बच्चे को गर्म रखा (माँ के पास, कपड़े, लपेटा)", "A. Ask mother", "No"),
             yn("fed", "Baby fed properly (when hungry, at least 7–8 times in 24 hrs)", "बच्चा ठीक से दूध पी रहा (24 घंटे में 7–8 बार)", "A. Ask mother", "No"),
             yn("cry_urine", "Baby crying incessantly or passing urine less than 6 times a day", "बच्चा लगातार रोता या दिन में 6 से कम बार पेशाब", "A. Ask mother"),
             FieldSpec("m_temp", "Mother's temperature", "माँ का तापमान", QType.NUMBER, "°C", "B. Examine mother", hint = "Above 38.9 °C (102 °F) → refer"),
@@ -43,20 +43,20 @@ object ArogyaOfficialForms {
             yn("pustules", "Skin: pus-filled pustules", "त्वचा: मवाद वाले दाने", "C. Examine baby"),
             yn("skin_folds", "Cracks or redness on skin folds (thigh / axilla / buttock)", "त्वचा की सिलवटों में दरार या लाली", "C. Examine baby"),
             yn("jaundice", "Yellowness in eyes or skin (jaundice)", "आँखों या त्वचा में पीलापन", "C. Examine baby"),
-            yn("s_limp", "All limbs limp", "सभी अंग ढीले", "D. Signs of sepsis", "Yes"),
-            yn("s_feed", "Feeding less / stopped", "दूध कम / बंद", "D. Signs of sepsis", "Yes"),
-            yn("s_cry", "Cry weak / stopped", "रोना कमज़ोर / बंद", "D. Signs of sepsis", "Yes"),
-            yn("s_abdomen", "Distended abdomen or mother says baby vomits often", "पेट फूला या बच्चा बार-बार उल्टी करता", "D. Signs of sepsis", "Yes"),
-            yn("s_cold", "Cold to touch, or temperature above 37.2 °C (99 °F)", "छूने पर ठंडा, या तापमान 37.2 °C से ज़्यादा", "D. Signs of sepsis", "Yes"),
-            yn("s_chest", "Chest indrawing", "छाती धँसना", "D. Signs of sepsis", "Yes"),
-            yn("s_umbilicus", "Pus on umbilicus", "नाभि पर मवाद", "D. Signs of sepsis", "Yes")),
+            yn("s_limp", "All limbs limp", "सभी अंग ढीले", "D. Check now for signs of sepsis", "Yes"),
+            yn("s_feed", "Feeding less / stopped", "दूध कम / बंद", "D. Check now for signs of sepsis", "Yes"),
+            yn("s_cry", "Cry weak / stopped", "रोना कमज़ोर / बंद", "D. Check now for signs of sepsis", "Yes"),
+            yn("s_abdomen", "Distended abdomen or mother says baby vomits often", "पेट फूला या बच्चा बार-बार उल्टी करता", "D. Check now for signs of sepsis", "Yes"),
+            yn("s_cold", "Cold to touch, or temperature above 37.2 °C (99 °F)", "छूने पर ठंडा, या तापमान 37.2 °C से ज़्यादा", "D. Check now for signs of sepsis", "Yes"),
+            yn("s_chest", "Chest indrawing", "छाती धँसना", "D. Check now for signs of sepsis", "Yes"),
+            yn("s_umbilicus", "Pus on umbilicus", "नाभि पर मवाद", "D. Check now for signs of sepsis", "Yes")),
         "Any sign of sepsis → refer the baby. Mother: more than 5 pads, fever above 38.9 °C, foul discharge with fever, or fits → refer the mother.")
 
     val HBYC = FormSpec("hbyc", "HBYC card — Home Based Care for Young Child", "HBYC कार्ड — छोटे बच्चे की घर पर देखभाल",
-        "Handbook for ASHA on Home Based Care for Young Child, p.90", listOf("3 Months", "6 Months", "9 Months", "12 Months", "15 Months"), listOf(
+        "Handbook for ASHA on Home Based Care for Young Child, Annexure 1 (HBYC card), p. 90", listOf("3 Months", "6 Months", "9 Months", "12 Months", "15 Months"), listOf(
             yn("sick", "Whether child is sick", "क्या बच्चा बीमार है", "ASHA to verify", "Yes", "If yes → check danger signs (sick-child form)"),
             yn("bf", "Breastfeeding continued", "स्तनपान जारी", "ASHA to verify"),
-            yn("cf", "Complementary food as per age", "उम्र के अनुसार ऊपरी आहार", "ASHA to verify", hint = "6 m: 2–3 tbsp 2–3×/day · 9 m: ½ katori 2–3× + snacks · 12 m: ½ katori 3–4× + snacks · 15 m: ¾–1 katori 3–4× + snacks"),
+            yn("cf", "Complementary food as per age (app addition)", "उम्र के अनुसार ऊपरी आहार (ऐप)", "ASHA to verify", hint = "6 m: 2–3 tbsp 2–3×/day · 9 m: ½ katori 2–3× + snacks · 12 m: ½ katori 3–4× + snacks · 15 m: ¾–1 katori 3–4× + snacks"),
             yn("wfa", "Recording of weight-for-age by AWW", "AWW द्वारा उम्र के अनुसार वज़न दर्ज", "ASHA to verify"),
             yn("wfh", "Recording of weight-for-length/height by AWW", "AWW द्वारा लंबाई के अनुसार वज़न दर्ज", "ASHA to verify"),
             yn("dev", "Developmental delay checked", "विकास में देरी जाँची", "ASHA to verify"),
@@ -72,7 +72,7 @@ object ArogyaOfficialForms {
             yn("c_fp", "Family planning counselling", "परिवार नियोजन सलाह", "ASHA to provide services"),
             FieldSpec("ors", "ORS given", "ORS दिया", QType.NUMBER, "packets", "ASHA to provide services"),
             FieldSpec("ifa_syrup", "IFA syrup given", "IFA सिरप दिया", QType.NUMBER, "bottles", "ASHA to provide services"),
-            FieldSpec("albendazole", "Albendazole given (deworming)", "एल्बेंडाजोल (कीड़े की दवा)", QType.NUMBER, "tablets", "Medicines given", onlyFromColumn = 3),
+            FieldSpec("albendazole", "Albendazole given (deworming) (app addition)", "एल्बेंडाजोल (कीड़े की दवा) (ऐप)", QType.NUMBER, "tablets", "Medicines given", onlyFromColumn = 3),
             FieldSpec("weight", "Weight (for MCP growth chart — app addition)", "वज़न (MCP विकास चार्ट के लिए)", QType.NUMBER, "kg", "MCP card")),
         "Filled by the ASHA at each visit, verified by the ASHA Facilitator or ANM/MPW, and submitted after each visit; basis for incentive payment.")
 
@@ -96,8 +96,8 @@ object ArogyaOfficialForms {
             yn("jsy", "Registered under JSY", "JSY में पंजीकरण", "5. Birth preparedness")),
         "Any danger sign → refer to hospital immediately (108 / 102).")
 
-    val SICK = FormSpec("sick", "Sick child — danger signs, fever, pneumonia, diarrhoea", "बीमार बच्चा — खतरे के संकेत, बुखार, निमोनिया, दस्त",
-        "Handbook for ASHA on HBYC, §5.4 (p.63–66)", listOf("Visit 1", "Visit 2", "Visit 3", "Visit 4"), listOf(
+    val SICK = FormSpec("sick", "Sick child checklist (HBYC Handbook §5.4, pp. 63–66)", "बीमार बच्चा चेकलिस्ट (HBYC हैंडबुक §5.4, पृ. 63–66)",
+        "Handbook for ASHA on HBYC, §5.4, pp. 63–66", listOf("Visit 1", "Visit 2", "Visit 3", "Visit 4"), listOf(
             yn("g_drink", "Not able to drink or breastfeed", "पी या स्तनपान नहीं कर पा रहा", "General danger signs", "Yes"),
             yn("g_vomit", "Vomits everything", "सब कुछ उल्टी कर देता", "General danger signs", "Yes"),
             yn("g_fits", "Has convulsions (fits)", "दौरे पड़ रहे", "General danger signs", "Yes"),
@@ -105,9 +105,9 @@ object ArogyaOfficialForms {
             FieldSpec("temp", "Temperature", "तापमान", QType.NUMBER, "°C", "Fever", hint = "37.5 °C or above = fever"),
             yn("rdt", "Malaria RDT positive (endemic area)", "मलेरिया RDT पॉज़िटिव", "Fever"),
             yn("fast_breath", "Cough with fast breathing or chest indrawing", "खाँसी के साथ तेज़ साँस या छाती धँसना", "Pneumonia", "Yes"),
-            yn("diarrhoea", "Diarrhoea", "दस्त", "Diarrhoea"),
+            yn("diarrhoea", "Diarrhoea", "दस्त", "Diarrhoea", hint = "More than 3 watery stools a day; 14+ days, blood or dehydration → refer"),
             FieldSpec("ors", "ORS packets given", "दिए ORS पैकेट", QType.NUMBER, "packets", "Treatment given"),
-            FieldSpec("zinc", "Zinc tablets given", "दी ज़िंक गोलियाँ", QType.NUMBER, "tablets", "Treatment given"),
+            FieldSpec("zinc", "Zinc tablets given (app addition)", "दी ज़िंक गोलियाँ (ऐप)", QType.NUMBER, "tablets", "Treatment given"),
             FieldSpec("parac", "Paracetamol tablets given for fever", "बुखार के लिए पैरासिटामोल", QType.NUMBER, "tablets", "Treatment given"),
             FieldSpec("ctz", "Cotrimoxazole given for pneumonia", "निमोनिया के लिए कोट्रिमोक्साज़ोल", QType.NUMBER, "tablets", "Treatment given", hint = "Only as taught; refer fast breathing"),
             FieldSpec("mal_rdt", "Malaria RDT kits used", "मलेरिया RDT किट", QType.NUMBER, "kits", "Treatment given"),
@@ -115,7 +115,7 @@ object ArogyaOfficialForms {
             yn("referred", "Referred to facility", "अस्पताल रेफ़र किया", "Action")),
         "Any general danger sign, or cough with fast breathing → refer urgently.")
 
-    val FP = FormSpec("fp", "Eligible couple — family planning entry", "योग्य दंपति — परिवार नियोजन प्रविष्टि",
+    val FP = FormSpec("fp", "Family planning entry — based on the MCP card FP page; state formats vary", "परिवार नियोजन प्रविष्टि — MCP कार्ड के FP पेज पर आधारित; राज्य प्रारूप अलग हो सकते हैं",
         "MCP card family planning page; register format varies by state", listOf("Visit 1", "Visit 2", "Visit 3", "Visit 4", "Visit 5", "Visit 6"), listOf(
             FieldSpec("method", "Method in use", "उपयोग में तरीका", QType.CHOICE, section = "Family planning", choices = listOf("None", "Condom", "Oral pills", "IUCD", "Antara injection", "Centchroman (Chhaya)", "Sterilisation")),
             yn("counsel", "Counselled on spacing / methods", "अंतर / तरीकों पर सलाह", "Family planning"),
@@ -516,7 +516,7 @@ object ArogyaOfficialForms {
             return mine.filter { it.column == col }.maxByOrNull { it.date }?.values?.get(id).orEmpty()
         }
         val dateRow = listOf("Date of ASHA's visit") + spec.columns.indices.map { c -> if (current?.first == c) LocalDate.now().toString() else mine.filter { it.column == c }.maxByOrNull { it.date }?.date.orEmpty() }
-        val nextRow = listOf("Next visit due") + spec.columns.indices.map { c -> if (current?.first == c) current.second["_next"].orEmpty() else mine.filter { it.column == c }.maxByOrNull { it.date }?.values?.get("_next").orEmpty() }
+        val nextRow = listOf("Next visit due (app addition)") + spec.columns.indices.map { c -> if (current?.first == c) current.second["_next"].orEmpty() else mine.filter { it.column == c }.maxByOrNull { it.date }?.values?.get("_next").orEmpty() }
         val rows = listOf(dateRow) + spec.fields.map { f -> listOf(f.label + if (f.unit.isNotBlank() && f.type == QType.NUMBER) " (${f.unit})" else "") + spec.columns.indices.map { c -> cell(c, f.id) } } + listOf(nextRow)
         return FormTable("${spec.title} · ${b.name}", spec.source, listOf("Ask / Examine") + spec.columns, rows, spec.note,
             sample = b.demo, sign = true)

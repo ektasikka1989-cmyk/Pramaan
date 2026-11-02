@@ -8,7 +8,7 @@ fun main() {
     val bens = sm.registry.beneficiaries
     // RI Form 3 — exact official columns
     val f3 = ArogyaForms.riForm3(bens, today)
-    o(f3.headers == listOf("A House No.", "B Head of household", "C Father's / husband's name", "D Total members", "E Pregnant woman", "F Newborn (<1 month)", "G Child 1 month–1 year", "H Child 1–2 years"), "RI Form 3 has the official columns A–H")
+    o(f3.headers == listOf("A House No.", "B Head of household", "C Father's name", "D Total members", "E Pregnant woman", "F Newborn (<1 month)", "G Child 1 month–1 year", "H Child 1–2 years"), "RI Form 3 has the official columns A–H")
     o(f3.rows.size == ArogyaRegistryLogic.byHousehold(bens).size, "one row per household (${f3.rows.size})")
     o(f3.rows.count { it[4] == "Yes" } == 8, "8 households with a pregnant woman")
     // RI Form 4
