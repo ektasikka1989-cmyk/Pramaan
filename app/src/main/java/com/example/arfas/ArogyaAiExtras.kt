@@ -57,6 +57,21 @@ object ArogyaPractice {
         else (if (hindi) "इस हफ़्ते: " else "this week: ") + week.weekScores.joinToString(", ")
         return fire + w
     }
+
+    /**
+     * Fresh practice pool: asked passage ids are skipped so every "New questions"
+     * round differs; when fewer than [n] fresh ones remain the pool restarts.
+     */
+    fun pickFresh(ids: List<String>, asked: Set<String>, n: Int): List<String> {
+        if (ids.isEmpty() || n <= 0) return emptyList()
+        val fresh = ids.filter { it !in asked }
+        return (if (fresh.size >= n) fresh else ids).shuffled().take(n)
+    }
+
+    /** Asked-list update: append used ids, de-duplicated, newest [cap] kept. */
+    fun recordAsked(asked: String, used: List<String>, cap: Int = 100): String =
+        ((if (asked.isBlank()) emptyList() else asked.split(",")) + used)
+            .map { it.trim() }.filter { it.isNotBlank() }.distinct().takeLast(cap).joinToString(",")
 }
 
 /** A4 medicine scan: name, batch, expiry and quantity read off a strip/box photo. */

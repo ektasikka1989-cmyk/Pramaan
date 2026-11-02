@@ -368,10 +368,12 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     /** Daily refresher: one question per guide passage, kept only if the right answer is in the passage. */
     suspend fun refresher(count: Int = 3): List<ArogyaQuizItem> = refresherDetailed(count).first
 
-    /** Same, plus the engine label + time for the A5 result chip. */
-    suspend fun refresherDetailed(count: Int = 3): Triple<List<ArogyaQuizItem>, String, Long> = mutex.withLock {
+    /** Same, plus the engine label + time for the A5 result chip. Passages in [excludeIds] are skipped so repeats stop. */
+    suspend fun refresherDetailed(count: Int = 3, excludeIds: Set<String> = emptySet()): Triple<List<ArogyaQuizItem>, String, Long> = mutex.withLock {
         val t = System.currentTimeMillis()
-        val picks = ArogyaSources.all.values.filter { it.excerpt.length > 120 }.shuffled().take(count + 2)
+        val pool = ArogyaSources.all.values.filter { it.excerpt.length > 120 }
+        val pickIds = ArogyaPractice.pickFresh(pool.map { it.id }, excludeIds, count + 2).toSet()
+        val picks = pool.filter { it.id in pickIds }
         val out = ArrayList<ArogyaQuizItem>()
         var by = ""
         for (src in picks) {

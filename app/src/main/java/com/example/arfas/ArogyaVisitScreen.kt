@@ -351,8 +351,11 @@ fun ArogyaVisitScreen(
     fun loadQuiz() {
         if(ai==null) return
         quizBusy=true; quizError=""; quizItems=emptyList(); quizChoice=emptyMap(); quizModel=""; quizMs=0L; quizRecorded=false
+        val practicePrefs=context.getSharedPreferences("arogya_practice",0)
+        val exclude=practicePrefs.getString("asked","").orEmpty().split(",").map{it.trim()}.filter{it.isNotBlank()}.toSet()
         scope.launch {
-            try { val (items,by,ms)=ai.refresherDetailed(3); quizItems=items; quizModel=by; quizMs=ms }
+            try { val (items,by,ms)=ai.refresherDetailed(3,exclude); quizItems=items; quizModel=by; quizMs=ms
+                practicePrefs.edit().putString("asked",ArogyaPractice.recordAsked(practicePrefs.getString("asked","").orEmpty(),items.map{it.source.id})).apply() }
             catch(e:CancellationException) { throw e }
             catch(e:Exception) { quizError=e.message ?: "Could not prepare the questions." }
             finally { quizBusy=false }
@@ -479,11 +482,7 @@ fun ArogyaVisitScreen(
                         }
                     }
                 }
-                if(knowledgeReady && ai!=null) item {
-                    OutlinedButton(onClick={quizOpen=true;if(quizItems.isEmpty() && !quizBusy) loadQuiz()},modifier=Modifier.fillMaxWidth()) {
-                        Text(tr("📚 Today's 2-minute refresher — 3 questions from your guide","📚 आज का 2 मिनट अभ्यास — गाइड से 3 सवाल"))
-                    }
-                } else item {
+                if(knowledgeReady) item {
                     Row(verticalAlignment=Alignment.CenterVertically) {
                         Text(tr("✓ ASHA guide ready offline","✓ ASHA गाइड ऑफ़लाइन तैयार"),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.bodySmall,modifier=Modifier.weight(1f))
                         TextButton(onClick={knowledgePicker.launch(arrayOf("*/*"))},enabled=!locked) { Text(tr("Change","बदलें"),style=MaterialTheme.typography.bodySmall) }
