@@ -72,6 +72,7 @@ object ArogyaOfficialForms {
             yn("c_fp", "Family planning counselling", "परिवार नियोजन सलाह", "ASHA to provide services"),
             FieldSpec("ors", "ORS given", "ORS दिया", QType.NUMBER, "packets", "ASHA to provide services"),
             FieldSpec("ifa_syrup", "IFA syrup given", "IFA सिरप दिया", QType.NUMBER, "bottles", "ASHA to provide services"),
+            FieldSpec("albendazole", "Albendazole given (deworming)", "एल्बेंडाजोल (कीड़े की दवा)", QType.NUMBER, "tablets", "Medicines given", onlyFromColumn = 3),
             FieldSpec("weight", "Weight (for MCP growth chart — app addition)", "वज़न (MCP विकास चार्ट के लिए)", QType.NUMBER, "kg", "MCP card")),
         "Filled by the ASHA at each visit, verified by the ASHA Facilitator or ANM/MPW, and submitted after each visit; basis for incentive payment.")
 
@@ -84,6 +85,8 @@ object ArogyaOfficialForms {
             yn("fetal_mov", "Fetal movements reduced or absent", "बच्चे की हलचल कम या नहीं", "3. ANC record", "Yes"),
             FieldSpec("td", "T.T./Td injection (dose given today)", "TT/Td इंजेक्शन (आज की खुराक)", QType.CHOICE, section = "4. Care during pregnancy", choices = listOf("None", "TT/Td-1", "TT/Td-2", "Booster")),
             FieldSpec("ifa", "Iron (IFA) tablets given", "दी गई आयरन गोलियाँ", QType.NUMBER, "tablets", "4. Care during pregnancy", hint = "At least 180 in pregnancy"),
+            FieldSpec("calcium", "Calcium tablets given", "दी गई कैल्शियम गोलियाँ", QType.NUMBER, "tablets", "4. Care during pregnancy", hint = "2 a day from the 4th month, as the ANM advises"),
+            FieldSpec("albendazole", "Deworming (albendazole) given", "पेट के कीड़े की गोली (एल्बेंडाजोल)", QType.NUMBER, "tablets", "4. Care during pregnancy", hint = "One 400 mg tablet after the first trimester"),
             yn("d_bleed", "Bleeding during pregnancy", "गर्भावस्था में खून आना", "5. Danger signs", "Yes"),
             yn("d_headache", "Headache, blurring of vision, fits or swelling all over the body", "सिरदर्द, धुंधला दिखना, दौरे या शरीर में सूजन", "5. Danger signs", "Yes"),
             yn("d_fever", "High fever", "तेज़ बुखार", "5. Danger signs", "Yes"),
@@ -105,6 +108,10 @@ object ArogyaOfficialForms {
             yn("diarrhoea", "Diarrhoea", "दस्त", "Diarrhoea"),
             FieldSpec("ors", "ORS packets given", "दिए ORS पैकेट", QType.NUMBER, "packets", "Treatment given"),
             FieldSpec("zinc", "Zinc tablets given", "दी ज़िंक गोलियाँ", QType.NUMBER, "tablets", "Treatment given"),
+            FieldSpec("parac", "Paracetamol tablets given for fever", "बुखार के लिए पैरासिटामोल", QType.NUMBER, "tablets", "Treatment given"),
+            FieldSpec("ctz", "Cotrimoxazole given for pneumonia", "निमोनिया के लिए कोट्रिमोक्साज़ोल", QType.NUMBER, "tablets", "Treatment given", hint = "Only as taught; refer fast breathing"),
+            FieldSpec("mal_rdt", "Malaria RDT kits used", "मलेरिया RDT किट", QType.NUMBER, "kits", "Treatment given"),
+            FieldSpec("act", "ACT tablets given (RDT positive)", "ACT गोलियाँ (RDT पॉज़िटिव)", QType.NUMBER, "tablets", "Treatment given"),
             yn("referred", "Referred to facility", "अस्पताल रेफ़र किया", "Action")),
         "Any general danger sign, or cough with fast breathing → refer urgently.")
 
@@ -114,7 +121,9 @@ object ArogyaOfficialForms {
             yn("counsel", "Counselled on spacing / methods", "अंतर / तरीकों पर सलाह", "Family planning"),
             FieldSpec("condoms", "Condoms given", "दिए कंडोम", QType.NUMBER, "pieces", "Supplies"),
             FieldSpec("ocp", "Pill cycles given", "दिए गोली के पत्ते", QType.NUMBER, "cycles", "Supplies"),
-            FieldSpec("napkins", "Sanitary napkin packs given", "दिए सैनिटरी नैपकिन पैक", QType.NUMBER, "packs", "Supplies")))
+            FieldSpec("napkins", "Sanitary napkin packs given", "दिए सैनिटरी नैपकिन पैक", QType.NUMBER, "packs", "Supplies"),
+            FieldSpec("ecp", "Emergency pills given", "आपातकालीन गोलियाँ", QType.NUMBER, "tablets", "Supplies"),
+            FieldSpec("ptk", "Pregnancy test kits used", "प्रेगनेंसी टेस्ट किट", QType.NUMBER, "kits", "Medicines given")))
 
     val ALL = listOf(ANNEX9, HBYC, MCP_ANC, SICK, FP)
     fun byId(id: String) = ALL.firstOrNull { it.id == id }
@@ -314,7 +323,9 @@ object ArogyaOfficialForms {
     }
 
     private val STOCK = listOf("ors" to "ORS", "zinc" to "Zinc tablets", "ifa" to "IFA tablets (adult)", "ifa_syrup" to "IFA syrup (child)",
-        "condoms" to "Condoms", "ocp" to "Oral contraceptive pills", "napkins" to "Sanitary napkins")
+        "condoms" to "Condoms", "ocp" to "Oral contraceptive pills", "napkins" to "Sanitary napkins",
+        "calcium" to "Calcium tablets", "albendazole" to "Albendazole", "parac" to "Paracetamol", "ctz" to "Cotrimoxazole",
+        "mal_rdt" to "Rapid diagnostic test (malaria)", "act" to "Chloroquine / ACT", "ecp" to "Emergency contraceptive pill", "ptk" to "Pregnancy test kit")
 
     /**
      * Review fix: every visit stock line carries its form + column key, so re-saving

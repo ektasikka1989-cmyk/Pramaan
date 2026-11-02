@@ -59,13 +59,13 @@ fun main() {
     val rtTxn = rt.stock.first { it.id == "r1" }
     s(rtTxn.batch == "B-1" && rtTxn.expiry == "2027-09-30" && rtTxn.source == "Sub-centre" && rtTxn.kind == "receive", "txn fields round-trip")
     s(rt.stockItems.size == 2 && rt.stockItems.any { it.name == "Custom syrup" && it.min == 2 }, "catalogue round-trips")
-    s(ArogyaRegistryLogic.catalog(emptyList()).size == 15 && ArogyaRegistryLogic.catalog(rt.stockItems).size == 16, "catalogue = defaults + custom")
+    s(ArogyaRegistryLogic.catalog(emptyList()).size == 16 && ArogyaRegistryLogic.catalog(rt.stockItems).size == 17, "catalogue = defaults + custom")
     val legacy = ArogyaRegistryCodec.decode("""{"version":1,"beneficiaries":[],"diary":[],"stock":[{"id":"l1","date":"2026-10-01","item":"ORS","qty":50,"ben":"","note":"Received"}],"vitals":[],"forms":[]}""")
-    s(legacy.stock.size == 1 && legacy.stockItems.isEmpty() && ArogyaRegistryLogic.catalog(legacy.stockItems).size == 15, "legacy backup decodes, defaults fill in")
+    s(legacy.stock.size == 1 && legacy.stockItems.isEmpty() && ArogyaRegistryLogic.catalog(legacy.stockItems).size == 16, "legacy backup decodes, defaults fill in")
     // 7. Sample village: opening for every kit item, no red zeros; zinc low, RDT expiring.
     val sm = ArogyaSampleVillage.build(today).registry
     val smReg = ArogyaRegistryLogic.stockRegister(sm.stock, sm.stockItems, month, today, false)
-    s(smReg.rows.size == 15, "sample register covers all 15 kit items")
+    s(smReg.rows.size == 16, "sample register covers all 16 kit items")
     s(smReg.rows.all { it.cells[5].toInt() > 0 }, "every sample item has a positive balance")
     s(smReg.rows.first { it.cells[0] == "Zinc tablets" }.status == "LOW", "sample zinc LOW by design")
     s(smReg.rows.first { it.cells[0] == "Rapid diagnostic test (malaria)" }.status == "EXPIRING", "sample RDT EXPIRING by design")

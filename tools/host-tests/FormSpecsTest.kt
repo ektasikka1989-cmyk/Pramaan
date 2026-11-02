@@ -66,7 +66,7 @@ fun main() {
     val ancE = FormEntry(beneficiaryId = "p1", formId = "mcp_anc", column = 0, date = "2026-08-01", values = mapOf("jsy" to "Yes", "weight" to "52"))
     check("carry jsy", ArogyaOfficialForms.carried(ArogyaOfficialForms.MCP_ANC, preg, listOf(ancE), 1) == mapOf("jsy" to "Yes"))
     check("previous", ArogyaOfficialForms.previous(ArogyaOfficialForms.MCP_ANC, preg, listOf(ancE), 1)["weight"] == ("52" to "ANC 1"))
-    check("missing", ArogyaOfficialForms.missing(ArogyaOfficialForms.FP, 0, mapOf("method" to "Condom")).size == 4)
+    check("missing", ArogyaOfficialForms.missing(ArogyaOfficialForms.FP, 0, mapOf("method" to "Condom")).size == 6)
     check("weight fell", ArogyaOfficialForms.weightNote(mapOf("weight" to ("2.5" to "Day 7")), mapOf("weight" to "2.4"))?.contains("fell 100 g") == true)
     check("scrub", ArogyaOfficialForms.scrub(Beneficiary(name = "Rekha Devi", village = "Rampur", phone = "9876543210"), "Rekha Devi of Rampur 9876543210 weight 52 kg") == "[removed] [removed] of [removed] [removed] weight 52 kg")
     val reg0 = RegistryData(beneficiaries = listOf(preg))

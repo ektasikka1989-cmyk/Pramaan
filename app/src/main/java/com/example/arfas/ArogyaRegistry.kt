@@ -84,7 +84,7 @@ object ArogyaRegistryLogic {
         StockItem("Emergency contraceptive pill", "tablets", 4), StockItem("Sanitary napkins", "packs", 10),
         StockItem("Pregnancy test kit", "kits", 5), StockItem("Cotrimoxazole", "tablets", 30),
         StockItem("Chloroquine / ACT", "tablets", 20), StockItem("Rapid diagnostic test (malaria)", "kits", 10),
-        StockItem("Cotton / bandage", "rolls", 5))
+        StockItem("Calcium tablets", "tablets", 100), StockItem("Cotton / bandage", "rolls", 5))
     val DRUG_KIT = DRUG_KIT_DEFAULTS.map { it.name }
 
     /** Effective catalogue: stored items win, missing kit items fall back to defaults. */
@@ -729,7 +729,8 @@ object ArogyaSampleVillage {
             rcvTxn(11, "Pregnancy test kit", 20, "2027-11-30"), rcvTxn(12, "Cotrimoxazole", 60, "2027-03-31"),
             rcvTxn(13, "Chloroquine / ACT", 30, "2027-02-28"),
             rcvTxn(14, "Rapid diagnostic test (malaria)", 25, today.plusMonths(2).toString()),
-            rcvTxn(15, "Cotton / bandage", 15, "2029-12-31"),
+            rcvTxn(15, "Calcium tablets", 300, "2027-08-31"),
+            rcvTxn(16, "Cotton / bandage", 15, "2029-12-31"),
             StockTxn("demo-g1", today.minusDays(6).toString(), "Zinc tablets", -85, ids[3], "Given", "give"),
             StockTxn("demo-g2", today.minusDays(3).toString(), "Paracetamol", -10, ids[5], "Given", "give"),
             StockTxn("demo-g3", today.minusDays(2).toString(), "Sanitary napkins", -5, ids[7], "Given", "give"))
