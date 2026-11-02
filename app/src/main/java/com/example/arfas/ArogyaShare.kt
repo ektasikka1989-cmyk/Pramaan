@@ -108,4 +108,17 @@ object ArogyaShare {
         val send = Intent(Intent.ACTION_SEND).apply { type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         context.startActivity(Intent.createChooser(send, "Share visit PDF").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
     }.getOrDefault(false)
+
+    /** Saves the AI table as a monospace-table PDF in Downloads/ArogyaDoot and opens the share sheet for it. */
+    suspend fun shareAiTablePdf(context: Context, table: String): Boolean = runCatching {
+        val name = "ArogyaDoot-AI-table-${System.currentTimeMillis() % 100000}.pdf"
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name); put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/ArogyaDoot")
+        }
+        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("no destination")
+        ArogyaVisitMedia.exportPdf(context, uri, table, mono = true)
+        val send = Intent(Intent.ACTION_SEND).apply { type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        context.startActivity(Intent.createChooser(send, "Share AI table PDF").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
+    }.getOrDefault(false)
 }

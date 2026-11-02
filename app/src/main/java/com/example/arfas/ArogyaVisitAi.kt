@@ -99,6 +99,21 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         return "Language model: $name ($state) · Meta Llama, runs offline\nASHA guide: " + (if (kb) "selected, searchable offline" else "not selected yet")
     }
 
+    /** On-phone Meta vision stack (MobileSAM + DINOv2) for offline drug-kit counting. */
+    fun vision(): MetaVisionEngine = runtime.metaVision
+
+    /** True when the on-phone counter can run (DINOv2 + both SAM files installed). */
+    fun visionOk(): Boolean = runtime.metaVision.has(MetaModelStore.Component.DINOV2) &&
+        runtime.metaVision.has(MetaModelStore.Component.SAM_ENCODER) &&
+        runtime.metaVision.has(MetaModelStore.Component.SAM_DECODER)
+
+    /** Structured twin of modelStatus() for the AI table: short loaded file name ("" when none) + ready flag. */
+    fun modelInfo(): Pair<String, Boolean> {
+        val m = runtime.localModelManager
+        return (m?.loadedModelFileName?.substringBeforeLast('.').orEmpty()) to
+            (m != null && m.isReady && !m.permanentlyDisabled)
+    }
+
     /** Loads the model and selects the ASHA guide as soon as ArogyaDoot opens, so the first question does not wait ~30 s. */
     /** R9 marker of the installed guide pack (2 = v2, 0 = v1, -1 = none). */
     fun guideVersion(): Int = runCatching { features.guideVersion() }.getOrDefault(-1)

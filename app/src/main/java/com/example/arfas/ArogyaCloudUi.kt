@@ -13,7 +13,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -26,6 +29,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -123,7 +127,7 @@ object ArogyaCloud {
         return listOf(
             "Order: " + (if (cloudFirst(c)) "Cloud first" else "Local first") + " (from Settings, same as Ask SOP)",
             "Forms & text: " + (ep?.let { it.label + if (keyFor(c, it).isNotBlank()) " (key saved)" else " (no key — phone model used)" } ?: "phone model only (offline)"),
-            "Voice: " + if (mk) (if (cloudFirst(c)) "Muse Voice Transcribe first, Whisper if offline" else "Whisper first, Muse Voice Transcribe if Whisper hears nothing") else "Whisper on the phone (add the Meta key for Muse)",
+            "Voice: " + if (cloudFirst(c)) (if (mk) "Muse Voice Transcribe first, Whisper if offline" else "Whisper on the phone (add the Meta key for Muse)") else "Whisper only (on this phone)",
             "Reading aloud: " + if (cloudFirst(c)) "best Android voice (online voice when there is signal)" else "offline Android voice",
             "Photo counting: " + if (mk) "SAM 3.1 when online" else "type the count (needs the Meta key)",
             "Keys: Meta ${if (mk) "✓ (Settings)" else "— add it in Settings"} · Together ${if (tk) "✓" else "—"}"
@@ -192,27 +196,112 @@ fun ArogyaCloudSettingsDialog(hindi: Boolean = false, onDismiss: () -> Unit) {
     }, confirmButton = { TextButton(onClick = { persist(); onDismiss() }) { Text(tr("Save", "सहेजें")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "रद्द करें")) } })
 }
 
-/** Count drug-kit items in a photo with SAM 3.1; the ASHA confirms the number before it goes in the register. */
+/** Numbered dots on the counted photo: tap a dot to remove it, tap empty space to add one. */
 @Composable
-fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, onRecord: (item: String, counted: Int, note: String) -> Unit, onDismiss: () -> Unit) {
+private fun DotsPhoto(bmp: Bitmap, dots: List<CountDot>, onTap: (Float, Float) -> Unit) {
+    val tap = rememberUpdatedState(onTap)
+    val ratio = bmp.height.toFloat() / bmp.width.coerceAtLeast(1)
+    BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f / ratio)
+        .pointerInput(bmp) { detectTapGestures { off -> tap.value(off.x / size.width, off.y / size.height) } }) {
+        Image(bmp.asImageBitmap(), contentDescription = "Photo of drug kit items", modifier = Modifier.fillMaxSize())
+        val w = maxWidth
+        dots.forEachIndexed { i, d ->
+            Box(Modifier.offset(x = (w * d.x) - 13.dp, y = (w * ratio * d.y) - 13.dp).size(26.dp)
+                .background(Color(0xFF00C853), CircleShape), contentAlignment = Alignment.Center) {
+                Text("${i + 1}", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+/**
+ * Count drug-kit items from a photo with numbered dots the ASHA fixes by tapping.
+ * Online + Cloud first uses SAM 3.1; otherwise the on-phone MobileSAM + DINOv2
+ * counter (taught by tapping one example item once); manual tap-to-count always
+ * works as a fallback. Nothing reaches the register until she confirms the count.
+ */
+@Composable
+fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, vision: MetaVisionEngine? = null,
+    onRecord: (item: String, counted: Int, note: String) -> Unit, onDismiss: () -> Unit) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var item by remember { mutableStateOf(ArogyaRegistryLogic.DRUG_KIT.first()) }
     var phrase by remember { mutableStateOf(ArogyaKitPhrases.phrase(item)) }
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var boxes by remember { mutableStateOf<List<SamBox>>(emptyList()) }   // Pramaan's SamBox (SamRecordParser)
-    var counted by remember { mutableStateOf("") }
+    var dots by remember { mutableStateOf<List<CountDot>>(emptyList()) }
+    var foundN by remember { mutableStateOf(0) }
+    var phase by remember { mutableStateOf("") }   // "" | teach | counting | done | manual
+    var engine by remember { mutableStateOf("") }  // mobilesam_dino | dino_grid | sam31 | manual
+    var engineMs by remember { mutableStateOf(0L) }
     var per by remember { mutableStateOf(ArogyaKitPhrases.perItem(item).toString()) }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
-    var countMs by remember { mutableStateOf(0L) }
+    var prog by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var shotUri by remember { mutableStateOf<Uri?>(null) }
-    fun run(uri: Uri, temp: Boolean) {
-        busy = true; msg = ""; boxes = emptyList()
+
+    fun engineLabel() = when (engine) {
+        "mobilesam_dino" -> "MobileSAM + DINOv2 (estimate)"
+        "dino_grid" -> "DINOv2 grid (estimate)"
+        "sam31" -> "SAM 3.1 (Meta)"
+        else -> tr("Counted by tapping", "उँगली से गिना")
+    }
+
+    fun runPhone(bmp: Bitmap) {
+        val v = vision ?: return
+        busy = true; phase = "counting"; prog = 0 to 0
+        msg = tr("Looking for each item…", "हर सामान ढूँढ रहे हैं…")
         scope.launch {
             try {
-                val (bmp, jpeg) = withContext(Dispatchers.IO) {
+                val t = System.currentTimeMillis()
+                val res = v.countTaught(item, bmp) { done, total -> prog = done to total }
+                dots = ArogyaCountDots.fromBoxes(res.boxes.map { it.box })
+                foundN = dots.size; engineMs = System.currentTimeMillis() - t
+                engine = if (res.usedSam) "mobilesam_dino" else "dino_grid"
+                phase = "done"; prog = null
+                msg = if (dots.isEmpty()) tr("Found nothing like it — tap each item yourself, or re-tap the example.",
+                    "ऐसा कुछ नहीं मिला — हर सामान खुद दबाएँ, या नमूना दोबारा दबाएँ।")
+                else tr("Found ${dots.size}. Tap a dot to remove it, tap empty space to add.",
+                    "${dots.size} मिला। हटाने के लिए निशान दबाएँ, जोड़ने के लिए खाली जगह दबाएँ।")
+            } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                phase = "manual"; prog = null
+                msg = tr("Could not count", "गिन नहीं पाए") + ": ${e.message?.take(140)}. " + tr("Tap each item yourself.", "हर सामान खुद दबाएँ।")
+            } finally { busy = false }
+        }
+    }
+
+    fun runSam31(jpegBytes: ByteArray) {
+        busy = true; phase = "counting"; prog = null
+        msg = tr("SAM 3.1 is finding each item…", "SAM 3.1 हर सामान ढूँढ रहा है…")
+        scope.launch {
+            try {
+                val t = System.currentTimeMillis()
+                val found = MetaOnline.api(context).sam("arogya_kit_count", jpegBytes, phrase.ifBlank { "packet" })
+                val conf = found.filter { (it.confidence ?: 1f) >= 0.5f }
+                val boxes = conf.map {
+                    val w = it.imageWidth.coerceAtLeast(1).toFloat(); val h = it.imageHeight.coerceAtLeast(1).toFloat()
+                    MetaVisionMath.Box(it.left / w, it.top / h, (it.right - it.left) / w, (it.bottom - it.top) / h)
+                }
+                val keep = MetaVisionMath.nms(boxes, conf.map { it.confidence ?: 1f })
+                dots = ArogyaCountDots.fromBoxes(keep.map { boxes[it] })
+                foundN = dots.size; engineMs = System.currentTimeMillis() - t
+                engine = "sam31"; phase = "done"
+                msg = if (dots.isEmpty()) tr("Found nothing — tap each item yourself.", "कुछ नहीं मिला — हर सामान खुद दबाएँ।")
+                else tr("Found ${dots.size}. Tap a dot to remove it, tap empty space to add.",
+                    "${dots.size} मिला। हटाने के लिए निशान दबाएँ, जोड़ने के लिए खाली जगह दबाएँ।")
+            } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                phase = "manual"
+                msg = tr("Could not count", "गिन नहीं पाए") + ": ${e.message?.take(140)}. " + tr("Tap each item yourself.", "हर सामान खुद दबाएँ।")
+                Log.w("ArogyaDemo", "AROGYA_SAM_FAILED ${e.message?.take(200)}")
+            } finally { busy = false }
+        }
+    }
+
+    fun run(uri: Uri, temp: Boolean) {
+        busy = true; msg = ""; dots = emptyList(); foundN = 0; engine = ""; prog = null; phase = ""
+        scope.launch {
+            try {
+                val (bmp, jpegBytes) = withContext(Dispatchers.IO) {
                     val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
                     var sample = 1; while (maxOf(opts.outWidth, opts.outHeight) / sample > 2000) sample *= 2
@@ -223,17 +312,48 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, onRecord:
                     b to ByteArrayOutputStream().also { b.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
                 }
                 bitmap = bmp
-                if (!withContext(Dispatchers.IO) { MetaOnline.ready(context) }) { msg = tr("SAM 3.1 needs internet and the Meta key (Settings). You can still type the count.", "SAM 3.1 को इंटरनेट और Meta key (Settings) चाहिए। गिनती खुद लिख सकती हैं।"); return@launch }
-                val t = System.currentTimeMillis()
-                val found = MetaOnline.api(context).sam("arogya_kit_count", jpeg, phrase.ifBlank { "packet" })
-                boxes = found; val n = ArogyaSamCount.count(found.map { it.confidence }); counted = (n * (per.toIntOrNull() ?: 1)).toString(); countMs = System.currentTimeMillis() - t
-                msg = "SAM 3.1 " + tr("found $n \"$phrase\" in ${(System.currentTimeMillis() - t) / 1000}s", "\"$phrase\" $n मिला ${(System.currentTimeMillis() - t) / 1000} सेकंड में") + (if ((per.toIntOrNull() ?: 1) > 1) " × $per " + tr("per item", "प्रति नग") else "") + ". " + tr("Check the boxes and correct the number if needed.", "डिब्बे देखकर संख्या सुधारें।")
-                Log.i("ArogyaDemo", "AROGYA_SAM_COUNT item=\"$item\" phrase=\"$phrase\" found=${found.size} counted=$n ms=${System.currentTimeMillis() - t}")
+                val cloud = withContext(Dispatchers.IO) { ArogyaCloud.cloudFirst(context) && MetaOnline.ready(context) }
+                val canPhone = vision != null && vision.has(MetaModelStore.Component.DINOV2)
+                busy = false
+                if (cloud) runSam31(jpegBytes)
+                else if (canPhone && vision!!.rememberedLabels().any { it.equals(item, ignoreCase = true) }) runPhone(bmp)
+                else if (canPhone) {
+                    phase = "teach"
+                    msg = tr("Tap one $item in the photo, so the phone learns what to count.",
+                        "फ़ोटो में एक $item दबाएँ, ताकि फ़ोन सीखे कि क्या गिनना है।")
+                } else {
+                    phase = "manual"
+                    msg = tr("No counter available — tap each item yourself.", "गिनती नहीं हो पाई — हर सामान खुद दबाएँ।")
+                }
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
-                msg = tr("Could not count", "गिन नहीं पाए") + ": ${e.message?.take(140)}. " + tr("Type the count yourself.", "गिनती खुद लिखें।"); Log.w("ArogyaDemo", "AROGYA_SAM_FAILED ${e.message?.take(200)}")
-            } finally { busy = false; if (temp) runCatching { context.contentResolver.delete(uri, null, null) } }
+                busy = false; phase = "manual"
+                msg = tr("Could not open the photo", "फ़ोटो नहीं खुली") + ": ${e.message?.take(140)}"
+            } finally { if (temp) runCatching { context.contentResolver.delete(uri, null, null) } }
         }
     }
+
+    fun onPhotoTap(x: Float, y: Float) {
+        val bmp = bitmap ?: return
+        if (phase == "teach" && vision != null) {
+            busy = true
+            msg = tr("Learning this item…", "ये सामान सीख रहे हैं…")
+            scope.launch {
+                try {
+                    val box = MetaVisionMath.Box((x - 0.125f).coerceIn(0f, 0.75f), (y - 0.125f).coerceIn(0f, 0.75f), 0.25f, 0.25f)
+                    if (!vision.rememberBox(item, bmp, box)) throw IllegalStateException(tr("Teaching failed", "सीख नहीं पाए"))
+                    busy = false
+                    runPhone(bmp)
+                } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                    busy = false; phase = "manual"
+                    msg = tr("Could not learn it", "सीख नहीं पाए") + ": ${e.message?.take(120)}. " + tr("Tap each item yourself.", "हर सामान खुद दबाएँ।")
+                }
+            }
+        } else if (phase == "done" || phase == "manual") {
+            dots = ArogyaCountDots.toggle(dots, x, y)
+            if (engine.isEmpty()) engine = "manual"
+        }
+    }
+
     val shoot = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> val u = shotUri; shotUri = null; if (u != null) { if (ok) run(u, true) else runCatching { context.contentResolver.delete(u, null, null) } } }
     val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { g ->
         if (g) { val u = runCatching { context.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, android.content.ContentValues().apply {
@@ -242,10 +362,11 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, onRecord:
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u -> if (u != null) run(u, false) }
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Row(verticalAlignment = Alignment.CenterVertically) { Text(tr("📷 Count stock from a photo", "📷 फ़ोटो से स्टॉक गिनें"), Modifier.weight(1f)); AiBadge("Count drug kit") } }, text = {
-        Column(Modifier.heightIn(max = 600.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.heightIn(max = 620.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(tr("Lay the items out on a plain cloth, not overlapping, and take one photo.", "सामान सादे कपड़े पर अलग-अलग रखें और एक फ़ोटो लें।"), style = MaterialTheme.typography.bodySmall)
             ArogyaRegistryLogic.DRUG_KIT.take(11).forEach { i -> Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(item == i, { item = i; phrase = ArogyaKitPhrases.phrase(i); per = ArogyaKitPhrases.perItem(i).toString() }); Text("$i  (register: ${balances[i] ?: 0})", style = MaterialTheme.typography.bodyMedium) } }
+                RadioButton(item == i, { item = i; phrase = ArogyaKitPhrases.phrase(i); per = ArogyaKitPhrases.perItem(i).toString()
+                    dots = emptyList(); foundN = 0; engine = ""; phase = "" }); Text("$i  (register: ${balances[i] ?: 0})", style = MaterialTheme.typography.bodyMedium) } }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(phrase, { phrase = it.take(40) }, label = { Text(tr("What to look for (English)", "क्या ढूँढें (English में)")) }, singleLine = true, modifier = Modifier.weight(2f))
                 OutlinedTextField(per, { per = it.filter { c -> c.isDigit() }.take(3) }, label = { Text(tr("Units each", "प्रति नग")) }, singleLine = true, modifier = Modifier.weight(1f),
@@ -255,23 +376,31 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, onRecord:
                 Button(onClick = { camPerm.launch(android.Manifest.permission.CAMERA) }, enabled = !busy) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
                 OutlinedButton(onClick = { pick.launch(arrayOf("image/*")) }, enabled = !busy) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
             }
-            if (busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(tr("SAM 3.1 is finding each item…", "SAM 3.1 हर सामान ढूँढ रहा है…"), style = MaterialTheme.typography.bodySmall) }
-            bitmap?.let { bmp -> Box(Modifier.fillMaxWidth().aspectRatio(bmp.width.toFloat() / bmp.height)) {
-                Image(bmp.asImageBitmap(), contentDescription = "Photo of drug kit items", modifier = Modifier.fillMaxSize())
-                Canvas(Modifier.fillMaxSize()) { boxes.forEach { bx ->
-                    val sx = size.width / bx.imageWidth.coerceAtLeast(1); val sy = size.height / bx.imageHeight.coerceAtLeast(1)
-                    drawRect(if ((bx.confidence ?: 1f) >= 0.5f) Color(0xFF00C853) else Color(0xFFFFAB00), Offset(bx.left * sx, bx.top * sy), Size((bx.right - bx.left) * sx, (bx.bottom - bx.top) * sy), style = Stroke(3f))
-                } }
-            } }
-            if (msg.isNotBlank()) Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            if (boxes.isNotEmpty()) AiResultChip("SAM 3.1 (Meta)", true, countMs, hindi)
-            ConfirmChip(hindi)
-            OutlinedTextField(counted, { counted = it.filter { c -> c.isDigit() }.take(4) }, label = { Text(tr("Count you confirm", "पक्की गिनती")) }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-            counted.toIntOrNull()?.let { n -> val diff = n - (balances[item] ?: 0)
+            if (bitmap != null && (phase == "done" || phase == "manual" || phase == "teach")) {
+                OutlinedButton(onClick = { phase = "manual"; if (engine.isEmpty()) engine = "manual"
+                    msg = tr("Tap each item yourself.", "हर सामान खुद दबाएँ।") }, enabled = !busy) { Text(tr("Count by tapping", "उँगली से गिनें")) }
+            }
+            if (busy) { LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(prog?.let { (done, total) -> tr("Looking… $done/$total", "देख रहे हैं… $done/$total") } ?: msg, style = MaterialTheme.typography.bodySmall) }
+            bitmap?.let { bmp -> if (phase == "done" || phase == "manual" || phase == "teach") DotsPhoto(bmp, dots) { x, y -> if (!busy) onPhotoTap(x, y) } }
+            if (msg.isNotBlank() && !busy) Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            if (engine == "mobilesam_dino" || engine == "dino_grid") AiResultChip(engineLabel(), false, engineMs, hindi)
+            if (engine == "sam31") AiResultChip(engineLabel(), true, engineMs, hindi)
+            if (engine.isNotBlank()) ConfirmChip(hindi)
+            if (phase == "done" || phase == "manual") {
+                val n = dots.size * (per.toIntOrNull() ?: 1)
+                Text(tr("Count: $n", "गिनती: $n") + (if ((per.toIntOrNull() ?: 1) > 1) " (${dots.size} × $per " + tr("per item", "प्रति नग") + ")" else ""),
+                    fontWeight = FontWeight.Bold)
+                val diff = n - (balances[item] ?: 0)
                 Text(if (diff == 0) tr("Matches the register ✓", "रजिस्टर से मिला ✓") else tr("Register says ${balances[item] ?: 0}; difference ${if (diff > 0) "+" else ""}$diff will be recorded as a stock check.", "रजिस्टर में ${balances[item] ?: 0}; अंतर ${if (diff > 0) "+" else ""}$diff स्टॉक जाँच में दर्ज होगा।"),
-                    color = if (diff == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    color = if (diff == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
         }
-    }, confirmButton = { Button(onClick = { counted.toIntOrNull()?.let { onRecord(item, it, if (boxes.isNotEmpty()) "Stock check by photo (SAM 3.1 found ${ArogyaSamCount.count(boxes.map { it.confidence })})" else "Stock check (counted by hand)") } },
-        enabled = !busy && counted.toIntOrNull() != null) { Text(tr("Save count", "गिनती सहेजें")) } }, dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(tr("Cancel", "रद्द करें")) } })
+    }, confirmButton = { Button(onClick = {
+            val n = dots.size * (per.toIntOrNull() ?: 1)
+            val eng = engine.ifBlank { "manual" }
+            Log.i("ArogyaDemo", "AROGYA_COUNT engine=$eng item=\"$item\" found=$foundN confirmed=${dots.size} ms=$engineMs")
+            onRecord(item, n, "Stock check by photo (${engineLabel()} found $foundN, confirmed ${dots.size})")
+        }, enabled = !busy && (phase == "done" || phase == "manual")) { Text(tr("Save count", "गिनती सहेजें")) } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(tr("Cancel", "रद्द करें")) } })
 }

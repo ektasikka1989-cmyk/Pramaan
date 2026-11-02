@@ -262,7 +262,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                                 return t to "Whisper (on this phone, offline)"
                             } finally { withContext(NonCancellable + Dispatchers.IO) { recognizer.release() } }
                         }
-                        val heard = if (ArogyaCloud.cloudFirst(context)) (cloud() ?: phone()) else (phone() ?: cloud())
+                        val heard = if (ArogyaCloud.cloudFirst(context)) (cloud() ?: phone()) else phone()
                         val sttMs = System.currentTimeMillis() - tstt
                         if (heard == null) {
                             transcript = if (demoHindi) ArogyaDemoScript.NOTE_HI else ArogyaDemoScript.NOTE_EN

@@ -99,6 +99,25 @@ object MetaVisionMath {
         }
     }
 
+    /**
+     * Non-maximum suppression: the highest score wins; boxes overlapping a winner
+     * by [iou] or more are dropped as the same object seen twice. Returns kept
+     * indexes in reading order (top to bottom, left to right) for numbered dots.
+     */
+    fun nms(boxes: List<Box>, scores: List<Float>, iou: Float = 0.5f): List<Int> {
+        require(boxes.size == scores.size) { "boxes (${boxes.size}) != scores (${scores.size})" }
+        val dead = BooleanArray(boxes.size)
+        val kept = ArrayList<Int>()
+        for (i in scores.indices.sortedByDescending { scores[it] }) {
+            if (dead[i]) continue
+            kept += i
+            for (j in boxes.indices) {
+                if (j != i && !dead[j] && boxes[i].iou(boxes[j]) >= iou) dead[j] = true
+            }
+        }
+        return kept.sortedWith(compareBy({ boxes[it].y }, { boxes[it].x }))
+    }
+
     data class Detection(val label: String, val score: Float, val box: Box)
 
     data class Ranked(val label: String, val score: Float)

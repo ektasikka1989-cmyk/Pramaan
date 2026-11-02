@@ -1039,10 +1039,7 @@ fun ArogyaVisitScreen(
             }
         },confirmButton={TextButton(onClick={visitsOpen=false}) {Text(tr("Close","बंद करें"))}})
     }
-    if(aiPageOpen) ArogyaAiPage(hindi,
-        modelStatus=ai?.modelStatus() ?: tr("AI not available","AI नहीं है"),
-        onlineStatus=ArogyaCloud.status(context),
-        onDismiss={aiPageOpen=false},ai=ai)
+    if(aiPageOpen) ArogyaAiPage(hindi,ai=ai,onOpenLibrary={guideOpen=true},onDismiss={aiPageOpen=false})
     val fvVisit=visits.firstOrNull {it.id==fvVisitId}
     if(fvOpen && fvVisit!=null) Dialog(onDismissRequest={ if(!fvBusy) fvOpen=false },properties=DialogProperties(usePlatformDefaultWidth=false)) {
         Surface(Modifier.fillMaxWidth().fillMaxHeight(0.95f).padding(12.dp),shape=MaterialTheme.shapes.large) {
@@ -1147,7 +1144,7 @@ internal fun ArogyaDictationDialog(onDismiss:()->Unit,cloudVoice:(suspend (Float
     LaunchedEffect(Unit) {
         val recognizer=AndroWhisperRecognizer(context.applicationContext)
         try {
-            // Whisper (offline) and Muse Voice Transcribe (online): the Settings order decides which is tried first; the other is the fallback.
+            // One setting: Cloud first tries Muse Voice Transcribe, then Whisper; Local first is Whisper only.
             val whisperOk=withContext(Dispatchers.IO) {recognizer.ensureInitialized()}
             if(!whisperOk && cloudVoice==null) {ready=true;status=tr("Speech model unavailable. Type your note instead.","बोलने वाला मॉडल नहीं है। नोट लिखें।");return@LaunchedEffect}
             val session=if(whisperOk) recognizer.newSession(language=ArogyaLang.whisperLang(voiceChoice),maxSeconds=60,streaming=false) else null
@@ -1172,7 +1169,7 @@ internal fun ArogyaDictationDialog(onDismiss:()->Unit,cloudVoice:(suspend (Float
                 val t=withContext(Dispatchers.Default) { if(choiceAtStop==ArogyaLang.VOICE_AUTO) session.finish() else session.finishWithLanguage(ArogyaLang.whisperLang(choiceAtStop)) }
                 return t.takeIf { it.isNotBlank() }?.also { engine=tr("Whisper (on this phone, offline)","Whisper (इसी फ़ोन पर, ऑफलाइन)") }
             }
-            text=(if(cloudFirst) cloud() ?: phone() else phone() ?: cloud()).orEmpty()
+            text=(if(cloudFirst) cloud() ?: phone() else phone()).orEmpty()
             ready=true
             status=if(text.isBlank()) tr("No speech recognised. Type your note instead.","कुछ सुनाई नहीं दिया। नोट लिखें।") else tr("Review and correct the transcript before adding it. ($engine)","जोड़ने से पहले देखकर सुधारें। ($engine)")
         } catch(e:CancellationException) {throw e}

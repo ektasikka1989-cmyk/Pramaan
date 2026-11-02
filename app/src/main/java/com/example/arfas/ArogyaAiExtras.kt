@@ -385,14 +385,154 @@ object ArogyaAiCatalog {
             "Muse Spark 1.3 (Meta Model API) or Muse Glimmer 30B (Together AI)", "Meta", true, "Cloud, when online and a key is saved"),
         ArogyaAiFeature("Speak instead of typing — online", "With signal, the voice note is transcribed by Meta's speech model, tuned with health words (ORS, IFA, Td…); Whisper is used offline",
             "Muse Voice Transcribe 1.0 (Meta Model API)", "Meta", true, "Cloud, when online and a key is saved"),
-        ArogyaAiFeature("Count drug kit", "Finds each ORS sachet, tablet strip or packet in a photo and counts them; the ASHA confirms the number before it goes in the register",
-            "SAM 3.1 — Segment Anything (Meta Model API)", "Meta", true, "Cloud, when online and a key is saved"),
+        ArogyaAiFeature("Count drug kit", "Counts items in a photo as numbered dots she fixes by tapping; the ASHA confirms the number before it goes in the register",
+            "MobileSAM + DINOv2 on the phone (estimate), or SAM 3.1 — Segment Anything (Meta Model API)", "Meta", true, "On phone, offline — or cloud, when online and a key is saved"),
         ArogyaAiFeature("Scan medicine", "Reads a strip/box label and pulls out name, batch, expiry and quantity; only text on the label is kept, and the ASHA confirms the stock entry",
             "ML Kit text recognition + on-phone rules and model fill", "Google + Meta", true, "On phone, offline"),
         ArogyaAiFeature("Reading aloud", "Reads answers and the demo to the ASHA in Hindi or English",
             "Android text-to-speech, offline voices", "Google", false, "On phone, offline"),
         ArogyaAiFeature("Danger signs, schedules, incentives", "Fixed rules from the guidelines — deliberately NOT AI, so they are predictable", "Rules (no AI)", "—", false, "On phone")
     )
+}
+
+/**
+ * Status snapshot the "What makes ArogyaDoot smart" table is built from. Every
+ * value is read live by the UI: the one setting, signal, the loaded phone model
+ * file, the configured cloud endpoint, and which keys exist.
+ */
+data class AiTableStatus(
+    val cloudFirst: Boolean,
+    val online: Boolean,
+    /** Short loaded phone-model file name, "" when no model is loaded. */
+    val llama: String,
+    val llamaReady: Boolean,
+    /**
+     * Configured cloud text label (e.g. "Muse Spark 1.3 (Meta)"), "" when no cloud
+     * text model applies. Glimmer is passed only when a Together key is saved.
+     */
+    val cloudText: String,
+    val cloudTextKey: Boolean,
+    val metaKey: Boolean,
+    /** On-phone counter models (DINOv2 + both SAM files) installed. */
+    val visionOk: Boolean
+)
+
+/** One feature row: what it does, the engine per column, availability, and the safety check. */
+data class AiTableRow(val icon: String, val feature: String, val does: String, val phone: String, val cloud: String,
+    val phoneOk: Boolean, val cloudOk: Boolean, val active: Int, val safety: String)
+
+/** Pure builder for the AI table (host-tested). Engine names arrive from the caller, never hard-coded here. */
+object ArogyaAiTable {
+    private data class Def(val icon: String, val en: String, val hi: String, val doesEn: String, val doesHi: String,
+        val safeEn: String, val safeHi: String, val kind: Int)
+    // kind: 0 = speech (Whisper / Muse Voice), 1 = phone Llama + cloud text, 2 = count (phone vision / cloud SAM), 3 = phone-only.
+    private val DEFS = listOf(
+        Def("🎤", "Speak instead of typing", "बोलकर लिखें",
+            "Turns Hindi/English speech into text", "हिन्दी/अंग्रेज़ी बोली को लिखता है",
+            "You review the transcript before it is used", "इस्तेमाल से पहले आप लिखा देखती हैं", 0),
+        Def("📝", "Voice note → official form", "वॉइस नोट → आधिकारिक फ़ॉर्म",
+            "Fills the official form from the voice note", "वॉइस नोट से आधिकारिक फ़ॉर्म भरता है",
+            "Every value shows its evidence; you confirm each", "हर मान सबूत दिखाता है; आप हर एक पक्का करती हैं", 1),
+        Def("❓", "Ask the official guide", "आधिकारिक गाइड से पूछें",
+            "Finds the right guide pages and answers with sources", "सही गाइड पेज ढूँढकर स्रोत के साथ जवाब देता है",
+            "Answer checked against the passages + document, page", "उत्तर गाइड हिस्सों से जाँचा + दस्तावेज़, पेज", 1),
+        Def("🪪", "MCP card photo", "MCP कार्ड फ़ोटो",
+            "Reads the card into dates, vaccines, weights", "कार्ड से तारीख़ें, टीके, वज़न पढ़ता है",
+            "Only card text is kept; you tick each value", "सिर्फ़ कार्ड का अक्षर रखा जाता है; आप हर मान चुनती हैं", 1),
+        Def("🔍", "Scan medicine", "दवा स्कैन",
+            "Reads a strip label into name, batch, expiry, qty", "पत्ते से नाम, बैच, एक्सपायरी, मात्रा पढ़ता है",
+            "Only label text is kept; you confirm the entry", "सिर्फ़ लेबल का अक्षर रखा जाता है; आप एंट्री पक्का करती हैं", 1),
+        Def("🔢", "Count drug kit", "दवा किट गिनें",
+            "Counts packets in a shelf photo", "शेल्फ़ फ़ोटो में पैकेट गिनता है",
+            "You confirm the count before the register", "रजिस्टर से पहले आप गिनती पक्का करती हैं", 2),
+        Def("💬", "ANM message + family explanation", "ANM संदेश + परिवार को समझाएँ",
+            "Drafts the ANM message and a simple explanation", "ANM संदेश और आसान समझ लिखता है",
+            "You read and edit before sending", "भेजने से पहले आप पढ़ती और सुधारती हैं", 1),
+        Def("📚", "Daily practice", "रोज़ अभ्यास",
+            "Makes 3 daily questions from the guides", "गाइड से रोज़ 3 सवाल बनाता है",
+            "The answer must be in the cited passage", "उत्तर बताए गए हिस्से में होना चाहिए", 1),
+        Def("🔊", "Read aloud", "सुनाना",
+            "Reads answers aloud in Hindi/English", "उत्तर हिन्दी/अंग्रेज़ी में सुनाता है",
+            "Reads exactly what is on screen", "स्क्रीन पर जो है वही सुनाता है", 3)
+    )
+
+    fun rows(s: AiTableStatus, hindi: Boolean): List<AiTableRow> {
+        fun tr(en: String, hi: String) = if (hindi) hi else en
+        val noKey = tr("(Meta key not saved)", "(Meta key नहीं है)")
+        val noTextKey = tr("(key not saved)", "(key नहीं है)")
+        val off = tr("(offline)", "(ऑफ़लाइन)")
+        val notLoaded = tr("Phone model (not loaded)", "फ़ोन मॉडल (लोड नहीं)")
+        val loading = tr("(loading…)", "(लोड हो रहा…)")
+        val noCloudText = tr("No cloud text model available", "क्लाउड टेक्स्ट मॉडल नहीं है")
+        val llamaPhone = if (s.llamaReady) s.llama else if (s.llama.isNotBlank()) "${s.llama} $loading" else notLoaded
+        val cloudTextBox = when {
+            s.cloudText.isBlank() -> noCloudText
+            !s.cloudTextKey -> "${s.cloudText} $noTextKey"
+            !s.online -> "${s.cloudText} $off"
+            else -> s.cloudText
+        }
+        val cloudTextOk = s.cloudText.isNotBlank() && s.cloudTextKey && s.online
+        val metaCloud = { name: String ->
+            val box = when {
+                !s.metaKey -> "$name $noKey"
+                !s.online -> "$name $off"
+                else -> name
+            }
+            box to (s.metaKey && s.online)
+        }
+        return DEFS.map { d ->
+            val feature = if (hindi) d.hi else d.en
+            val does = if (hindi) d.doesHi else d.doesEn
+            val safety = if (hindi) d.safeHi else d.safeEn
+            when (d.kind) {
+                0 -> {
+                    val (box, ok) = metaCloud("Muse Voice Transcribe 1.0")
+                    val active = if (s.cloudFirst && ok) 1 else 0
+                    AiTableRow(d.icon, feature, does, "Whisper (on-device)", box, true, ok, active, safety)
+                }
+                1 -> {
+                    val active = if (s.cloudFirst && cloudTextOk) 1 else if (s.llamaReady) 0 else -1
+                    AiTableRow(d.icon, feature, does, llamaPhone, cloudTextBox, s.llamaReady, cloudTextOk, active, safety)
+                }
+                2 -> {
+                    val (box, ok) = metaCloud("SAM 3.1")
+                    val phoneBox = if (s.visionOk) tr("MobileSAM + DINOv2 (estimate)", "MobileSAM + DINOv2 (अनुमान)")
+                        else tr("MobileSAM + DINOv2 (models not installed)", "MobileSAM + DINOv2 (मॉडल नहीं हैं)")
+                    val active = if (s.cloudFirst && ok) 1 else if (s.visionOk) 0 else -1
+                    AiTableRow(d.icon, feature, does, phoneBox, box, s.visionOk, ok, active, safety)
+                }
+                else -> AiTableRow(d.icon, feature, does, tr("Android offline voice", "Android ऑफ़लाइन आवाज़"),
+                    "—", true, false, 0, safety)
+            }
+        }
+    }
+
+    /** Monospace table text for the PDF export (rendered with a monospace face). */
+    fun pdfText(rows: List<AiTableRow>, s: AiTableStatus, guideCount: Int, guideLabel: String, hindi: Boolean): String {
+        fun tr(en: String, hi: String) = if (hindi) hi else en
+        fun cell(t: String, w: Int) = t.replace("\n", " ").take(w).padEnd(w)
+        val b = StringBuilder()
+        b.appendLine(tr("What makes ArogyaDoot smart", "ArogyaDoot को समझदार क्या बनाता है"))
+        b.appendLine(tr("Mode: ", "मोड: ") + (if (s.cloudFirst) tr("Cloud first", "Cloud first") else tr("Local first", "Local first")) +
+            " · " + (if (s.online) tr("online", "ऑनलाइन") else tr("offline", "ऑफ़लाइन")) +
+            " · $guideLabel · " + tr("$guideCount official guides", "$guideCount आधिकारिक गाइड"))
+        b.appendLine()
+        b.appendLine(cell(tr("Feature", "सुविधा"), 36) + " | " + cell(tr("Phone (offline)", "फ़ोन (ऑफ़लाइन)"), 34) +
+            " | " + cell(tr("Meta cloud (online)", "Meta क्लाउड (ऑनलाइन)"), 34) + " | " + tr("Safety check", "सुरक्षा जाँच"))
+        b.appendLine("-".repeat(126))
+        rows.forEach { r ->
+            val ph = (if (r.active == 0) "▶ " else "") + r.phone + (if (!r.phoneOk && r.phone != "—") tr(" [unavailable]", " [नहीं है]") else "")
+            val cl = (if (r.active == 1) "▶ " else "") + r.cloud + (if (!r.cloudOk && r.cloud != "—") tr(" [unavailable]", " [नहीं है]") else "")
+            b.appendLine(cell(r.icon + " " + r.feature, 36) + " | " + cell(ph, 34) + " | " + cell(cl, 34) + " | " + r.safety)
+        }
+        b.appendLine()
+        b.appendLine(tr("Fixed government rules, not AI: danger signs, schedules, vaccine due dates, incentives, next visit date.",
+            "तय सरकारी नियम, AI नहीं: खतरे के लक्षण, शेड्यूल, टीकों की तारीख़ें, प्रोत्साहन, अगली विज़िट की तारीख़।"))
+        b.appendLine(tr("Privacy: on this phone nothing leaves it; the cloud only receives text with names removed.",
+            "गोपनीयता: इस फ़ोन की जानकारी फ़ोन से बाहर नहीं जाती; क्लाउड को सिर्फ़ बिना नाम का पाठ मिलता है।"))
+        b.append(tr("Built with Muse Code.", "Muse Code से बनाया गया।"))
+        return b.toString()
+    }
 }
 
 /** Applies ticked card-photo fields to a person's digital MCP card. */

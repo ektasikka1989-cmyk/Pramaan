@@ -2,10 +2,12 @@ package com.example.arfas
 
 import android.app.DatePickerDialog
 import android.content.pm.ApplicationInfo
+import android.content.res.Configuration
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -18,6 +20,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -27,7 +31,9 @@ import androidx.compose.ui.window.DialogProperties
 import java.time.LocalDate
 import java.time.YearMonth
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Small "✨ AI" badge wherever AI is used; tap shows which model powers it (exactly as implemented). */
 @Composable
@@ -53,86 +59,207 @@ fun AiBadge(feature: String, modifier: Modifier = Modifier, hindi: Boolean? = nu
 
 /** Every AI feature in the app, the model behind it, and the live state of the phone's model. */
 @Composable
-fun ArogyaAiPage(hindi: Boolean, modelStatus: String, onlineStatus: String, onDismiss: () -> Unit, ai: ArogyaVisitAi? = null) {
+fun ArogyaAiPage(hindi: Boolean, ai: ArogyaVisitAi?, onOpenLibrary: () -> Unit, onDismiss: () -> Unit) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var cloudOpen by rememberSaveable { mutableStateOf(false) }
-    if (cloudOpen) ArogyaCloudSettingsDialog(hindi) { cloudOpen = false }
-    val benchScope = rememberCoroutineScope()
-    var benchLog by remember { mutableStateOf("") }
-    var benchBusy by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("✨ AI in ArogyaDoot", "✨ ArogyaDoot में AI")) }, text = {
-        Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(10.dp)) {
-                Text(tr("On this phone now", "इस फ़ोन पर अभी"), fontWeight = FontWeight.Bold); Text(modelStatus, style = MaterialTheme.typography.bodySmall); Text(onlineStatus, style = MaterialTheme.typography.bodySmall)
-            } }
-            Button(onClick = { cloudOpen = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("☁ Cloud AI (Meta) — keys and models", "☁ क्लाउड AI (Meta) — key और मॉडल")) }
-            if (ai != null && (LocalContext.current.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-                OutlinedButton(onClick = {
-                    if (benchBusy) { ai.cancel(); return@OutlinedButton }
-                    benchBusy = true; benchLog = ""
-                    benchScope.launch {
-                        try {
-                            ArogyaBenchmark.runAll(ai) { line -> benchLog = (benchLog + "\n" + line).takeLast(3000) }
-                            benchLog += "\nDone — pull logs with _claude_work\\run\\logs.bat"
-                        } catch (e: CancellationException) { benchLog += "\nCancelled" }
-                        finally { benchBusy = false }
-                    }
-                }, modifier = Modifier.fillMaxWidth()) { Text(if (benchBusy) tr("Stop benchmark", "बेंचमार्क रोकें") else tr("Run M1 benchmark (19 questions, test aid)", "M1 बेंचमार्क चलाएँ (19 सवाल)")) }
-                if (benchLog.isNotBlank()) Text(benchLog.trim(), style = MaterialTheme.typography.bodySmall)
-                // Item 2: evidence profile + speed switches (test aid). Evidence/salvage/context apply
-                // to the next question; llama batch/FA apply when the model next loads (restart the app).
-                var prof by remember { mutableStateOf(ArogyaFlags.r1Profile) }
-                var fuCtx by remember { mutableStateOf(ArogyaFlags.sopFollowUpContext) }
-                var salvFirst by remember { mutableStateOf(ArogyaFlags.salvageBeforeRecovery) }
-                var b2048 by remember { mutableStateOf(ArogyaFlags.llamaBatch2048) }
-                var faOn by remember { mutableStateOf(ArogyaFlags.llamaFlashAttn) }
-                Text(tr("Evidence size (next question)", "साक्ष्य आकार (अगला सवाल)"), style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(0 to "4×900", 1 to "6×1100", 2 to "5×900").forEach { (p, l) ->
-                        FilterChip(selected = prof == p, onClick = { prof = p; ArogyaFlags.r1Profile = p }, label = { Text(l) })
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = fuCtx, onClick = { fuCtx = !fuCtx; ArogyaFlags.sopFollowUpContext = fuCtx }, label = { Text(tr("Follow-up ctx", "फ़ॉलो-अप")) })
-                    FilterChip(selected = salvFirst, onClick = { salvFirst = !salvFirst; ArogyaFlags.salvageBeforeRecovery = salvFirst }, label = { Text(tr("Salvage 1st", "सैल्वेज पहले")) })
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = b2048, onClick = { b2048 = !b2048; ArogyaFlags.llamaBatch2048 = b2048 }, label = { Text(tr("Batch 2048*", "बैच 2048*")) })
-                    FilterChip(selected = faOn, onClick = { faOn = !faOn; ArogyaFlags.llamaFlashAttn = faOn }, label = { Text(tr("FlashAttn*", "फ़्लैश*")) })
-                }
-                Text(tr("* needs app restart", "* ऐप दोबारा खोलें"), style = MaterialTheme.typography.bodySmall)
-                var spBusy by remember { mutableStateOf(false) }
-                var spLog by remember { mutableStateOf("") }
-                OutlinedButton(onClick = {
-                    if (spBusy) { ai.cancel(); return@OutlinedButton }
-                    spBusy = true; spLog = ""
-                    benchScope.launch {
-                        try {
-                            ArogyaBenchmark.runSpeedCheck(ai) { line -> spLog = (spLog + "\n" + line).takeLast(2000) }
-                            spLog += "\nDone — pull logs with _claude_work\\run\\logs.bat"
-                        } catch (e: CancellationException) { spLog += "\nCancelled" }
-                        finally { spBusy = false }
-                    }
-                }, modifier = Modifier.fillMaxWidth(), enabled = !benchBusy) { Text(if (spBusy) tr("Stop speed check", "स्पीड जाँच रोकें") else tr("Run 3-question speed check (this mode)", "3-सवाल स्पीड जाँच (यही मोड)")) }
-                if (spLog.isNotBlank()) Text(spLog.trim(), style = MaterialTheme.typography.bodySmall)
+    var advancedOpen by rememberSaveable { mutableStateOf(false) }
+    var refresh by remember { mutableStateOf(0) }
+    if (cloudOpen) ArogyaCloudSettingsDialog(hindi) { cloudOpen = false; refresh++ }
+    if (advancedOpen && ai != null) ArogyaAiAdvancedDialog(hindi, ai) { advancedOpen = false }
+    // Everything read live: the one setting, signal, loaded phone model, endpoint, keys.
+    val cloudFirst = remember(refresh) { ArogyaCloud.cloudFirst(context) }
+    val online = remember(refresh) { ArogyaCloud.online(context) }
+    val metaKey = remember(refresh) { ArogyaCloud.metaKey(context).isNotBlank() }
+    val togetherKey = remember(refresh) { ArogyaCloud.togetherKey(context).isNotBlank() }
+    val ep = remember(refresh) { ArogyaCloud.textEndpoint(context) }
+    val (llama, llamaReady) = remember(refresh) { ai?.modelInfo() ?: ("" to false) }
+    val cloudText = when {
+        ep == null -> ""
+        ep.keyFor == "together" && !togetherKey -> ""
+        else -> ep.label
+    }
+    val cloudTextKey = cloudText.isNotBlank() && (ep?.let { ArogyaCloud.keyFor(context, it).isNotBlank() } == true)
+    val visionOk = remember(refresh) { ai?.visionOk() ?: false }
+    val status = AiTableStatus(cloudFirst, online, llama, llamaReady, cloudText, cloudTextKey, metaKey, visionOk)
+    val rows = remember(status, hindi) { ArogyaAiTable.rows(status, hindi) }
+    var guideLabel by remember { mutableStateOf(tr("Guide …", "गाइड …")) }
+    var guideCount by remember { mutableStateOf(-1) }
+    LaunchedEffect(refresh) {
+        guideLabel = withContext(Dispatchers.IO) { ArogyaGuideDb.describe(ai?.guideVersion() ?: -1) }
+        guideCount = withContext(Dispatchers.IO) { ai?.guideLibrary()?.size ?: 0 }
+    }
+    var shareMsg by remember { mutableStateOf("") }
+    val portrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("What makes ArogyaDoot smart", "ArogyaDoot को समझदार क्या बनाता है")) }, text = {
+        Column(Modifier.heightIn(max = 600.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AssistChip(onClick = {}, label = { Text(if (cloudFirst) "☁ Cloud first" else "📱 Local first") })
+                AssistChip(onClick = {}, label = { Text(if (online) tr("✓ Online", "✓ ऑनलाइन") else tr("✗ Offline", "✗ ऑफ़लाइन")) })
+                AssistChip(onClick = {}, label = { Text(if (metaKey) tr("Meta key ✓", "Meta key ✓") else tr("Meta key —", "Meta key —")) })
+                AssistChip(onClick = {}, label = { Text(guideLabel) })
             }
-            ArogyaAiCatalog.features.forEach { f ->
-                Column {
-                    Text((if (f.metaModel) "Ⓜ " else "• ") + f.feature, fontWeight = FontWeight.Bold)
-                    Text(f.model + " — " + f.maker, style = MaterialTheme.typography.bodySmall, color = if (f.metaModel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(f.whatAiDoes + " · " + f.where, style = MaterialTheme.typography.bodySmall)
+            if (portrait) rows.forEach { r -> AiRowCard(r, hindi) } else AiTableGrid(rows, hindi)
+            // Fixed rules panel (grey): never AI.
+            Card(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, Color.Gray),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(tr("⚙ Fixed government rules, not AI", "⚙ तय सरकारी नियम, AI नहीं"), fontWeight = FontWeight.Bold)
+                    Text(tr("Danger signs · schedules · vaccine due dates · incentives · next visit date",
+                        "खतरे के लक्षण · शेड्यूल · टीकों की तारीख़ें · प्रोत्साहन · अगली विज़िट की तारीख़"),
+                        style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Text(tr("Ⓜ = Meta model.", "Ⓜ = Meta मॉडल।"), style = MaterialTheme.typography.bodySmall)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FixedRuleChip(hindi)
-                Text(tr("Danger signs, schedules, due dates and incentives are fixed government rules, not AI.",
-                    "खतरे के लक्षण, समय-सारणी, नियत तारीख़ें और प्रोत्साहन तय सरकारी नियम हैं, AI नहीं।"), style = MaterialTheme.typography.bodySmall)
+            // Footer: live guide count + library link, privacy, credit.
+            OutlinedButton(onClick = onOpenLibrary, modifier = Modifier.fillMaxWidth()) {
+                Text(if (guideCount < 0) tr("📚 Official guides…", "📚 आधिकारिक गाइड…")
+                    else tr("📚 $guideCount official guides", "📚 $guideCount आधिकारिक गाइड"))
             }
-            Text(tr("Built with Muse Code.", "Muse Code से बनाया गया।"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(tr("Privacy: on this phone nothing leaves it; the cloud only receives text with names removed.",
+                "गोपनीयता: इस फ़ोन की जानकारी फ़ोन से बाहर नहीं जाती; क्लाउड को सिर्फ़ बिना नाम का पाठ मिलता है।"),
+                style = MaterialTheme.typography.bodySmall)
+            Text(tr("Built with Muse Code.", "Muse Code से बनाया गया।"), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    shareMsg = tr("Making the PDF…", "PDF बना रहे हैं…")
+                    scope.launch {
+                        val ok = ArogyaShare.shareAiTablePdf(context,
+                            ArogyaAiTable.pdfText(rows, status, guideCount.coerceAtLeast(0), guideLabel, hindi))
+                        shareMsg = if (ok) tr("PDF shared.", "PDF भेजा।") else tr("Could not make the PDF.", "PDF नहीं बना।")
+                    }
+                }, modifier = Modifier.weight(1f)) { Text(tr("Share as PDF", "PDF भेजें")) }
+                OutlinedButton(onClick = { cloudOpen = true }, modifier = Modifier.weight(1f)) { Text(tr("☁ Cloud AI settings", "☁ क्लाउड AI सेटिंग")) }
+            }
+            if (shareMsg.isNotBlank()) Text(shareMsg, style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { advancedOpen = true }) {
+                Text(tr("Advanced (testing)", "Advanced (परीक्षण)"), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }, confirmButton = { TextButton(onClick = onDismiss) { Text(tr("Close", "बंद करें")) } })
 }
+
+private val AI_PHONE_GREEN = Color(0xFF2E7D32)
+private val AI_CLOUD_BLUE = Color(0xFF1565C0)
+
+@Composable
+private fun AiEngineBox(text: String, ok: Boolean, active: Boolean, cloud: Boolean, hindi: Boolean, modifier: Modifier = Modifier) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val tint = if (cloud) AI_CLOUD_BLUE else AI_PHONE_GREEN
+    Card(modifier, border = BorderStroke(if (active) 2.dp else 1.dp, if (!ok && text != "—") Color.Gray else tint),
+        colors = CardDefaults.cardColors(
+            containerColor = if (active) tint.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text((if (active) "▶ " else "") + if (cloud) tr("☁ Meta cloud", "☁ Meta क्लाउड") else tr("📱 Phone", "📱 फ़ोन"),
+                style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = tint)
+            Text(text, style = MaterialTheme.typography.bodySmall,
+                color = if (!ok && text != "—") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Portrait: each feature is a card with two side-by-side engine boxes. */
+@Composable
+private fun AiRowCard(r: AiTableRow, hindi: Boolean) {
+    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("${r.icon} ${r.feature}", fontWeight = FontWeight.Bold)
+        Text(r.does, style = MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            AiEngineBox(r.phone, r.phoneOk, r.active == 0, false, hindi, Modifier.weight(1f))
+            AiEngineBox(r.cloud, r.cloudOk, r.active == 1, true, hindi, Modifier.weight(1f))
+        }
+        Text("✓ ${r.safety}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    } }
+}
+
+/** Landscape: a true table (feature · phone · cloud · safety). */
+@Composable
+private fun AiTableGrid(rows: List<AiTableRow>, hindi: Boolean) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    Column(Modifier.horizontalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(tr("What it does", "क्या करता है"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(190.dp))
+            Text(tr("📱 On the phone (offline)", "📱 फ़ोन पर (ऑफ़लाइन)"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge, color = AI_PHONE_GREEN, modifier = Modifier.width(210.dp))
+            Text(tr("☁ Meta cloud (online)", "☁ Meta क्लाउड (ऑनलाइन)"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge, color = AI_CLOUD_BLUE, modifier = Modifier.width(210.dp))
+            Text(tr("Safety check", "सुरक्षा जाँच"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(220.dp))
+        }
+        HorizontalDivider()
+        rows.forEach { r -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.width(190.dp)) {
+                Text("${r.icon} ${r.feature}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                Text(r.does, style = MaterialTheme.typography.bodySmall)
+            }
+            AiEngineBox(r.phone, r.phoneOk, r.active == 0, false, hindi, Modifier.width(210.dp))
+            AiEngineBox(r.cloud, r.cloudOk, r.active == 1, true, hindi, Modifier.width(210.dp))
+            Text("✓ ${r.safety}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(220.dp))
+        } }
+    }
+}
+
+/** Test tools moved off the AI page: benchmarks, evidence/speed switches (debug builds only). */
+@Composable
+private fun ArogyaAiAdvancedDialog(hindi: Boolean, ai: ArogyaVisitAi, onDismiss: () -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val context = LocalContext.current
+    val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    val benchScope = rememberCoroutineScope()
+    var benchLog by remember { mutableStateOf("") }
+    var benchBusy by remember { mutableStateOf(false) }
+    var spBusy by remember { mutableStateOf(false) }
+    var spLog by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("Advanced (testing)", "Advanced (परीक्षण)")) }, text = {
+        Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!debuggable) { Text(tr("Test tools need a debug build.", "परीक्षण के लिए debug build चाहिए।")); return@Column }
+            OutlinedButton(onClick = {
+                if (benchBusy) { ai.cancel(); return@OutlinedButton }
+                benchBusy = true; benchLog = ""
+                benchScope.launch {
+                    try {
+                        ArogyaBenchmark.runAll(ai) { line -> benchLog = (benchLog + "\n" + line).takeLast(3000) }
+                        benchLog += "\nDone — pull logs with _claude_work\\run\\logs.bat"
+                    } catch (e: CancellationException) { benchLog += "\nCancelled" }
+                    finally { benchBusy = false }
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text(if (benchBusy) tr("Stop benchmark", "बेंचमार्क रोकें") else tr("Run M1 benchmark (19 questions, test aid)", "M1 बेंचमार्क चलाएँ (19 सवाल)")) }
+            if (benchLog.isNotBlank()) Text(benchLog.trim(), style = MaterialTheme.typography.bodySmall)
+            var prof by remember { mutableStateOf(ArogyaFlags.r1Profile) }
+            var fuCtx by remember { mutableStateOf(ArogyaFlags.sopFollowUpContext) }
+            var salvFirst by remember { mutableStateOf(ArogyaFlags.salvageBeforeRecovery) }
+            var b2048 by remember { mutableStateOf(ArogyaFlags.llamaBatch2048) }
+            var faOn by remember { mutableStateOf(ArogyaFlags.llamaFlashAttn) }
+            Text(tr("Evidence size (next question)", "साक्ष्य आकार (अगला सवाल)"), style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(0 to "4×900", 1 to "6×1100", 2 to "5×900").forEach { (p, l) ->
+                    FilterChip(selected = prof == p, onClick = { prof = p; ArogyaFlags.r1Profile = p }, label = { Text(l) })
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = fuCtx, onClick = { fuCtx = !fuCtx; ArogyaFlags.sopFollowUpContext = fuCtx }, label = { Text(tr("Follow-up ctx", "फ़ॉलो-अप")) })
+                FilterChip(selected = salvFirst, onClick = { salvFirst = !salvFirst; ArogyaFlags.salvageBeforeRecovery = salvFirst }, label = { Text(tr("Salvage 1st", "सैल्वेज पहले")) })
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = b2048, onClick = { b2048 = !b2048; ArogyaFlags.llamaBatch2048 = b2048 }, label = { Text(tr("Batch 2048*", "बैच 2048*")) })
+                FilterChip(selected = faOn, onClick = { faOn = !faOn; ArogyaFlags.llamaFlashAttn = faOn }, label = { Text(tr("FlashAttn*", "फ़्लैश*")) })
+            }
+            Text(tr("* needs app restart", "* ऐप दोबारा खोलें"), style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = {
+                if (spBusy) { ai.cancel(); return@OutlinedButton }
+                spBusy = true; spLog = ""
+                benchScope.launch {
+                    try {
+                        ArogyaBenchmark.runSpeedCheck(ai) { line -> spLog = (spLog + "\n" + line).takeLast(2000) }
+                        spLog += "\nDone — pull logs with _claude_work\\run\\logs.bat"
+                    } catch (e: CancellationException) { spLog += "\nCancelled" }
+                    finally { spBusy = false }
+                }
+            }, modifier = Modifier.fillMaxWidth(), enabled = !benchBusy) { Text(if (spBusy) tr("Stop speed check", "स्पीड जाँच रोकें") else tr("Run 3-question speed check (this mode)", "3-सवाल स्पीड जाँच (यही मोड)")) }
+            if (spLog.isNotBlank()) Text(spLog.trim(), style = MaterialTheme.typography.bodySmall)
+        }
+    }, confirmButton = { TextButton(onClick = onDismiss) { Text(tr("Close", "बंद करें")) } })
+}
+
 
 /** Home: what is due today, in one card. */
 @Composable
@@ -735,7 +862,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
         }, confirmButton = { Button(onClick = { if (save { r -> r.copy(diary = r.diary + DiaryEntry(date = date, kind = kind, note = note)) }) diaryOpen = false }) { Text(tr("Save", "सहेजें")) } },
             dismissButton = { TextButton(onClick = { diaryOpen = false }) { Text(tr("Cancel", "रद्द करें")) } })
     }
-    if (samOpen) SamCountDialog(hindi, ArogyaRegistryLogic.stockBalance(data.stock), onRecord = { item, counted, note ->
+    if (samOpen) SamCountDialog(hindi, ArogyaRegistryLogic.stockBalance(data.stock), vision = ai?.vision(), onRecord = { item, counted, note ->
         val diff = counted - (ArogyaRegistryLogic.stockBalance(data.stock)[item] ?: 0)
         if (diff == 0 || save { r -> r.copy(stock = r.stock + StockTxn(item = item, qty = diff, note = "$note: counted $counted", kind = "adjust", reason = note)) }) samOpen = false
     }, onDismiss = { samOpen = false })

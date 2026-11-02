@@ -91,9 +91,10 @@ object ArogyaVisitMedia {
         }
     }
     /** User-selected destination. No report is uploaded, sent or silently added to public Downloads. */
-    suspend fun exportPdf(context: Context, uri: Uri, report: String) = withContext(Dispatchers.IO) {
+    suspend fun exportPdf(context: Context, uri: Uri, report: String, mono: Boolean = false) = withContext(Dispatchers.IO) {
         require(report.isNotBlank()) { "Cannot export an empty visit report" }
-        val paint=TextPaint().apply { color=Color.BLACK; textSize=12f; isAntiAlias=true }
+        val paint=TextPaint().apply { color=Color.BLACK; textSize=12f; isAntiAlias=true
+            if (mono) typeface=android.graphics.Typeface.MONOSPACE }
         val layout=StaticLayout.Builder.obtain(report,0,report.length,paint,511).setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(3f,1f).build()
         val pdf=PdfDocument()
         try {

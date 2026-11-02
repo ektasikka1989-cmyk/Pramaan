@@ -22,6 +22,34 @@ object ArogyaSamCount {
     fun count(confidences: List<Float?>, minConf: Float = 0.5f) = confidences.count { (it ?: 1f) >= minConf }
 }
 
+/** One counted item on the photo, in normalized 0..1 photo coordinates. */
+data class CountDot(val x: Float, val y: Float)
+
+/** Pure dots-and-confirm logic (host-tested): boxes become numbered dots; taps add or remove them. */
+object ArogyaCountDots {
+    const val MAX = 200
+
+    /** Dot centers from kept boxes (already in reading order when they come from [MetaVisionMath.nms]). */
+    fun fromBoxes(boxes: List<MetaVisionMath.Box>): List<CountDot> =
+        boxes.map { CountDot((it.x + it.w / 2).coerceIn(0f, 1f), (it.y + it.h / 2).coerceIn(0f, 1f)) }
+
+    /**
+     * Tap the photo: a tap within [radius] of a dot removes that dot (the nearest
+     * one); anywhere else adds a dot. Coordinates are clamped into the photo.
+     */
+    fun toggle(dots: List<CountDot>, x: Float, y: Float, radius: Float = 0.035f): List<CountDot> {
+        val cx = x.coerceIn(0f, 1f); val cy = y.coerceIn(0f, 1f)
+        val near = dots.indices.minByOrNull { val d = dots[it]; (d.x - cx) * (d.x - cx) + (d.y - cy) * (d.y - cy) }
+        if (near != null) {
+            val d = dots[near]
+            val dist = kotlin.math.sqrt((d.x - cx) * (d.x - cx) + (d.y - cy) * (d.y - cy))
+            if (dist <= radius) return dots.filterIndexed { i, _ -> i != near }
+        }
+        if (dots.size >= MAX) return dots
+        return dots + CountDot(cx, cy)
+    }
+}
+
 /** What the camera should look for, per drug-kit item (the ASHA can change it). */
 object ArogyaKitPhrases {
     val byItem = mapOf("ORS" to "ORS sachet", "Zinc tablets" to "tablet strip", "IFA tablets (adult)" to "tablet strip", "IFA syrup (child)" to "syrup bottle",

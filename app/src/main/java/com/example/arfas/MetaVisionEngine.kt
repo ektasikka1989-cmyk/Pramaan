@@ -42,6 +42,8 @@ class MetaVisionEngine(
         private const val CLIP_SIZE = 224
         private const val DINO_SIZE = 224
         private const val SAM_SIZE = 1024
+        /** DINOv2 cosine at or above which a proposal counts as the taught item (same as localize). */
+        private const val COUNT_SIM = 0.55f
         private const val CLIP_BPE_ASSET = "clip/bpe_simple_vocab_16e6.txt.gz"
         private const val LABEL_CACHE_VERSION = 1
     }
@@ -192,6 +194,52 @@ class MetaVisionEngine(
 
     fun rememberedLabels(): List<String> = loadMemory().map { it.label }.distinct()
 
+    /** "remember this box as ORS packet": stores the DINOv2 embedding of the cropped area under the label. */
+    suspend fun rememberBox(label: String, bitmap: Bitmap, box: MetaVisionMath.Box): Boolean = mutex.withLock {
+        withContext(Dispatchers.Default) {
+            if (!has(MetaModelStore.Component.DINOV2)) return@withContext false
+            val emb = runCatching { embedDino(crop(bitmap, box)) }.getOrNull() ?: return@withContext false
+            val list = loadMemory()
+            list += MetaVisionMath.MemoryItem(label.trim(), emb)
+            saveMemory(list)
+            releaseIfLowMemory()
+            true
+        }
+    }
+
+    /**
+     * Offline item counter: MobileSAM tightens each grid proposal (the encoder runs
+     * once per photo), DINOv2 keeps the proposals that look like the taught [label],
+     * and duplicates are removed. Returns the kept boxes in reading order; empty
+     * when nothing is taught for the label or DINOv2 is missing.
+     */
+    suspend fun countTaught(label: String, bitmap: Bitmap, onProgress: (Int, Int) -> Unit = { _, _ -> }): CountResult = mutex.withLock {
+        withContext(Dispatchers.Default) {
+            val started = System.currentTimeMillis()
+            try {
+                val taught = loadMemory().filter { it.label.equals(label.trim(), true) || label.contains(it.label, true) }
+                if (taught.isEmpty() || !has(MetaModelStore.Component.DINOV2)) return@withContext CountResult(emptyList(), false, 0)
+                val grid = fineGrid()
+                val sam = if (has(MetaModelStore.Component.SAM_ENCODER) && has(MetaModelStore.Component.SAM_DECODER))
+                    runCatching { encodeSam(bitmap) }.getOrNull() else null
+                val scored = ArrayList<Pair<MetaVisionMath.Box, Float>>()
+                grid.forEachIndexed { i, proposal ->
+                    onProgress(i + 1, grid.size)
+                    val tight = sam?.let { runCatching { decodeSamBox(it, proposal) }.getOrNull() } ?: proposal
+                    val emb = runCatching { embedDino(crop(bitmap, tight)) }.getOrNull() ?: return@forEachIndexed
+                    val sim = taught.maxOf { MetaVisionMath.cosine(emb, it.embedding) }
+                    if (sim >= COUNT_SIM) scored += tight to sim
+                }
+                val keep = MetaVisionMath.nms(scored.map { it.first }, scored.map { it.second })
+                val boxes = keep.map { CountedBox(scored[it].first, scored[it].second) }
+                Log.i(TAG, "META_COUNT label='$label' proposals=${grid.size} kept=${boxes.size} sam=${sam != null} ms=${System.currentTimeMillis() - started}")
+                CountResult(boxes, sam != null, grid.size)
+            } finally {
+                releaseIfLowMemory()
+            }
+        }
+    }
+
     // ── models ────────────────────────────────────────────────────────────────────
 
     private fun session(c: MetaModelStore.Component): OrtSession? = synchronized(sessions) {
@@ -278,6 +326,18 @@ class MetaVisionEngine(
     private fun gridBoxes(): List<MetaVisionMath.Box> {
         val out = ArrayList<MetaVisionMath.Box>()
         for (r in 0 until 3) for (c in 0 until 3) out += MetaVisionMath.Box(c * 0.3f, r * 0.3f, 0.4f, 0.4f)
+        out += MetaVisionMath.Box(0.2f, 0.2f, 0.6f, 0.6f)
+        return out
+    }
+
+    /** Finer overlapping grid for counting small laid-out items (5 x 5 + center). */
+    private fun fineGrid(): List<MetaVisionMath.Box> {
+        val out = ArrayList<MetaVisionMath.Box>()
+        for (r in 0 until 5) for (c in 0 until 5) {
+            val x = (c * 0.2f - 0.04f).coerceIn(0f, 0.72f)
+            val y = (r * 0.2f - 0.04f).coerceIn(0f, 0.72f)
+            out += MetaVisionMath.Box(x, y, 0.28f, 0.28f)
+        }
         out += MetaVisionMath.Box(0.2f, 0.2f, 0.6f, 0.6f)
         return out
     }
@@ -423,7 +483,13 @@ class MetaVisionEngine(
      *    encoder outputs (by name) + "box" [1,4] in 1024 space; output "masks" low-res logits.
      *  - official segment-anything decoder export (point_coords/point_labels/mask_input/...).
      */
-    private fun refineWithSam(bitmap: Bitmap, box: MetaVisionMath.Box): MetaVisionMath.Box? {
+    /** SAM image encoding, run once per photo; the cheap decoder then answers each box prompt. */
+    private data class SamEncoding(
+        val embeddings: Map<String, Pair<FloatArray, LongArray>>,
+        val w: Int, val h: Int, val pramaan: Boolean, val stretch: Boolean
+    )
+
+    private fun encodeSam(bitmap: Bitmap): SamEncoding? {
         val enc = session(MetaModelStore.Component.SAM_ENCODER) ?: return null
         val dec = session(MetaModelStore.Component.SAM_DECODER) ?: return null
         val pramaan = "box" in dec.inputNames
@@ -441,21 +507,26 @@ class MetaVisionEngine(
                 enc.outputNames.forEachIndexed { i, name -> encoded[name] = outputFloats(r, i) }
             }
         }
+        return SamEncoding(encoded, w, h, pramaan, stretch)
+    }
+
+    private fun decodeSamBox(enc: SamEncoding, box: MetaVisionMath.Box): MetaVisionMath.Box? {
+        val dec = session(MetaModelStore.Component.SAM_DECODER) ?: return null
         val inputs = HashMap<String, OnnxTensor>()
         try {
-            encoded.forEach { (name, v) -> if (name in dec.inputNames) inputs[name] = floatTensor(v.first, v.second) }
-            if (pramaan) {
+            enc.embeddings.forEach { (name, v) -> if (name in dec.inputNames) inputs[name] = floatTensor(v.first, v.second) }
+            if (enc.pramaan) {
                 // Box corners in the encoder's 1024 input space.
-                val sx = w.toFloat(); val sy = h.toFloat()
+                val sx = enc.w.toFloat(); val sy = enc.h.toFloat()
                 inputs["box"] = floatTensor(floatArrayOf(box.x * sx, box.y * sy, (box.x + box.w) * sx, (box.y + box.h) * sy), longArrayOf(1, 4))
             } else {
-                val (coords, labels) = MetaVisionMath.samBoxPrompt(box, w, h, SAM_SIZE)
-                if ("image_embeddings" !in inputs) encoded.values.firstOrNull()?.let { inputs["image_embeddings"] = floatTensor(it.first, it.second) }
+                val (coords, labels) = MetaVisionMath.samBoxPrompt(box, enc.w, enc.h, SAM_SIZE)
+                if ("image_embeddings" !in inputs) enc.embeddings.values.firstOrNull()?.let { inputs["image_embeddings"] = floatTensor(it.first, it.second) }
                 inputs["point_coords"] = floatTensor(coords, longArrayOf(1, 2, 2))
                 inputs["point_labels"] = floatTensor(labels, longArrayOf(1, 2))
                 inputs["mask_input"] = floatTensor(FloatArray(256 * 256), longArrayOf(1, 1, 256, 256))
                 inputs["has_mask_input"] = floatTensor(floatArrayOf(0f), longArrayOf(1))
-                inputs["orig_im_size"] = floatTensor(floatArrayOf(h.toFloat(), w.toFloat()), longArrayOf(2))
+                inputs["orig_im_size"] = floatTensor(floatArrayOf(enc.h.toFloat(), enc.w.toFloat()), longArrayOf(2))
             }
             val wanted = inputs.filterKeys { it in dec.inputNames }
             if (wanted.size != dec.inputNames.size) {
@@ -469,7 +540,7 @@ class MetaVisionEngine(
                 val mw = shape[shape.size - 1].toInt()
                 val plane = FloatArray(mw * mh).also { System.arraycopy(mask, 0, it, 0, it.size) }
                 // Pramaan low-res masks cover the 1024 square; with "pad" only the top-left w x h is image.
-                val (vw, vh) = if (pramaan && !stretch) (mw * w / SAM_SIZE).coerceAtLeast(1) to (mh * h / SAM_SIZE).coerceAtLeast(1) else mw to mh
+                val (vw, vh) = if (enc.pramaan && !enc.stretch) (mw * enc.w / SAM_SIZE).coerceAtLeast(1) to (mh * enc.h / SAM_SIZE).coerceAtLeast(1) else mw to mh
                 val valid = if (vw == mw && vh == mh) plane else FloatArray(vw * vh) { i -> plane[(i / vw) * mw + (i % vw)] }
                 val tight = MetaVisionMath.maskBox(valid, vw, vh) ?: return null
                 // A mask that fills little of its own box, or is far from the prompt, is not trusted.
@@ -480,6 +551,9 @@ class MetaVisionEngine(
             inputs.values.forEach { it.close() }
         }
     }
+
+    private fun refineWithSam(bitmap: Bitmap, box: MetaVisionMath.Box): MetaVisionMath.Box? =
+        encodeSam(bitmap)?.let { decodeSamBox(it, box) }
 
     // ── visual memory ─────────────────────────────────────────────────────────────
 
@@ -513,3 +587,9 @@ class MetaVisionEngine(
         tmp.renameTo(memoryFile)
     }
 }
+
+/** One offline-counted item: tight box + DINOv2 similarity to the taught reference. */
+data class CountedBox(val box: MetaVisionMath.Box, val score: Float)
+
+/** Offline count result: kept boxes in reading order, whether SAM ran, proposal count. */
+data class CountResult(val boxes: List<CountedBox>, val usedSam: Boolean, val proposals: Int)
