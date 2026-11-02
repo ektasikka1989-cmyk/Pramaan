@@ -1,4 +1,22 @@
-# Linked round — audit notes (5 lines per item)
+# Linked round — audit, results, report
+
+## Results (2026-11-02)
+- Commits (master): audit+exit-codes `e272c1f`, item 1 → `Linked round 1 …` … item 8 `Linked round 8: monthly report on ASHA Incentives 2025 rates`.
+- Host gate: 36/36 suites green, 779 checks, 0 failures, exit 0. New suites: LinkedSave 20, VoiceStock 25, StockMap 19, ChangeSummary 15, Origin 16, Refill 11, Monthly 17.
+- Contract updates in old suites (spec-mandated): StockRegisterTest 15→16 kit items (calcium added), FormSpecsTest FP missing 4→6 (ecp+ptk fields).
+- Build/install: `BUILD SUCCESSFUL`, `GRADLE_EXIT=0`, `INSTALL=OK`, `KB_PUSH=OK`, `KB_PUSH2=OK` (build_install.bat).
+- Phone foreground tests: BLOCKED — device disconnected from adb after install (`List of devices attached` empty, incl. after adb restart + 45 s wait). Nothing on-phone verified this round.
+- 2025 rates verified against the guide DB (`incentives.pdf` chunks, NHSRC `ASHA-INCENTIVES 25.pdf`), not from memory.
+
+## Not verified (needs the phone)
+- ANC visit with IFA 30 + calcium 60 by Hindi voice note → form/MCP/stock/diary/summary.
+- Give ORS 4 to a child from the Drug kit page → record/stock/diary.
+- Voice receipt "received 100 ORS" → stock + history; Hindi number words over real STT.
+- Low-stock Home card → refill WhatsApp/SMS text.
+- Monthly report PDF export look; Today's plan Start-visit buttons; backup Back-up-now.
+- Entry-history taps (stock/diary/MCP/form-cell origins) on device.
+
+## Audit notes (5 lines per item)
 
 ## Item 1 — Give to person = linked save
 - `StockGiveDialog` (`ArogyaStockUi.kt:175`) builds `StockTxn(kind="give")`; both callers only append it (`ArogyaRegistryUi.kt:767` person page, `:930` drug kit page) — no MCP/diary touch.
