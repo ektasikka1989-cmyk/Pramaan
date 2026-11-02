@@ -50,7 +50,8 @@ fun ArogyaPersonPicker(hindi: Boolean, people: List<Beneficiary>, due: List<DueI
 
 /** The official form as it looks on paper: rows × visit columns, earlier visits filled, today's column highlighted. */
 @Composable
-fun OfficialFormGrid(t: FormTable, highlight: Int?, sources: Map<String, String> = emptyMap(), hindi: Boolean = false) {
+fun OfficialFormGrid(t: FormTable, highlight: Int?, sources: Map<String, String> = emptyMap(), hindi: Boolean = false,
+                     onCell: ((rowLabel: String, col: Int) -> Unit)? = null) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val ink = Color(0xFF1A2A4A); val paper = Color(0xFFFFFBF0); val line = Color(0xFF8C8C8C); val today = Color(0xFFFFF0B3)
     Column(Modifier.background(paper).border(1.dp, line).padding(6.dp)) {
@@ -59,13 +60,15 @@ fun OfficialFormGrid(t: FormTable, highlight: Int?, sources: Map<String, String>
         Spacer(Modifier.height(4.dp))
         Column(Modifier.horizontalScroll(rememberScrollState())) {
             val w = t.headers.mapIndexed { i, _ -> if (i == 0) 190.dp else 78.dp }
-            @Composable fun cell(text: String, i: Int, bold: Boolean, col: Int?) {
+            @Composable fun cell(text: String, i: Int, bold: Boolean, col: Int?, rowLabel: String?) {
                 val bg = if (col != null && col == highlight) today else paper
-                Text(text, Modifier.width(w.getOrElse(i) { 78.dp }).border(0.5.dp, line).background(bg).padding(4.dp), color = ink, maxLines = 4,
+                var mod = Modifier.width(w.getOrElse(i) { 78.dp }).border(0.5.dp, line).background(bg).padding(4.dp)
+                if (onCell != null && col != null && rowLabel != null && text.isNotBlank()) mod = mod.clickable { onCell(rowLabel, col) }
+                Text(text, mod, color = ink, maxLines = 4,
                     fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal, style = MaterialTheme.typography.bodyMedium)
             }
-            Row(Modifier.height(IntrinsicSize.Min)) { t.headers.forEachIndexed { i, h -> cell(h, i, true, if (i == 0) null else i - 1) } }
-            t.rows.forEach { r -> Row(Modifier.height(IntrinsicSize.Min)) { r.forEachIndexed { i, c -> cell(c, i, i == 0 && (c.startsWith("Date") || c.startsWith("Next")), if (i == 0) null else i - 1) } } }
+            Row(Modifier.height(IntrinsicSize.Min)) { t.headers.forEachIndexed { i, h -> cell(h, i, true, if (i == 0) null else i - 1, null) } }
+            t.rows.forEach { r -> Row(Modifier.height(IntrinsicSize.Min)) { r.forEachIndexed { i, c -> cell(c, i, i == 0 && (c.startsWith("Date") || c.startsWith("Next")), if (i == 0) null else i - 1, if (i == 0) null else r.getOrElse(0) { "" }) } } }
         }
         if (t.note.isNotBlank()) Text(t.note, color = ink, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
         if (highlight != null) Text(tr("Yellow column = today's visit", "पीला कॉलम = आज की विज़िट"), color = ink, style = MaterialTheme.typography.labelSmall)

@@ -40,6 +40,17 @@ fun WhatChangedDialog(summary: String, hindi: Boolean, onDismiss: () -> Unit) {
         text = { Text(summary) })
 }
 
+/** Entry history: where one record came from, with an optional extra action (e.g. open the person). */
+@Composable
+fun OriginDialog(info: OriginInfo, hindi: Boolean, onDismiss: () -> Unit, extraButton: @Composable (() -> Unit)? = null) {
+    AlertDialog(onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text(if (hindi) "ठीक है" else "OK") } },
+        dismissButton = extraButton,
+        title = { Text(info.title) },
+        text = { Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
+            info.lines.forEach { Text(it) } } })
+}
+
 /** The shared card: medium shape, 12 dp padding, bold title, 6 dp between rows. */
 @Composable
 fun ArogyaCard(

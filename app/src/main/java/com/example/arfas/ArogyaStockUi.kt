@@ -81,7 +81,7 @@ fun StockAddItemDialog(hindi: Boolean, initialName: String = "", onDismiss: () -
 /** Stock received: quantity, date, batch, expiry, source. */
 @Composable
 fun StockReceiveDialog(hindi: Boolean, items: List<StockItem>, initialItem: String = "", initialQty: Int = 0,
-    initialBatch: String = "", initialExpiry: String = "", onDismiss: () -> Unit, onSave: (StockTxn) -> Unit) {
+    initialBatch: String = "", initialExpiry: String = "", notePrefix: String = "", onDismiss: () -> Unit, onSave: (StockTxn) -> Unit) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     var item by remember { mutableStateOf(initialItem.ifBlank { items.firstOrNull()?.name.orEmpty() }) }
     var qty by remember { mutableStateOf(if (initialQty > 0) initialQty.toString() else "") }
@@ -104,7 +104,7 @@ fun StockReceiveDialog(hindi: Boolean, items: List<StockItem>, initialItem: Stri
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text(tr("Cancel", "रद्द करें")) }
                     Button(onClick = {
-                        onSave(StockTxn(date = date, item = item, qty = qty.toInt(), note = "Received", kind = "receive",
+                        onSave(StockTxn(date = date, item = item, qty = qty.toInt(), note = notePrefix + "Received", kind = "receive",
                             batch = batch.trim(), expiry = expiry.trim(), source = source.trim(),
                             unit = items.firstOrNull { it.name == item }?.unit.orEmpty()))
                     }, enabled = ok && (expiry.isBlank() || runCatching { LocalDate.parse(expiry) }.isSuccess), modifier = Modifier.weight(1f)) { Text(tr("Save", "सहेजें")) }
@@ -294,6 +294,7 @@ fun VoiceStockDialog(hindi: Boolean, ai: ArogyaVisitAi?, items: List<StockItem>,
 @Composable
 fun StockHistoryDialog(hindi: Boolean, item: String, txns: List<StockTxn>, names: Map<String, String>, onDismiss: () -> Unit) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
+    var origin by remember { mutableStateOf<StockTxn?>(null) }
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.medium) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -301,7 +302,7 @@ fun StockHistoryDialog(hindi: Boolean, item: String, txns: List<StockTxn>, names
                 if (txns.isEmpty()) Text(tr("No entries yet.", "अभी कोई प्रविष्टि नहीं।"), style = MaterialTheme.typography.bodySmall)
                 LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(txns, key = { it.id }) { t ->
-                        Card(Modifier.fillMaxWidth()) {
+                        Card(Modifier.fillMaxWidth().clickable { origin = t }) {
                             Column(Modifier.padding(10.dp)) {
                                 Text("${t.date} · ${stockKindLabel(ArogyaRegistryLogic.txnKind(t), hindi)} · " +
                                     (if (t.qty >= 0) "+" else "") + t.qty, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
@@ -321,6 +322,7 @@ fun StockHistoryDialog(hindi: Boolean, item: String, txns: List<StockTxn>, names
             }
         }
     }
+    origin?.let { t -> OriginDialog(ArogyaOrigin.stock(t, names[t.beneficiaryId].orEmpty(), hindi), hindi, onDismiss = { origin = null }) }
 }
 
 /**

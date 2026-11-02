@@ -139,7 +139,7 @@ object ArogyaVoiceStock {
         WRITEOFF -> StockTxn(date = date, item = line.item, qty = -line.qty, note = "Voice: Written off", kind = "writeoff", reason = line.evidence)
         CORRECTION -> StockTxn(date = date, item = line.item, qty = line.qty - balance,
             note = "Voice: Correction: counted ${line.qty} (was $balance)", kind = "adjust", reason = line.evidence)
-        else -> StockTxn(date = date, item = line.item, qty = line.qty, note = "Voice: Received", kind = "receive")
+        else -> StockTxn(date = date, item = line.item, qty = line.qty, note = "Voice: Received", kind = "receive", reason = line.evidence)
     }
 
     fun opLabel(op: String, hindi: Boolean): String = when (op) {

@@ -546,12 +546,16 @@ private fun PatientForm(hindi: Boolean, initial: Beneficiary, onDismiss: () -> U
 
 /** One filled visit form: mini preview (tap = full-screen viewer) + PDF share. */
 @Composable
-private fun FilledFormRow(hindi: Boolean, t: FormTable, onOpen: (FormTable) -> Unit) {
+private fun FilledFormRow(hindi: Boolean, t: FormTable, origins: ((rowLabel: String, col: Int) -> OriginInfo?)? = null, onOpen: (FormTable) -> Unit) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var formBusy by remember { mutableStateOf(false) }
-    Box(Modifier.clickable { onOpen(t) }) { OfficialFormGrid(t, null, hindi = hindi) }
+    var cellOrigin by remember { mutableStateOf<OriginInfo?>(null) }
+    Box(Modifier.clickable { onOpen(t) }) {
+        OfficialFormGrid(t, null, hindi = hindi, onCell = origins?.let { lookup -> { label: String, col: Int -> cellOrigin = lookup(label, col) } })
+    }
+    cellOrigin?.let { OriginDialog(it, hindi, { cellOrigin = null }) }
     OutlinedButton(onClick = {
         formBusy = true
         scope.launch {
@@ -639,6 +643,19 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
                             lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = if (it.contains("missed") || it.endsWith("YES")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) }
                         } }
                     }
+                    val mcpOrigins = remember(b, data) { ArogyaOrigin.mcp(b, data.forms, data.stock, hindi) }
+                    var mcpHistoryOpen by remember { mutableStateOf(false) }
+                    var mcpOrigin by remember { mutableStateOf<OriginInfo?>(null) }
+                    OutlinedButton(onClick = { mcpHistoryOpen = !mcpHistoryOpen }, modifier = Modifier.fillMaxWidth()) {
+                        Text((if (mcpHistoryOpen) "▾ " else "▸ ") + tr("Where card values came from", "कार्ड के मान कहाँ से आए"))
+                    }
+                    if (mcpHistoryOpen) {
+                        if (mcpOrigins.isEmpty()) Text(tr("No weights, vaccines, ANC or IFA recorded yet.", "अभी वज़न, टीके, ANC या IFA दर्ज नहीं।"), style = MaterialTheme.typography.bodySmall)
+                        mcpOrigins.forEach { o ->
+                            Text(o.label, Modifier.fillMaxWidth().clickable { mcpOrigin = o.info }.padding(6.dp), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    mcpOrigin?.let { OriginDialog(it, hindi, { mcpOrigin = null }) }
                     var mcpBusy by remember { mutableStateOf(false) }
                     var mcpDoc by remember { mutableStateOf<ArogyaDocRender.FilledDoc?>(null) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -681,8 +698,16 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
                     }
                     val filled = ArogyaOfficialForms.ALL.filter { sp -> data.forms.any { it.beneficiaryId == b.id && it.formId == sp.id } }
                     filled.forEach { sp ->
-                        Text(tr("Visit form — filled over visits (tap to open full-screen)", "विज़िट फ़ॉर्म — विज़िटों में भरा (पूरी स्क्रीन में खोलने के लिए दबाएँ)"), fontWeight = FontWeight.Bold)
-                        FilledFormRow(hindi, ArogyaOfficialForms.table(sp, b, data.forms), { viewForm = it })
+                        Text(tr("Visit form — filled over visits (tap a value for its history, elsewhere to open full-screen)", "विज़िट फ़ॉर्म — विज़िटों में भरा (इतिहास के लिए मान दबाएँ, पूरी स्क्रीन के लिए कहीं और)"), fontWeight = FontWeight.Bold)
+                        FilledFormRow(hindi, ArogyaOfficialForms.table(sp, b, data.forms), origins = { label, col ->
+                            val entry = data.forms.filter { it.beneficiaryId == b.id && it.formId == sp.id && it.column == col }.maxByOrNull { it.date }
+                            if (entry == null) null else {
+                                val base = label.substringBefore(" (")
+                                val field = sp.fields.firstOrNull { it.label == base || it.label == label || it.hi == base }
+                                if (field != null) ArogyaOrigin.formCell(field.label, entry.values[field.id].orEmpty(), entry.sources[field.id].orEmpty(), entry.date, b.demo, hindi)
+                                else ArogyaOrigin.formCell(label, "", "visit", entry.date, b.demo, hindi)
+                            }
+                        }) { viewForm = it }
                     }
                     if (filled.none { it.id == "annex9" } && b.category == BenCategory.CHILD && b.dob.isNotBlank()) OutlinedButton(onClick = {
                         scope.launch {
@@ -868,10 +893,24 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 Text(tr("For entry into the RCH portal / U-WIN by your ANM or data operator.", "ANM या ऑपरेटर RCH पोर्टल / U-WIN में भरें।"), style = MaterialTheme.typography.bodySmall)
             }
             "diary" -> {
-                Text(tr("Activity diary — visits are added automatically from completed visits", "कार्य डायरी — पूरी विज़िट अपने आप जुड़ती हैं"), fontWeight = FontWeight.Bold)
+                var diaryOriginKey by remember { mutableStateOf("") }
+                Text(tr("Activity diary — visits are added automatically from completed visits. Tap a row for where it came from.", "कार्य डायरी — पूरी विज़िट अपने आप जुड़ती हैं। स्रोत जानने के लिए पंक्ति दबाएँ।"), fontWeight = FontWeight.Bold)
                 Button(onClick = { diaryOpen = true }) { Text(tr("+ Add activity (VHND, meeting, escort…)", "+ काम जोड़ें (VHND, बैठक…)")) }
                 val dt = remember(data, visits) { ArogyaRegisterTables.diaryTable(visits, data.diary, names + visits.associate { it.personId to it.name }, hindi) }
-                ArogyaRegisterTable(hindi, tr("Activity diary", "कार्य डायरी"), dt, store, monthCol = 0, onOpenPerson = onOpen, sample = data.beneficiaries.any { it.demo })
+                ArogyaRegisterTable(hindi, tr("Activity diary", "कार्य डायरी"), dt, store, monthCol = 0, onRowKey = { diaryOriginKey = it }, sample = data.beneficiaries.any { it.demo })
+                if (diaryOriginKey.isNotBlank()) {
+                    val key = diaryOriginKey
+                    val visit = if (key.startsWith("v")) visits.firstOrNull { "v" + it.id == key } else null
+                    val entry = if (visit == null) data.diary.firstOrNull { it.id == key } else null
+                    val ben = visit?.personId ?: entry?.beneficiaryId.orEmpty()
+                    if (visit != null || entry != null) OriginDialog(
+                        if (visit != null) ArogyaOrigin.visitRecord(visit, hindi) else ArogyaOrigin.diary(entry!!, data.stock, hindi),
+                        hindi, { diaryOriginKey = "" },
+                        extraButton = if (ben.isNotBlank() && data.beneficiaries.any { it.id == ben }) {
+                            { TextButton(onClick = { diaryOriginKey = ""; onOpen(ben) }) { Text(tr("Open person", "व्यक्ति खोलें")) } }
+                        } else null)
+                    else diaryOriginKey = ""
+                }
             }
             "drugs" -> {
                 var stockMonth by remember { mutableStateOf(YearMonth.from(today)) }
@@ -931,6 +970,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 if (receiveOpen) { val pre = scanReceive
                     StockReceiveDialog(hindi, cat, initialItem = pre?.second.orEmpty(), initialQty = pre?.first?.qty ?: 0,
                         initialBatch = pre?.first?.batch.orEmpty(), initialExpiry = pre?.first?.expiry?.let { ArogyaMedScan.normExpiry(it) }.orEmpty(),
+                        notePrefix = if (pre != null) "Scan: " else "",
                         onDismiss = { receiveOpen = false; scanReceive = null }) { txn ->
                         var s = ""
                         if (save { r -> r.copy(stock = r.stock + txn).also { s = ArogyaChangeSummary.diff(r, it, "", hindi) } }) { receiveOpen = false; scanReceive = null; changedSummary = s } } }

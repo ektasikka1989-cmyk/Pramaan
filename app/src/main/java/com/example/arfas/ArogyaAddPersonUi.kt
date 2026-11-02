@@ -402,7 +402,7 @@ private fun AddPersonReview(hindi: Boolean, aiReady: Boolean, people: List<Revie
                     bens = if (!target.isNullOrBlank()) bens.map { if (it.id == target) ArogyaPersonDup.merge(it, b) else it }
                     else bens + b
                     diary = diary + DiaryEntry(beneficiaryId = target?.ifBlank { b.id } ?: b.id,
-                        note = tr("Registered: ", "पंजीकृत: ") + b.name + "\n" + summary)
+                        note = tr("Registered: ", "पंजीकृत: ") + b.name + " · " + rp.source + "\n" + summary)
                 }
                 r.copy(beneficiaries = bens, diary = diary)
             }
