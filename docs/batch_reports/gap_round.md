@@ -19,3 +19,7 @@
 - Weights live in McpCard.weights + ancDetails (ArogyaRegistry.kt:31-35); child page lists weights (ArogyaRegistryUi.kt:831-836); pregnant page lists ANC rows (:810-817); MCP PDF has weight-record + ANC tables (ArogyaDocRender.mcpDoc, mcp.html); weightNote gives the fell/gained line (ArogyaFormSpecs.kt:318).
 - Guide DB has zone names but no numeric cutoffs, so WHO weight-for-age z-score tables (boys+girls, 0-60 mo, median/-2SD/-3SD) are parsed from the official WHO simplified field-table PDFs into assets/growth/who_wfa.json (spot-checked: boys 12 mo = 9.6/7.7/6.9).
 - New pure ArogyaGrowth (parse/zone/geometry/SVG/ANC-trend) + GrowthChart Canvas composable with tap-a-dot; PDF gets inline SVG via {{{growthSvg}}}; ANC trend line on her page + PDF; new GrowthTest.
+
+## Item 5 -- Finish and verify the linked records
+- All pieces present from the linked round: applyGive/apply keyed saves (ArogyaFormSpecs.kt:358-376), STOCK maps all 8 added items incl. calcium/parac/ctz/mal_rdt/act/ecp/ptk (:325-328), VoiceStockDialog with parseRules+ground+toTxn (ArogyaStockUi.kt), ChangeSummary.diff, ArogyaOrigin history, LowStockCard+refill, TodayPlan+BackupStatusRow (ArogyaRegistryUi.kt), incentiveEstimate on Incentives 2025 rates (ArogyaRegistry.kt).
+- No code gaps found, so this item adds the cross-check host test only: DayCheckTest runs a scripted day (2 visits, 1 give, 1 voice receipt, 1 new person + re-save) and asserts forms, MCP card, stock balances, diary, due lists and the monthly report all agree.
