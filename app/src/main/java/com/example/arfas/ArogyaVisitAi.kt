@@ -594,6 +594,26 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     }
 
     /**
+     * Voice stock entry: a spoken stock change → grounded lines the ASHA confirms.
+     * Deterministic parse first; route() (phone or cloud per the Home switch) only fills
+     * in when the rules find nothing. Every kept line's item and number are in the transcript.
+     */
+    suspend fun voiceStock(transcript: String, catalog: List<String>): Triple<List<VoiceStockLine>, String, Long> = mutex.withLock {
+        val t = System.currentTimeMillis()
+        check(transcript.trim().length >= 4) { "Speak the stock change first." }
+        var lines = ArogyaVoiceStock.ground(ArogyaVoiceStock.parseRules(transcript, catalog), transcript, catalog)
+        var by = "On-phone rules (offline): patterns"
+        if (lines.isEmpty()) {
+            val (opt, label) = route("voice_stock", ArogyaVoiceStock.prompt(transcript, catalog), 200) { out ->
+                ArogyaVoiceStock.ground(ArogyaVoiceStock.parseModel(out), transcript, catalog).takeIf { it.isNotEmpty() }
+            }
+            opt?.let { lines = it; by = label }
+        }
+        Log.i(TAG, "AROGYA_TIMING event=voice_stock ms=${System.currentTimeMillis() - t} lines=${lines.size}")
+        Triple(lines, by, System.currentTimeMillis() - t)
+    }
+
+    /**
      * Finish Visit step 1: notes → structured fields. Uses the chosen hosted Meta model when a key is
      * saved (notes are scrubbed of the beneficiary's name first); otherwise, or if that call fails,
      * the phone's own model. Every field is checked against the notes; temperature and weight are

@@ -878,6 +878,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 var viewer by remember { mutableStateOf<FormTable?>(null) }
                 var historyItem by remember { mutableStateOf("") }
                 var scanOpen by remember { mutableStateOf(false) }
+                var voiceOpen by remember { mutableStateOf(false) }
                 var scanReceive by remember { mutableStateOf<Pair<MedScan, String>?>(null) }
                 var scanAdd by remember { mutableStateOf<MedScan?>(null) }
                 val cat = remember(data) { ArogyaRegistryLogic.catalog(data.stockItems) }
@@ -897,6 +898,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     if (ai != null) OutlinedButton(onClick = { scanOpen = true }) { Text(tr("🔍 Scan medicine", "🔍 दवा स्कैन करें"), maxLines = 1) }
+                    OutlinedButton(onClick = { voiceOpen = true }) { Text(tr("🎤 Speak stock", "🎤 स्टॉक बोलें"), maxLines = 1) }
                     OutlinedButton(onClick = { samOpen = true }) { Text(tr("📷 Count from photo", "📷 फ़ोटो से गिनें"), maxLines = 1) }
                     OutlinedButton(onClick = { viewer = ArogyaForms.drugKitCard(data.stock, data.beneficiaries.any { it.demo }) }) { Text(tr("Annexure 5", "Annexure 5"), maxLines = 1) }
                 }
@@ -911,6 +913,9 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                     colWidths = listOf(150.dp, 80.dp, 80.dp, 80.dp, 80.dp, 80.dp, 90.dp, 104.dp, 110.dp),
                     note = tr("Opening = before this month. Tap a row for its full history.", "शुरुआत = इस महीने से पहले। पूरी जानकारी के लिए पंक्ति दबाएँ।"),
                     sample = data.beneficiaries.any { it.demo })
+                if (voiceOpen) VoiceStockDialog(hindi, ai, cat, bal,
+                    onSave = { txns -> if (save { r -> r.copy(stock = r.stock + txns) }) voiceOpen = false },
+                    onDismiss = { voiceOpen = false })
                 if (scanOpen && ai != null) MedScanDialog(hindi, ai, cat,
                     onReceive = { s, m -> scanOpen = false; scanReceive = s to m; receiveOpen = true },
                     onAdd = { s -> scanOpen = false; scanAdd = s; addOpen = true },

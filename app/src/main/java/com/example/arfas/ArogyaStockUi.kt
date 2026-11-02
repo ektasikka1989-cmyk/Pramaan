@@ -213,6 +213,83 @@ fun StockGiveDialog(
     }
 }
 
+/**
+ * Voice stock entry: the ASHA speaks ("received 100 ORS", "10 ORS damaged", "counted 45 IFA"),
+ * the transcript is parsed (rules first, then route() per the Home switch) and grounded —
+ * only items and numbers present in her words are kept — and she confirms the list.
+ */
+@Composable
+fun VoiceStockDialog(hindi: Boolean, ai: ArogyaVisitAi?, items: List<StockItem>, balances: Map<String, Int>,
+    onSave: (List<StockTxn>) -> Unit, onDismiss: () -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val catalog = remember(items) { items.map { it.name } }
+    var dictating by remember { mutableStateOf(true) }
+    var transcript by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var lines by remember { mutableStateOf<List<VoiceStockLine>>(emptyList()) }
+    var engine by remember { mutableStateOf("") }
+    var ms by remember { mutableStateOf(0L) }
+    var err by remember { mutableStateOf("") }
+    var saved by remember { mutableStateOf(false) }
+    fun parse(text: String) {
+        busy = true; err = ""; lines = emptyList()
+        scope.launch {
+            try {
+                val res = if (ai != null) withContext(Dispatchers.IO) { ai.voiceStock(text, catalog) }
+                else Triple(ArogyaVoiceStock.ground(ArogyaVoiceStock.parseRules(text, catalog), text, catalog), "On-phone rules (offline): patterns", 0L)
+                lines = res.first; engine = res.second; ms = res.third
+                if (res.first.isEmpty()) err = tr("Could not hear a stock change. Try: “received 100 ORS”.", "स्टॉक बदलाव समझ नहीं आया। बोलें: “100 ORS मिला”।")
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+                err = "${e.message?.take(160)}"
+            } finally { busy = false }
+        }
+    }
+    if (dictating) ArogyaDictationDialog(onDismiss = { dictating = false },
+        cloudVoice = { s, l -> ArogyaCloud.transcribe(context, s, l) },
+        cloudFirst = ArogyaCloud.cloudFirst(context), hindi = hindi,
+        onAccept = { dictating = false; transcript = it; parse(it) })
+    val ops = listOf(ArogyaVoiceStock.RECEIVE, ArogyaVoiceStock.WRITEOFF, ArogyaVoiceStock.CORRECTION)
+    AlertDialog(onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(tr("🎤 Speak stock change", "🎤 स्टॉक बोलकर लिखें")) }, text = {
+        Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(tr("Say what changed, e.g. “received 100 ORS and 60 zinc”, “10 ORS damaged”, “counted 45 IFA”.",
+                "बदलाव बोलें, जैसे “100 ORS और 60 ज़िंक मिला”, “10 ORS ख़राब”, “45 IFA गिना”।"), style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = { dictating = true }, enabled = !busy) { Text(if (transcript.isBlank()) tr("🎤 Speak", "🎤 बोलें") else tr("🎤 Speak again", "🎤 फिर बोलें")) }
+            if (transcript.isNotBlank()) Text(tr("Heard: ", "सुना: ") + transcript, style = MaterialTheme.typography.bodySmall)
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (err.isNotBlank()) Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            if (lines.isNotEmpty()) {
+                AiResultChip(engine, !engine.contains("offline", ignoreCase = true), ms, hindi)
+                ConfirmChip(hindi)
+                Text(tr("Confirm before saving:", "सहेजने से पहले देखें:"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                lines.forEachIndexed { i, l ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("${l.item} · ${l.qty}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                                Text(tr("Heard: ", "सुना: ") + l.evidence, style = MaterialTheme.typography.bodySmall)
+                            }
+                            FilterChip(selected = true, onClick = { lines = lines.toMutableList().also { m -> m[i] = l.copy(op = ops[(ops.indexOf(l.op) + 1) % ops.size]) } },
+                                label = { Text(ArogyaVoiceStock.opLabel(l.op, hindi), maxLines = 1) })
+                        }
+                    }
+                }
+            }
+        }
+    }, confirmButton = {
+        Button(onClick = {
+            val txns = lines.map { ArogyaVoiceStock.toTxn(it, balances[it.item] ?: 0, LocalDate.now().toString()) }
+                .filterNot { it.kind == "adjust" && it.qty == 0 }
+            if (txns.isEmpty()) { err = tr("Nothing to save — the counted number already matches.", "कुछ सहेजना नहीं — गिनती पहले से मिल रही है।"); return@Button }
+            saved = true
+            Log.i("ArogyaDemo", "AROGYA_VOICE_STOCK lines=${txns.size} engine=\"$engine\"")
+            onSave(txns)
+        }, enabled = lines.isNotEmpty() && !busy && !saved) { Text(tr("Save", "सहेजें")) }
+    }, dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(tr("Cancel", "रद्द करें")) } })
+}
+
 /** Every entry for one item, newest first. */
 @Composable
 fun StockHistoryDialog(hindi: Boolean, item: String, txns: List<StockTxn>, names: Map<String, String>, onDismiss: () -> Unit) {
