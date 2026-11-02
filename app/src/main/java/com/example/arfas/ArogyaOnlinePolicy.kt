@@ -123,10 +123,10 @@ object ArogyaOnlinePolicy {
     }.getOrNull()
     // Decimal-safe: "37.5°C" is one number, not a sentence end.
     private val SENTENCE=Regex("(?:[^.!?।\\n]|(?<=\\d)\\.(?=\\d))+[.!?।]?")
-    private val DOWNGRADE=Regex("(?i)\\b(?:can wait|wait and (?:see|watch)|no need to (?:refer|go)|not (?:urgent|serious)|manage at home|treat at home|" +
+    internal val DOWNGRADE=Regex("(?i)\\b(?:can wait|wait and (?:see|watch)|no need to (?:refer|go)|not (?:urgent|serious)|manage at home|treat at home|" +
         "(?:does not|doesn't|do not|don't) need (?:a |any )?referral|nothing to worry)\\b|इंतज़ार करें|ज़रूरत नहीं|जरूरत नहीं")
     /** A web answer is general guidance: it must never assess THIS patient ("this baby is safe / has no illness"). */
-    private val PATIENT_ASSESSMENT=Regex("(?i)\\b(?:this|your|the) (?:new ?born|baby|child|infant|mother|woman|patient)\\b[^.]{0,40}\\b(?:is|are|looks|seems)\\b[^.]{0,20}\\b(?:safe|fine|healthy|normal|well)\\b|" +
+    internal val PATIENT_ASSESSMENT=Regex("(?i)\\b(?:this|your|the) (?:new ?born|baby|child|infant|mother|woman|patient)\\b[^.]{0,40}\\b(?:is|are|looks|seems)\\b[^.]{0,20}\\b(?:safe|fine|healthy|normal|well)\\b|" +
         "\\b(?:has|have) no (?:illness|disease|infection|problem)|\\bclinically safe\\b|यह बच्चा (?:सुरक्षित|स्वस्थ) है")
 
     /**

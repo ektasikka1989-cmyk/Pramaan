@@ -6,14 +6,14 @@ SRC=../../app/src/main/java/com/example/arfas
 : "${JSON_JAR:?set JSON_JAR to an org.json jar}"
 : "${COROUTINES_JAR:?set COROUTINES_JAR to kotlinx-coroutines-core-jvm jar}"
 CP="$JSON_JAR:$COROUTINES_JAR"
-FILES="LogStub.kt ShareStub.kt ContextStub.kt"
+FILES="LogStub.kt ShareStub.kt ContextStub.kt AiRequestStub.kt"
 for f in ArogyaVisit ArogyaSources ArogyaCapture ArogyaDangerSigns ArogyaClinicalText ArogyaFinishVisit ArogyaModelClient \
          ArogyaCloudApi ArogyaRegistry ArogyaGuided ArogyaAiExtras ArogyaFormSpecs ArogyaVisitQueue ArogyaFlags SseStreamParser \
          GenericKbPhase14Engine GenericKbRetrievalPlan GenericKbCorpusProfile GenericKbIdentifierLane GenericKbQueryPlan \
          GenericKbAliasIndex GenericKbKeyFacts AnswerProof KnowledgeSourcePresentation CoreHealthFacts KbReplyText ArogyaQuestionType \
-         ArogyaMarkdown ArogyaDoseCheck ArogyaHindiTerms ArogyaGuideDb ArogyaLang ArogyaDemoScript MetaVisionMath ArogyaAddPerson ArogyaAnswerFormat; do FILES="$FILES $SRC/$f.kt"; done
+         ArogyaMarkdown ArogyaDoseCheck ArogyaHindiTerms ArogyaGuideDb ArogyaLang ArogyaDemoScript MetaVisionMath ArogyaAddPerson ArogyaAnswerFormat ArogyaOfficialSources ArogyaOfficialAnswer ArogyaOnlinePolicy ArogyaClinicalGrounding ArogyaEvidenceSafety; do FILES="$FILES $SRC/$f.kt"; done
 rm -rf out && mkdir out
-for t in FormSpecsTest FinishVisitTest RegistryTest ApplyTest FormsTest SampleTest FlowTest CloudTest GuidedTest SaveTest SpeedTest Batch2Test Batch3Test Batch4Test Batch5Test Batch6Test ReviewTest RegisterTablesTest StockRegisterTest GuideLibraryTest MedScanTest DemoTourTest AiTableTest CountDotsTest PracticeTest AddPersonTest AnswerFormatTest; do
+for t in FormSpecsTest FinishVisitTest RegistryTest ApplyTest FormsTest SampleTest FlowTest CloudTest GuidedTest SaveTest SpeedTest Batch2Test Batch3Test Batch4Test Batch5Test Batch6Test ReviewTest RegisterTablesTest StockRegisterTest GuideLibraryTest MedScanTest DemoTourTest AiTableTest CountDotsTest PracticeTest AddPersonTest AnswerFormatTest TierTest; do
   echo "== $t"
   kotlinc $FILES $t.kt -cp "$CP" -d out/$t 2>&1 | grep -E "error" || true
   kotlin -cp "out/$t:$CP" ${t}Kt

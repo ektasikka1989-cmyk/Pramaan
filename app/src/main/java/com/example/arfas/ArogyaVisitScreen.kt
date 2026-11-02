@@ -107,6 +107,11 @@ fun ArogyaVisitScreen(
     var aiOnline by remember { mutableStateOf(false) }
     var aiError by remember { mutableStateOf("") }
     var aiBusy by remember { mutableStateOf(false) }
+    // Item 5c: "Save to check later" queue state (offer, queued count, delivered badge).
+    var saveOfferQ by remember { mutableStateOf("") }
+    var savedCount by remember { mutableStateOf(0) }
+    var savedReady by remember { mutableStateOf(0) }
+    var savedBusy by remember { mutableStateOf(false) }
     var aiJob by remember { mutableStateOf<Job?>(null) }
     var questionDictation by remember { mutableStateOf(false) }
     var aiCopy by remember { mutableStateOf("") }
@@ -760,15 +765,28 @@ fun ArogyaVisitScreen(
                             aiResult=result;aiCopy=result.text;aiCapture=result.captureItems
                             // Every guide question is recorded with the gv: question, answer, the guide's sentence and the passages used.
                             if(aiTask==ArogyaAiTask.EXPLAIN && !result.sourceOnly && !result.safetyPrompt) {
-                                val entry=ArogyaGuideEntry(System.currentTimeMillis(),askedQuestion,result.text,result.quote,result.quoteSource,result.sources,result.provider,result.elapsedMs,ArogyaUrgentTriage.assess(askedQuestion,snapshot).orEmpty())
+                                val entry=ArogyaGuideEntry(System.currentTimeMillis(),askedQuestion,result.text,result.quote,result.quoteSource,result.sources,result.provider,result.elapsedMs,ArogyaUrgentTriage.assess(askedQuestion,snapshot).orEmpty(),result.tier)
                                 val current=queue.state.value.visits.firstOrNull {it.id==snapshot.id}
-                                if(current!=null && !current.completed) edit(snapshot.id,false) {row->row.copy(guideLog=(row.guideLog+entry).takeLast(30))}
+                                // Item 5a: a check-online result joins its entry (Offline | Online), not a new row.
+                                if(current!=null && !current.completed) edit(snapshot.id,false) {row->
+                                    val at=row.guideLog.indexOfLast {it.question==askedQuestion}
+                                    if(forceOnline && at>=0) row.copy(guideLog=row.guideLog.mapIndexed { i,e ->
+                                        if(i==at) e.copy(onlineAnswer=result.text,onlineSources=result.sources,onlineTier=result.tier) else e })
+                                    else row.copy(guideLog=(row.guideLog+entry).takeLast(30))
+                                }
                             }
-                            // Chat thread: every answer stays visible; a repeated question (online check) replaces its answer.
+                            // Chat thread: every answer stays visible; a check-online result joins its card's Online tab.
                             if(aiTask==ArogyaAiTask.EXPLAIN) {
-                                val msg=SopChatMsg(System.currentTimeMillis(),askedQuestion,result,qNow)
                                 val cur=sopThreads[snapshot.id].orEmpty()
-                                sopThreads=sopThreads+(snapshot.id to if(cur.lastOrNull()?.question==askedQuestion) cur.dropLast(1)+msg else cur+msg)
+                                val at=cur.indexOfLast {it.question==askedQuestion}
+                                if(forceOnline && at>=0 && cur[at].result!=null) {
+                                    val merged=cur[at].result!!.copy(onlineText=result.text,onlineSources=result.sources,onlineSegments=result.segments,onlineMs=result.elapsedMs,onlineTier=result.tier,onlineProvider=result.provider)
+                                    sopThreads=sopThreads+(snapshot.id to cur.mapIndexed { i,m -> if(i==at) m.copy(result=merged) else m })
+                                    if(cur.lastOrNull()?.question==askedQuestion) { aiResult=merged;aiCopy=merged.text;aiCapture=merged.captureItems }
+                                } else {
+                                    val msg=SopChatMsg(System.currentTimeMillis(),askedQuestion,result,qNow)
+                                    sopThreads=sopThreads+(snapshot.id to if(cur.lastOrNull()?.question==askedQuestion) cur.dropLast(1)+msg else cur+msg)
+                                }
                             }
                             aiPrevious="Previous question: $qNow\nPrevious draft explanation: ${result.text.take(800)}"
                         } catch(e:CancellationException) {aiError="Cancelled or timed out. Any previous answer remains unchanged; no freshness check was accepted.";throw e}
@@ -797,7 +815,7 @@ fun ArogyaVisitScreen(
                                 if(current!=null && !current.completed) edit(snapshot.id,false) {row->
                                     val at=row.guideLog.indexOfLast {it.question==displayQ}
                                     if(at<0) row else row.copy(guideLog=row.guideLog.mapIndexed { i,e ->
-                                        if(i==at) e.copy(answer=result.text,quote=result.quote,quoteSource=result.quoteSource,sources=result.sources,provider=result.provider,elapsedMs=result.elapsedMs) else e })
+                                        if(i==at) e.copy(answer=result.text,quote=result.quote,quoteSource=result.quoteSource,sources=result.sources,provider=result.provider,elapsedMs=result.elapsedMs,tier=result.tier) else e })
                                 }
                             }
                             aiPrevious="Previous question: $askedQ\nPrevious draft explanation: ${result.text.take(800)}"
@@ -806,8 +824,69 @@ fun ArogyaVisitScreen(
                         finally {aiBusy=false}
                     }
                 }
+                // Item 5a/5c: ☁ Check online with a pre-check (internet + key); without them the
+                // question is offered for "Save to check later" instead of failing silently.
+                fun checkOnline(askedQ:String) {
+                    saveOfferQ=""
+                    if(!MetaOnline.hasInternet(context)) {
+                        aiError=tr("No internet — the offline answer above stays. Save the question to check it later.",
+                            "इंटरनेट नहीं है — ऊपर का ऑफ़लाइन उत्तर रहेगा। सवाल सहेजें, बाद में जाँचेंगे।")
+                        saveOfferQ=askedQ; return
+                    }
+                    if(!MetaOnline.ready(context)) {
+                        aiError=tr("Online needs a Meta key — tap the Online status on Home to add it. You can save the question meanwhile.",
+                            "ऑनलाइन के लिए Meta key चाहिए — होम पर Online स्थिति दबाकर जोड़ें। तब तक सवाल सहेज सकते हैं।")
+                        saveOfferQ=askedQ; return
+                    }
+                    runVisitAi(true,afterSafety=true,questionOverride=askedQ)
+                }
+                fun saveForLater(displayQ:String,askedQ:String) {
+                    val scrubbed=ArogyaOnlinePolicy.scrub(askedQ.ifBlank {displayQ},gv)
+                    if(scrubbed.isBlank()) return
+                    if(ArogyaOnlineQueue.add(context,scrubbed,displayQ.ifBlank {scrubbed},gv.id)) {
+                        savedCount=ArogyaOnlineQueue.list(context).size; saveOfferQ=""
+                        Toast.makeText(context,tr("Saved — will check when online","सहेजा — ऑनलाइन होने पर जाँचेंगे"),Toast.LENGTH_SHORT).show()
+                    }
+                }
+                // Item 5c: runs the saved queue when the app is open with internet + key; each
+                // answer lands in its visit's thread and raises the "saved answer" badge.
+                fun runSavedChecks() {
+                    if(savedBusy || aiBusy) return
+                    if(ArogyaOnlineQueue.list(context).isEmpty() || !MetaOnline.ready(context)) return
+                    savedBusy=true
+                    scope.launch {
+                        try {
+                            for(q in ArogyaOnlineQueue.list(context)) {
+                                if(!MetaOnline.ready(context)) break
+                                try {
+                                    val visit=queue.state.value.visits.firstOrNull {it.id==q.visitId} ?: sopVisit
+                                    val result=onRunAi(ArogyaAiRequest(ArogyaAiTask.EXPLAIN,visit,q.asked,hindi,"","",true))
+                                    val cur=sopThreads[visit.id].orEmpty()
+                                    val at=cur.indexOfLast {it.question==q.display || it.asked==q.asked}
+                                    if(at>=0 && cur[at].result!=null) {
+                                        val base=cur[at].result!!
+                                        val merged=base.copy(onlineText=result.text,onlineSources=result.sources,onlineSegments=result.segments,onlineMs=result.elapsedMs,onlineTier=result.tier,onlineProvider=result.provider)
+                                        sopThreads=sopThreads+(visit.id to cur.mapIndexed { i,m -> if(i==at) m.copy(result=merged) else m })
+                                    } else {
+                                        sopThreads=sopThreads+(visit.id to cur+SopChatMsg(System.currentTimeMillis(),q.display,result,q.asked))
+                                    }
+                                    ArogyaOnlineQueue.remove(context,q.id)
+                                    savedReady++
+                                } catch(e:CancellationException) { throw e }
+                                catch(e:Exception) { /* stays queued for the next round */ }
+                            }
+                        } finally { savedBusy=false; savedCount=ArogyaOnlineQueue.list(context).size }
+                    }
+                }
                 LaunchedEffect(aiOpen,pending) {
                     if(autoRunDraft && pending==0 && !aiBusy) {autoRunDraft=false;runVisitAi(false)}
+                }
+                // Saved questions run when Ask SOP opens and every 30 s while it stays open.
+                LaunchedEffect(aiOpen) {
+                    if(!aiOpen) return@LaunchedEffect
+                    savedCount=ArogyaOnlineQueue.list(context).size
+                    runSavedChecks()
+                    while(aiOpen) { delay(30_000); if(!aiOpen) break; runSavedChecks() }
                 }
                 LaunchedEffect(aiBusy) { while(aiBusy) { nowMs=System.currentTimeMillis(); delay(500) } }
                 if(aiTask==ArogyaAiTask.EXPLAIN) {
@@ -820,6 +899,16 @@ fun ArogyaVisitScreen(
                     LaunchedEffect(thread.size,aiBusy,aiDraft.length,aiError) {
                         runCatching { val n=chatState.layoutInfo.totalItemsCount; if(n>0) chatState.animateScrollToItem(n-1) }
                     }
+                    if(savedReady>0) Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)) {
+                        Row(Modifier.padding(10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            Text(if(savedReady==1) tr("✓ Your saved question has an answer","✓ आपके सहेजे सवाल का जवाब आ गया")
+                                else tr("✓ $savedReady saved questions have answers","✓ $savedReady सहेजे सवालों के जवाब आ गए"),
+                                modifier=Modifier.weight(1f),fontWeight=FontWeight.Medium)
+                            TextButton(onClick={savedReady=0}) { Text(tr("View","देखें")) }
+                        }
+                    }
+                    if(savedCount>0) Text(tr("⏳ $savedCount question(s) saved — checking when online","⏳ $savedCount सवाल सहेजे — ऑनलाइन होने पर जाँचेंगे"),
+                        style=MaterialTheme.typography.bodySmall)
                     LazyColumn(Modifier.weight(1f),state=chatState,verticalArrangement=Arrangement.spacedBy(10.dp)) {
                         val history=if(aiResult!=null) thread.dropLast(1) else thread
                         items(history,key={it.id}) { msg ->
@@ -827,7 +916,7 @@ fun ArogyaVisitScreen(
                             fun familyH(h:Boolean) { val r=msg.result ?: return; val engine=ai ?: return; familyBusy=true; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(r.text,r.quote,h); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
                             SopChatHistoryCard(msg,hindi,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,
                                 { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
-                                {speak(it)},{tts.stop()},{familyH(it)},{runVisitAi(true,afterSafety=true,questionOverride=askedH)},{runMoreDetail(msg.question,askedH)},{escalate(it)},context)
+                                {speak(it)},{tts.stop()},{familyH(it)},{checkOnline(askedH)},{runMoreDetail(msg.question,askedH)},{saveForLater(msg.question,askedH)},{escalate(it)},context)
                         }
                         aiResult?.let { result ->
                             item(key="latest") {
@@ -838,14 +927,19 @@ fun ArogyaVisitScreen(
                                     fun family(h:Boolean) { val engine=ai ?: return; familyBusy=true; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(result.text,result.quote,h); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
                                     SopAnswerCard(result,q,askedQ,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,true,
                                         { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
-                                        {speak(it)},{tts.stop()},familyText,familyBusy,familyModel,familyMs,{family(it)},{runVisitAi(true,afterSafety=true,questionOverride=askedQ)},{runMoreDetail(q,askedQ)},{escalate(it)},context,hindi)
+                                        {speak(it)},{tts.stop()},familyText,familyBusy,familyModel,familyMs,{family(it)},{checkOnline(askedQ)},{runMoreDetail(q,askedQ)},{saveForLater(q,askedQ)},{escalate(it)},context,hindi)
                                 }
                             }
                         }
                         if(aiBusy) item(key="progress") {
                             SopBusyCard(hindi,aiOnline,aiChecking,true,aiDraft,((nowMs-aiStartedAt).coerceAtLeast(0))/1000,aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500) {onCancelAi();aiJob?.cancel()}
                         }
-                        if(aiError.isNotBlank()) item(key="error") { Text(aiError,color=MaterialTheme.colorScheme.error) }
+                        if(aiError.isNotBlank()) item(key="error") {
+                            Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                                Text(aiError,color=MaterialTheme.colorScheme.error)
+                                if(saveOfferQ.isNotBlank()) OutlinedButton(onClick={saveForLater(saveOfferQ,saveOfferQ)}) { Text(tr("💾 Save to check later","💾 बाद में जाँचें")) }
+                            }
+                        }
                     }
                     warningNow?.let { warning ->
                         Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.errorContainer),modifier=Modifier.fillMaxWidth()) {
@@ -921,7 +1015,7 @@ fun ArogyaVisitScreen(
                         fun familyElse(h:Boolean) { val engine=ai ?: return; familyBusy=true; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(result.text,result.quote,h); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
                         SopAnswerCard(result,aiQuestion,aiQuestion,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,true,
                             { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
-                            {speak(it)},{tts.stop()},familyText,familyBusy,familyModel,familyMs,{familyElse(it)},{runVisitAi(true,afterSafety=true)},{runMoreDetail(aiQuestion,aiQuestion)},{escalate(it)},context,hindi)
+                            {speak(it)},{tts.stop()},familyText,familyBusy,familyModel,familyMs,{familyElse(it)},{checkOnline(aiQuestion)},{runMoreDetail(aiQuestion,aiQuestion)},{saveForLater(aiQuestion,aiQuestion)},{escalate(it)},context,hindi)
                     }
                     Row {TextButton(onClick={speak(if(result.canCopyToNotes) aiCopy else result.text)}) {Text(tr("🔊 Read aloud","🔊 सुनें"))};TextButton(onClick={tts.stop()}) {Text(tr("Stop","रोकें"))}}
                 }
@@ -994,7 +1088,13 @@ fun ArogyaVisitScreen(
                     Text(tr("The guide says","गाइड में लिखा है"),style=MaterialTheme.typography.labelMedium,fontWeight=FontWeight.Bold); Text("“${e.quote}”")
                     if(e.quoteSource.isNotBlank()) Text("— "+e.quoteSource,style=MaterialTheme.typography.bodySmall) } }
                 Text(e.answer)
-                e.sources.forEach { s -> OutlinedButton(onClick={source=s},modifier=Modifier.fillMaxWidth()) { Text("📄 [${s.id}] ${s.title}"+(if(s.locator.isNotBlank()) " · ${s.locator}" else ""),style=MaterialTheme.typography.bodySmall,maxLines=2) } }
+                if(e.tier==2) Text(tr("🌐 From an official website (not in your guides)","🌐 आधिकारिक वेबसाइट से (आपकी गाइड में नहीं है)"),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
+                e.sources.forEach { s -> OutlinedButton(onClick={source=s},modifier=Modifier.fillMaxWidth()) { Text((if(s.kind=="web") "🌐 " else "📄 ")+"[${s.id}] ${s.title}"+(if(s.locator.isNotBlank()) " · ${s.locator}" else "")+(if(s.date.isNotBlank()) " (${s.date})" else ""),style=MaterialTheme.typography.bodySmall,maxLines=2) } }
+                if(e.onlineAnswer.isNotBlank()) {
+                    Text(tr("☁ Online check:","☁ ऑनलाइन जाँच:"),fontWeight=FontWeight.Bold)
+                    Text(e.onlineAnswer)
+                    e.onlineSources.forEach { s -> OutlinedButton(onClick={source=s},modifier=Modifier.fillMaxWidth()) { Text((if(s.kind=="web") "🌐 " else "📄 ")+"[${s.id}] ${s.title}"+(if(s.locator.isNotBlank()) " · ${s.locator}" else "")+(if(s.date.isNotBlank()) " (${s.date})" else ""),style=MaterialTheme.typography.bodySmall,maxLines=2) } }
+                }
                 Text("${e.provider} · ${e.elapsedMs/1000}s",style=MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick={ArogyaShare.shareText(context,"Guide answer",ArogyaShare.guideEntryText(e))}) { Text(tr("Share","भेजें")) }

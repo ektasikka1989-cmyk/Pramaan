@@ -53,11 +53,21 @@ data class ArogyaVisit(
 )
 /** One guide question and its answer, saved with the visit (encrypted on this phone like the rest of the visit). */
 data class ArogyaGuideEntry(val at:Long, val question:String, val answer:String, val quote:String="", val quoteSource:String="",
-    val sources:List<ArogyaSource> = emptyList(), val provider:String="", val elapsedMs:Long=0L, val warning:String="")
+    val sources:List<ArogyaSource> = emptyList(), val provider:String="", val elapsedMs:Long=0L, val warning:String="",
+    /** Item 5: 1 = guide answer, 2 = official website, 3 = not found. */
+    val tier:Int = 1,
+    /** Item 5a: the ☁ Check online answer kept beside the offline one ("" when never checked). */
+    val onlineAnswer:String = "", val onlineSources:List<ArogyaSource> = emptyList(), val onlineTier:Int = 0)
 data class ArogyaStep(val id: String, val title: String, val instruction: String, val sourceId: String?, val priority: Boolean = false)
 data class ArogyaSource(val id: String, val title: String, val locator: String, val excerpt: String, val url: String,
     /** Sentences of [excerpt] the answer was built from (highlighted when the passage is shown). */
-    val highlights: List<String> = emptyList())
+    val highlights: List<String> = emptyList(),
+    /** Item 5d: "guide" (on this phone) or "web" (official website, not in the guides). */
+    val kind: String = "guide",
+    /** Item 5d: publication/updated date of a web source ("" when unknown); guides use the library. */
+    val date: String = "",
+    /** Item 5d: domain of a web source (e.g. nhm.gov.in). */
+    val domain: String = "")
 
 object ArogyaWorkflow {
     const val VERSION = "asha-visit-demo-2"

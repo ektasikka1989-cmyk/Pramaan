@@ -99,16 +99,25 @@ class ArogyaVisitRepository(context: Context) : ArogyaVisitPersistence {
             put("attachments",JSONArray().also { a -> v.attachments.forEach { a.put(JSONObject().put("id",it.id).put("label",it.label).put("mime",it.mime).put("extractedText",it.extractedText)) } })
             put("guideLog",JSONArray().also { a -> v.guideLog.forEach { e -> a.put(JSONObject().put("at",e.at).put("question",e.question).put("answer",e.answer)
                 .put("quote",e.quote).put("quoteSource",e.quoteSource).put("provider",e.provider).put("elapsedMs",e.elapsedMs).put("warning",e.warning)
-                .put("sources",JSONArray().also { sa -> e.sources.forEach { s -> sa.put(JSONObject().put("id",s.id).put("title",s.title).put("locator",s.locator)
-                    .put("excerpt",s.excerpt).put("url",s.url).put("highlights",JSONArray(s.highlights))) } })) } })
+                .put("tier",e.tier).put("onlineAnswer",e.onlineAnswer).put("onlineTier",e.onlineTier)
+                .put("onlineSources",JSONArray().also { oa -> e.onlineSources.forEach { s -> oa.put(encodeSource(s)) } })
+                .put("sources",JSONArray().also { sa -> e.sources.forEach { s -> sa.put(encodeSource(s)) } })) } })
         }
+        private fun encodeSource(s: ArogyaSource): JSONObject = JSONObject().put("id",s.id).put("title",s.title).put("locator",s.locator)
+            .put("excerpt",s.excerpt).put("url",s.url).put("highlights",JSONArray(s.highlights))
+            .put("kind",s.kind).put("date",s.date).put("domain",s.domain)
+        private fun decodeSource(s: JSONObject): ArogyaSource { val h=s.optJSONArray("highlights") ?: JSONArray()
+            return ArogyaSource(s.getString("id"),s.getString("title"),s.optString("locator",""),s.optString("excerpt",""),s.optString("url",""),
+                (0 until h.length()).map { h.getString(it) },s.optString("kind","guide"),s.optString("date",""),s.optString("domain","")) }
         private fun decodeGuide(o: JSONObject): List<ArogyaGuideEntry> {
             val a = o.optJSONArray("guideLog") ?: return emptyList()
             return (0 until a.length()).mapNotNull { i -> runCatching { val e=a.getJSONObject(i); val sa=e.optJSONArray("sources") ?: JSONArray()
+                val oa=e.optJSONArray("onlineSources") ?: JSONArray()
                 ArogyaGuideEntry(e.getLong("at"),e.getString("question"),e.getString("answer"),e.optString("quote",""),e.optString("quoteSource",""),
-                    (0 until sa.length()).map { j -> val s=sa.getJSONObject(j); val h=s.optJSONArray("highlights") ?: JSONArray()
-                        ArogyaSource(s.getString("id"),s.getString("title"),s.optString("locator",""),s.optString("excerpt",""),s.optString("url",""),(0 until h.length()).map { h.getString(it) }) },
-                    e.optString("provider",""),e.optLong("elapsedMs",0),e.optString("warning","")) }.getOrNull() }
+                    (0 until sa.length()).map { j -> decodeSource(sa.getJSONObject(j)) },
+                    e.optString("provider",""),e.optLong("elapsedMs",0),e.optString("warning",""),
+                    e.optInt("tier",1),e.optString("onlineAnswer",""),
+                    (0 until oa.length()).map { j -> decodeSource(oa.getJSONObject(j)) },e.optInt("onlineTier",0)) }.getOrNull() }
         }
         fun decode(o: JSONObject): ArogyaVisit {
             require(o.getString("id").isNotBlank() && o.getString("personId").isNotBlank())

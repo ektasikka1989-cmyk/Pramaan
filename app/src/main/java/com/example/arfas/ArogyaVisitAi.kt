@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 
 /**
@@ -36,7 +37,13 @@ data class ArogyaAiResult(val text:String,val provider:String,val elapsedMs:Long
     /** "The guide says": Pramaan's own chosen source sentence for this answer, with its source label. */
     val quote:String="",val quoteSource:String="",
     /** R8: the web/general answer was replaced by the ANM message; closest guide topics shown with it. */
-    val r8Blocked:Boolean=false,val r8Topics:List<String> = emptyList())
+    val r8Blocked:Boolean=false,val r8Topics:List<String> = emptyList(),
+    /** Item 5: 1 = guide answer, 2 = official website, 3 = not found. Per-sentence citations. */
+    val tier:Int = 1,val segments:List<ArogyaOfficialAnswer.CitedSegment> = emptyList(),
+    /** Item 5a: the ☁ Check online answer kept beside the offline one (Offline | Online tabs). */
+    val onlineText:String="",val onlineSources:List<ArogyaSource> = emptyList(),
+    val onlineSegments:List<ArogyaOfficialAnswer.CitedSegment> = emptyList(),val onlineMs:Long=0L,val onlineTier:Int=0,
+    val onlineProvider:String="")
 
 class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val features:Phase1FeatureBundle,private val onlineKey:()->String = {""},
     /** Pramaan's own attachment manager: photo/PDF text is read on the phone (ML Kit OCR, PDF text). */
@@ -237,7 +244,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             // Used attachments are released; on failure they stay attached for a retry.
             attachments?.releaseTurnAttachments(turnFiles.map { it.id }, consumed = answered)
         }
-        return buildResult(turn, question, System.currentTimeMillis() - t0, firstWordsMs, detail = false)
+        return buildResult(turn, question, System.currentTimeMillis() - t0, firstWordsMs, detail = false, onlineCheck = request.onlineCheck)
     }
 
     /**
@@ -270,37 +277,27 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             Log.w(TAG, "AROGYA_ASK_TIMEOUT detail after ${ASK_TIMEOUT_MS / 1000}s")
             error("The fuller answer is taking too long. Your first answer is unchanged.")
         }
-        return buildResult(turn, asked, System.currentTimeMillis() - t0, firstWordsMs, detail = true)
+        return buildResult(turn, asked, System.currentTimeMillis() - t0, firstWordsMs, detail = true, onlineCheck = false)
     }
 
-    /** Shared turn → card result: breakdown log, R8, sources, quote, dose check. */
-    private fun buildResult(
+    /** Shared turn → card result: breakdown log, tiers, sources, quote, dose check. */
+    private suspend fun buildResult(
         turn: AndroBaselineRuntime.TurnResult,
         question: String,
         elapsed: Long,
         firstWordsMs: Long,
-        detail: Boolean
+        detail: Boolean,
+        onlineCheck: Boolean
     ): ArogyaAiResult {
         // Joined offline with the stage lines by timestamp: POCKET_RAG_SEARCH_MS (search/rerank),
         // POCKET_RAG_EVIDENCE_MS, POCKET_RAG_LOCAL_GEN_MS / POCKET_RAG_CLOUD_MS (first words),
         // LLAMA_GENERATE (prompt/prefill/generation), POCKET_RAG_GATE_MS (checker), recovery lines.
         Log.i(TAG, "AROGYA_ASK_BREAKDOWN detail=$detail online=${turn.provider == AndroBaselineRuntime.Provider.CLOUD} totalMs=$elapsed firstWordsMs=$firstWordsMs sources=${turn.sourceIds.size} profile=${ArogyaFlags.r1Profile} chars=${turn.text.length}")
-        // R8 guideline-only mode (Ask SOP): a live-web or general answer — recognised by the
-        // kbnotfound:/freshness: markers, never by verification:optional — becomes the ANM
-        // message with the closest guide topics. Grounded and "Check online" answers pass through.
+        val online = turn.provider == AndroBaselineRuntime.Provider.CLOUD
+        val mode = if (onlineCheck) "check_online" else if (online) "cloud" else "offline"
         val notFoundMarker = turn.sourceIds.firstOrNull { it.startsWith(KnowledgeSourcePresentation.NOT_FOUND_PREFIX) }
         val liveWeb = turn.sourceIds.any { it.startsWith("freshness:") }
-        if (ArogyaFlags.r8GuidelineOnly && (notFoundMarker != null || liveWeb)) {
-            val topics = if (notFoundMarker != null) runCatching { KnowledgeSourcePresentation.topicsOf(notFoundMarker) }.getOrDefault(emptyList()) else emptyList()
-            Log.i(TAG, "AROGYA_R8_BLOCKED kind=${if (liveWeb) "live_web" else "general"} topics=${topics.size}")
-            val hindiQ = KbReplyText.dominantScript(question) == KbReplyText.Script.DEVANAGARI
-            val msg = if (hindiQ) "यह आपकी आधिकारिक गाइड में नहीं है — अपनी ANM से पूछें।"
-            else "Not in your official guides — ask your ANM."
-            val topicLine = if (topics.isEmpty()) "" else (if (hindiQ) "\n\nगाइड में सबसे करीबी विषय: " else "\n\nClosest guide topics: ") + topics.joinToString("; ")
-            return ArogyaAiResult(msg + topicLine, "ArogyaDoot", elapsed,
-                online = turn.provider == AndroBaselineRuntime.Provider.CLOUD, sourceOnly = true,
-                timingsMs = mapOf("pramaan_turn" to elapsed), r8Blocked = true, r8Topics = topics)
-        }
+        val hasGuideAnswer = turn.text.trim().isNotBlank() && notFoundMarker == null && !liveWeb
         val text = turn.text.trim()
         val hasAnswer = text.isNotBlank()
         val provider = when (turn.provider) {
@@ -330,6 +327,31 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             val used = passages.getOrNull(i).orEmpty()
             ArogyaSource("${i + 1}", title, pages, used.joinToString("\n\n") { it.text }, url, used.flatMap { it.highlights }.distinct())
         }
+        // Item 5b Tier 2: online and the guides are silent — an allowlisted official page
+        // may still ground the answer. Anything else falls through to Tier 3 (R8 stays on).
+        if (!hasGuideAnswer && liveWeb && online) {
+            val tier2 = runCatching { withContext(Dispatchers.IO) { buildTier2(question, turn.text, sources, elapsed) } }.getOrNull()
+            if (tier2 != null) {
+                Log.i(TAG, "AROGYA_ANSWER_TIER tier=2 mode=$mode sources=guide:${sources.size},web:${tier2.sources.count { it.kind == "web" }}")
+                return tier2
+            }
+        }
+        // R8 guideline-only mode (Ask SOP) = Tier 3: a live-web or general answer —
+        // recognised by the kbnotfound:/freshness: markers, never by verification:optional —
+        // becomes the ANM message with the closest guide topics. Grounded and "Check online"
+        // answers pass through.
+        if (ArogyaFlags.r8GuidelineOnly && (notFoundMarker != null || liveWeb)) {
+            val topics = if (notFoundMarker != null) runCatching { KnowledgeSourcePresentation.topicsOf(notFoundMarker) }.getOrDefault(emptyList()) else emptyList()
+            Log.i(TAG, "AROGYA_R8_BLOCKED kind=${if (liveWeb) "live_web" else "general"} topics=${topics.size}")
+            val hindiQ = KbReplyText.dominantScript(question) == KbReplyText.Script.DEVANAGARI
+            val msg = if (hindiQ) "यह आपकी आधिकारिक गाइड या आधिकारिक सरकारी वेबसाइटों में नहीं है — अपनी ANM से पूछें।"
+            else "This is not in your official guides or official government websites — ask your ANM."
+            val topicLine = if (topics.isEmpty()) "" else (if (hindiQ) "\n\nगाइड में सबसे करीबी विषय: " else "\n\nClosest guide topics: ") + topics.joinToString("; ")
+            Log.i(TAG, "AROGYA_ANSWER_TIER tier=3 mode=$mode sources=guide:${sources.size},web:0")
+            return ArogyaAiResult(msg + topicLine, "ArogyaDoot", elapsed,
+                online = online, sourceOnly = true,
+                timingsMs = mapOf("pramaan_turn" to elapsed), r8Blocked = true, r8Topics = topics, tier = 3)
+        }
         val quote = runCatching { KnowledgeSourcePresentation.quoteOf(turn.sourceIds) }.getOrNull()
         // Dose safety: every dose answer is logged for the M1 human review list; a dose
         // whose evidence context names only other age groups carries an ANM caution line.
@@ -344,13 +366,82 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
                 finalText += "\n\n" + ArogyaDoseCheck.caution(group, hindiQ)
             }
         }
+        // Item 5d: per-sentence guide citations (from the model text; the dose caution is app chrome).
+        val segments = if (hasAnswer && sources.isNotEmpty()) ArogyaOfficialAnswer.guideSegments(text, sources) else emptyList()
+        Log.i(TAG, "AROGYA_ANSWER_TIER tier=1 mode=$mode sources=guide:${sources.size},web:0")
         return ArogyaAiResult(
             finalText,
             provider, elapsed, sources = sources, online = turn.provider == AndroBaselineRuntime.Provider.CLOUD,
             checkedAt = if (turn.provider == AndroBaselineRuntime.Provider.CLOUD) java.time.Instant.now().toString() else "",
             sourceOnly = !hasAnswer, timingsMs = mapOf("pramaan_turn" to elapsed),
-            quote = quote?.takeIf { !it.mismatch }?.text.orEmpty(), quoteSource = quote?.source.orEmpty()
+            quote = quote?.takeIf { !it.mismatch }?.text.orEmpty(), quoteSource = quote?.source.orEmpty(),
+            tier = 1, segments = segments
         )
+    }
+
+    /**
+     * Item 5b Tier 2: the live-web answer is kept only when official pages ground it.
+     * Non-allowlisted references are discarded; each kept sentence must occur
+     * (normalised) in a fetched official page or a guide passage; medication/dose,
+     * urgency-downgrade and patient-assessment sentences fail the whole answer.
+     * Null → the caller falls back to Tier 3.
+     */
+    private suspend fun buildTier2(question: String, webText: String, guideSources: List<ArogyaSource>, elapsed: Long): ArogyaAiResult? {
+        val (answer, refs) = ArogyaOfficialSources.parseRefs(webText)
+        val clean = answer.removePrefix("Not from the selected knowledge base — answered online:").trim()
+        if (clean.isBlank() || refs.isEmpty()) return null
+        if (ArogyaOnlinePolicy.DOWNGRADE.containsMatchIn(clean) || ArogyaOnlinePolicy.PATIENT_ASSESSMENT.containsMatchIn(clean)) {
+            Log.i(TAG, "AROGYA_TIER2_REJECT safety")
+            return null
+        }
+        val pairs = refs.take(3).mapNotNull { ref ->
+            val f = runCatching { withTimeoutOrNull(9_000) { ArogyaOfficialSources.fetch(ref.url) } }.getOrNull()
+            if (f == null || f.text.isBlank()) null else ref to f
+        }
+        if (pairs.isEmpty()) {
+            Log.i(TAG, "AROGYA_TIER2_REJECT no_fetched_pages refs=${refs.size}")
+            return null
+        }
+        val segments = ArogyaOfficialAnswer.webSegments(clean, pairs.map { it.second }, guideSources)
+        if (segments.isEmpty()) {
+            Log.i(TAG, "AROGYA_TIER2_REJECT ungrounded")
+            return null
+        }
+        val hindiQ = KbReplyText.dominantScript(question) == KbReplyText.Script.DEVANAGARI
+        val usedWeb = segments.flatMap { it.sourceIds }.filter { it.startsWith("W") }.distinct()
+        val usedGuide = segments.flatMap { it.sourceIds }.filter { !it.startsWith("W") }.distinct()
+        val webSources = usedWeb.mapNotNull { id ->
+            val idx = id.removePrefix("W").toIntOrNull()?.minus(1) ?: return@mapNotNull null
+            val (ref, p) = pairs.getOrNull(idx) ?: return@mapNotNull null
+            ArogyaSource(id, ref.title.ifBlank { p.title }.ifBlank { p.url },
+                if (p.url.lowercase().contains(".pdf")) "PDF" else "Web page",
+                p.text.take(2_000), p.url,
+                segments.filter { id in it.sourceIds }.map { it.text }.take(6),
+                kind = "web", date = p.date, domain = ArogyaOfficialSources.domainOf(p.url))
+        }
+        // Guide sources cited too (a sentence may match both): guide rows first, then web.
+        val citedGuides = usedGuide.mapNotNull { id -> guideSources.firstOrNull { it.id == id } }
+        // Newer-guidance flag: a web-only sentence from a page newer than the guide document.
+        var conflictLine = ""
+        val webOnly = segments.any { seg -> seg.sourceIds.any { it.startsWith("W") } && seg.sourceIds.none { !it.startsWith("W") } }
+        if (webOnly) {
+            val lib = runCatching { features.guideLibrary() }.getOrDefault(emptyList())
+            fun guideDateOf(title: String): String {
+                val row = lib.firstOrNull { it.title.equals(title, ignoreCase = true) || it.sourceName.equals(title, ignoreCase = true) }
+                    ?: lib.firstOrNull { it.title.contains(title, ignoreCase = true) || title.contains(it.title, ignoreCase = true) }
+                return row?.publicationDate?.ifBlank { row?.retrievedUtc }.orEmpty()
+            }
+            val gDate = citedGuides.map { guideDateOf(it.title) }.firstOrNull { it.isNotBlank() }.orEmpty()
+            val newer = webSources.firstOrNull { ArogyaOfficialSources.isNewer(it.date, gDate) }
+            if (newer != null) conflictLine = if (hindiQ) "\n\n${newer.domain} (${newer.date}) पर नई जानकारी मिली है — अपनी ANM से पक्का करें।"
+            else "\n\nNewer guidance found on ${newer.domain} (${newer.date}) — confirm with your ANM."
+        }
+        val body = segments.joinToString(" ") { it.text } + conflictLine
+        Log.i(TAG, "AROGYA_TIER2_ACCEPT sentences=${segments.size} web=${webSources.size} guides=${citedGuides.size} conflict=${conflictLine.isNotBlank()}")
+        return ArogyaAiResult(body, "ArogyaDoot • online (official website)", elapsed,
+            sources = citedGuides + webSources, online = true,
+            checkedAt = java.time.Instant.now().toString(),
+            timingsMs = mapOf("pramaan_turn" to elapsed), tier = 2, segments = segments)
     }
 
     private suspend fun organiseNotes(request: ArogyaAiRequest): ArogyaAiResult {

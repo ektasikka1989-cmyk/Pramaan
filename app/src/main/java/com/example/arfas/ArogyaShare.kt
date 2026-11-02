@@ -41,17 +41,27 @@ object ArogyaShare {
         appendLine("Answer: " + ArogyaMarkdown.strip(e.answer))
         if (e.sources.isNotEmpty()) {
             appendLine("Sources:")
-            e.sources.forEach { s ->
-                appendLine("  [${s.id}] ${s.title}" + (if (s.locator.isNotBlank()) ", ${s.locator}" else ""))
-                if (s.url.isNotBlank()) appendLine("      ${s.url}")
-                if (withPassages) {
-                    val lines = s.highlights.ifEmpty { listOf(s.excerpt.take(400)) }.filter { it.isNotBlank() }
-                    lines.take(3).forEach { appendLine("      › ${it.take(400)}") }
-                }
-            }
+            e.sources.forEach { s -> appendSource(this, s, withPassages) }
+        }
+        // Item 5: the ☁ Check online answer and its sources travel with the entry.
+        if (e.onlineAnswer.isNotBlank()) {
+            appendLine("Online check: " + ArogyaMarkdown.strip(e.onlineAnswer))
+            e.onlineSources.forEach { s -> appendSource(this, s, withPassages) }
         }
         if (e.provider.isNotBlank()) appendLine("(${e.provider}, ${e.elapsedMs / 1000}s. Guidance, not a diagnosis.)")
     }.trimEnd()
+
+    /** One source line: title, page/section, date and link (web sources name their domain). */
+    private fun appendSource(out: StringBuilder, s: ArogyaSource, withPassages: Boolean) {
+        out.appendLine("  [${s.id}] ${s.title}" + (if (s.locator.isNotBlank()) ", ${s.locator}" else "") +
+            (if (s.kind == "web") " (official website" + (if (s.domain.isNotBlank()) ", ${s.domain}" else "") +
+                (if (s.date.isNotBlank()) ", ${s.date}" else "") + ")" else ""))
+        if (s.url.isNotBlank()) out.appendLine("      ${s.url}")
+        if (withPassages) {
+            val lines = s.highlights.ifEmpty { listOf(s.excerpt.take(400)) }.filter { it.isNotBlank() }
+            lines.take(3).forEach { out.appendLine("      › ${it.take(400)}") }
+        }
+    }
 
     /** Short referral message for the ANM: who, where, what was found, what was done. Fits one SMS screen. */
     fun anmMessage(v: ArogyaVisit, concern: String = ""): String = buildString {
