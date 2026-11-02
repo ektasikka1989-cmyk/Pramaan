@@ -38,6 +38,8 @@ app/src/main/assets/**
 !app/src/main/assets/doc_templates/
 !app/src/main/assets/doc_templates/**
 !app/src/main/assets/kb_parity.json
+!app/src/main/assets/guide/
+!app/src/main/assets/guide/**
 *.gguf
 *.bin
 *.onnx

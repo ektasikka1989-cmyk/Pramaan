@@ -199,6 +199,8 @@ fun ArogyaCloudSettingsDialog(hindi: Boolean = false, onDismiss: () -> Unit) {
     }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("☁ Cloud or phone AI", "☁ क्लाउड या फ़ोन AI")) }, text = {
         Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(tr("Online features need a Meta Model API key. Everything works offline without it.",
+                "ऑनलाइन फ़ीचर को Meta Model API key चाहिए। उसके बिना भी सब ऑफ़लाइन चलता है।"), fontWeight = FontWeight.Bold)
             Text(tr("One setting for every AI action — answers, voice, forms, card reading, messages. Cloud first: Meta's cloud models, and the phone takes over automatically with no signal, a slow network or an error. Local first: the phone, and the cloud only if the phone cannot do it. The Meta key is in the app's Settings.",
                 "हर AI काम के लिए एक सेटिंग — जवाब, आवाज़, फ़ॉर्म, कार्ड पढ़ना, संदेश। क्लाउड पहले: Meta के क्लाउड मॉडल, और बिना सिग्नल, धीमे नेटवर्क या गलती पर फ़ोन अपने आप ले लेता है। फ़ोन पहले: फ़ोन, और क्लाउड तभी जब फ़ोन न कर पाए। Meta key ऐप की Settings में है।"),
                 style = MaterialTheme.typography.bodySmall)

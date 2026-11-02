@@ -178,6 +178,8 @@ fun ArogyaVisitScreen(
     var demoOpen by rememberSaveable { mutableStateOf(false) }
     var profileOpen by rememberSaveable { mutableStateOf(false) }
     var moreOpen by remember { mutableStateOf(false) }
+    var setupOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(loaded) { if(loaded && !ArogyaSetup.isDone(context)) setupOpen=true }
     var welcome by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(loaded) { if(loaded && !ArogyaLang.welcomed(context)) welcome=true }
     val profilePrefs=remember { context.getSharedPreferences("arogya_profile",android.content.Context.MODE_PRIVATE) }
@@ -501,6 +503,7 @@ fun ArogyaVisitScreen(
                                     onClick={moreOpen=false;openPractice()})
                                 if(ai!=null) DropdownMenuItem(text={ Text(tr("📖 Official guides","📖 आधिकारिक गाइड")) },
                                     onClick={moreOpen=false;guideFromSop=false;guideOpen=true})
+                                DropdownMenuItem(text={ Text(tr("⚙ Setup wizard","⚙ सेटअप")) },onClick={moreOpen=false;setupOpen=true})
                             }
                         }
                     }
@@ -1184,6 +1187,8 @@ fun ArogyaVisitScreen(
         if(!guideFromSop) openAi(ArogyaAiTask.EXPLAIN,sop=true)
     },onClose={guideOpen=false})
     if(welcome) ArogyaWelcome(hindi) { ArogyaLang.setWelcomed(context); welcome=false }
+    if(setupOpen) ArogyaSetupWizard(hindi,ai,knowledgeReady,reg.beneficiaries.any {it.demo},
+        onImportKnowledge={ onImportKnowledge(it) },onLoadSample={ loadSample() },onRefreshKnowledge={ onRefreshKnowledge() },onDone={ setupOpen=false })
     if(demoOpen) ArogyaDemoTour(ai,queue,visits,hindi,tts=if(ttsReady) tts else null,onLoadSample={ loadSample() },onClose={ demoOpen=false; tts.stop() },
         onDeepLink={ target -> demoOpen=false; tts.stop(); if(target.startsWith("guided:")) guidedFor=reg.beneficiaries.firstOrNull { it.id==target.removePrefix("guided:") } else hubOpen=target })
     if(profileOpen) {
