@@ -16,6 +16,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -130,6 +131,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
     var status by remember { mutableStateOf("") }
     var exitAsk by remember { mutableStateOf(false) }
     var libraryOpen by remember { mutableStateOf(false) }
+    var aiWorkOpen by remember { mutableStateOf(false) }
     var manualJob by remember { mutableStateOf<Job?>(null) }
     var ran by remember { mutableStateOf(setOf<Int>()) }
     var replayTick by remember { mutableStateOf(0) }
@@ -532,9 +534,15 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val b = hero; val sp = spec
                     if (b == null || sp == null) { Text(tr("Preparing…", "तैयारी…")); return@Column }
-                    if (ticks.isNotEmpty()) DemoCard("✨ " + tr("AI at work", "AI काम पर")) {
-                        ticks.forEach { t -> Text("• " + (if (demoHindi) t.featureHi else t.feature) + " · ${t.model}" + (if (t.ms > 0) " · ${secs(t.ms)}" else ""),
-                            style = MaterialTheme.typography.bodySmall) }
+                    if (ticks.isNotEmpty()) Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth().clickable { aiWorkOpen = !aiWorkOpen }, verticalAlignment = Alignment.CenterVertically) {
+                                Text("✨ " + tr("AI at work", "AI काम पर") + " (${ticks.size})", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                Text(if (aiWorkOpen) "▲" else "▼", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            }
+                            if (aiWorkOpen) ticks.forEach { t -> Text("• " + (if (demoHindi) t.featureHi else t.feature) + " · ${t.model}" + (if (t.ms > 0) " · ${secs(t.ms)}" else ""),
+                                style = MaterialTheme.typography.bodySmall) }
+                        }
                     }
                     DemoSceneBody(scene, demoHindi, tr = { en, hi -> tr(en, hi) }, data = data, visits = visits, b = b, sp = sp, column = column,
                         filled = filled, formModel = formModel, formMs = formMs, formConfirmed = formConfirmed, onConfirmForm = { formConfirmed = true },

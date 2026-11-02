@@ -428,7 +428,7 @@ fun ArogyaVisitScreen(
                     referrals=visits.count { it.completed && it.referral==ArogyaReferral.NEEDED && it.date>=LocalDate.now().minusDays(7).toString() }) }
                 item {
                     Button(onClick={demoOpen=true},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.tertiary)) {
-                        Text(tr("▶ Watch the 3-minute demo","▶ 3 मिनट का डेमो देखें"),style=MaterialTheme.typography.titleMedium) }
+                        Text(tr("▶ Demo","▶ डेमो"),style=MaterialTheme.typography.titleMedium) }
                 }
                 // 3. Unfinished work
                 if(drafts.isNotEmpty()) item {
