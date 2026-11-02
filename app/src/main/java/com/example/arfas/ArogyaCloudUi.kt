@@ -13,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -136,6 +137,32 @@ object ArogyaCloud {
 }
 
 /** One place to switch on Meta cloud models and save keys; includes a live connection test. */
+/**
+ * Item 8: the Home Offline | Online switch as a shared control (Home + demo setting
+ * scene): the two chips flip the single setting, the live status line follows, and a
+ * long-press opens the cloud settings. [refresh] re-reads the state from outside.
+ */
+@Composable
+fun ArogyaModeSwitch(hindi: Boolean, context: Context, refresh: Int = 0, onOpenSettings: () -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    var ownTick by remember { mutableStateOf(0) }
+    val tick = refresh + ownTick
+    val online = remember(tick) { MetaOnline.hasInternet(context) }
+    val cloudFirst = remember(tick) { ArogyaCloud.cloudFirst(context) }
+    val hasKey = remember(tick) { ArogyaCloud.metaKey(context).isNotBlank() }
+    val (modeText, modeOk) = remember(cloudFirst, online, hasKey, hindi) { ArogyaModeStatus.line(cloudFirst, online, hasKey, hindi) }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.pointerInput(Unit) { detectTapGestures(onLongPress = { onOpenSettings() }) }) {
+            FilterChip(selected = !cloudFirst, onClick = { ArogyaCloud.setCloudFirst(context, false); ownTick++ }, label = { Text(tr("📱 Offline", "📱 ऑफ़लाइन")) })
+            FilterChip(selected = cloudFirst, onClick = { ArogyaCloud.setCloudFirst(context, true); ownTick++ }, label = { Text(tr("☁ Online", "☁ ऑनलाइन")) })
+        }
+        Text(modeText, style = MaterialTheme.typography.bodySmall,
+            color = if (modeOk) Color(0xFF2E7D32) else Color(0xFFB26A00),
+            modifier = Modifier.clickable(enabled = cloudFirst && !hasKey) { onOpenSettings() })
+    }
+}
+
 @Composable
 fun ArogyaCloudSettingsDialog(hindi: Boolean = false, onDismiss: () -> Unit) {
     fun tr(en: String, hi: String) = if (hindi) hi else en

@@ -101,13 +101,16 @@ object ArogyaDemoScript {
             listOf(
                 "Sunita asks when a newborn must be referred at once.",
                 "The app searches the official guides, shows the top passages with document and page, then writes the answer from them.",
-                "She taps the source to read the exact printed lines.",
-                "Then she asks a follow-up, and the app remembers the first question."),
+                "Every sentence carries its citation, and she opens the official document with one tap.",
+                "Then she asks a follow-up, and the app remembers the first question.",
+                "When the phone is online, she also taps Check online and compares both answers."),
             listOf(
                 "सुनीता पूछती हैं कि नवजात को तुरंत कब रेफ़र करना चाहिए।",
                 "ऐप आधिकारिक गाइड खोजता है, दस्तावेज़ और पेज के साथ मुख्य हिस्से दिखाता है, फिर उन्हीं से उत्तर लिखता है।",
                 "स्रोत दबाकर वे छपी हुई असली पंक्तियाँ पढ़ती हैं।",
-                "फिर वे दोबारा पूछती हैं, और ऐप पहला सवाल याद रखता है।")),
+                "हर वाक्य के साथ उसका हवाला है, और एक दबाने पर आधिकारिक दस्तावेज़ खुलता है।",
+                "फिर वे दोबारा पूछती हैं, और ऐप पहला सवाल याद रखता है।",
+                "फ़ोन ऑनलाइन हो तो वे ऑनलाइन जाँच भी दबाती हैं और दोनों उत्तर मिलाती हैं।")),
         Scene("card", "MCP card photo becomes the card", "MCP कार्ड की फ़ोटो बनती है कार्ड",
             listOf(
                 "Sunita photographs the family's MCP card. No typing.",
@@ -211,6 +214,7 @@ object ArogyaDemoTicks {
         "form filling + evidence check" -> if (hindi) "एक नोट से पूरा फ़ॉर्म" else "One note fills the whole form"
         "guide search + grounded answer" -> if (hindi) "सही SOP तुरंत, स्रोत के साथ" else "The right SOP at once, with its source"
         "guide follow-up" -> if (hindi) "दोबारा पूछने पर भी जवाब" else "Follow-ups work too"
+        "online check" -> if (hindi) "आधिकारिक वेबसाइट से दोबारा जाँच" else "Official websites double-check"
         "card text reading + extraction" -> if (hindi) "कार्ड नकल नहीं करना पड़ता" else "No copying the card by hand"
         "medicine scan" -> if (hindi) "पत्ता फ़ोटो से स्टॉक में" else "A strip photo becomes stock"
         "SAM 3.1 count" -> if (hindi) "शेल्फ़ गिनने में मदद" else "Counting help for the shelf"

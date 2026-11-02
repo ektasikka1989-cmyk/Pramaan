@@ -402,20 +402,9 @@ fun ArogyaVisitScreen(
                     TextButton(onClick=onSettings,enabled=!locked) { Text(tr("⚙ Setup","⚙ सेटअप")) }
                 }
             }
-            val online=remember(modeTick) { MetaOnline.hasInternet(context) }
-            val cloudFirst=remember(modeTick) { ArogyaCloud.cloudFirst(context) }
-            val hasKey=remember(modeTick) { ArogyaCloud.metaKey(context).isNotBlank() }
-            val (modeText,modeOk)=remember(cloudFirst,online,hasKey,hindi) { ArogyaModeStatus.line(cloudFirst,online,hasKey,hindi) }
             Text(LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM",if(hindi) java.util.Locale("hi","IN") else java.util.Locale.ENGLISH)),
                 style=MaterialTheme.typography.bodyMedium)
-            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp),
-                modifier=Modifier.pointerInput(Unit) { detectTapGestures(onLongPress={ modelSettingsOpen=true }) }) {
-                FilterChip(selected=!cloudFirst,onClick={ ArogyaCloud.setCloudFirst(context,false); modeTick++ },label={ Text(tr("📱 Offline","📱 ऑफ़लाइन")) })
-                FilterChip(selected=cloudFirst,onClick={ ArogyaCloud.setCloudFirst(context,true); modeTick++ },label={ Text(tr("☁ Online","☁ ऑनलाइन")) })
-            }
-            Text(modeText,style=MaterialTheme.typography.bodySmall,
-                color=if(modeOk) Color(0xFF2E7D32) else Color(0xFFB26A00),
-                modifier=Modifier.clickable(enabled=cloudFirst && !hasKey) { modelSettingsOpen=true })
+            ArogyaModeSwitch(hindi,context,modeTick) { modelSettingsOpen=true }
             if(reg.beneficiaries.any { it.demo })
                 Text(tr("Sample data · fictional people","नमूना डेटा · काल्पनिक लोग"),style=MaterialTheme.typography.bodySmall,
                     color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.clickable { clearAsk=true })

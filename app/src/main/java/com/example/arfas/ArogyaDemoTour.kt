@@ -9,6 +9,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.widget.Toast
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -150,6 +151,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
     var dangersRan by remember { mutableStateOf(false) }
     var sop by remember { mutableStateOf<ArogyaAiResult?>(null) }
     var sopFollow by remember { mutableStateOf<ArogyaAiResult?>(null) }
+    var sopOnline by remember { mutableStateOf<ArogyaAiResult?>(null) }
+    var sopOnlineSkip by remember { mutableStateOf(false) }
     var anm by remember { mutableStateOf("") }
     var anmModel by remember { mutableStateOf("") }
     var demoMsg by remember { mutableStateOf("") }
@@ -310,7 +313,17 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     status = tr("Asking the follow-up…", "दोबारा पूछ रहे हैं…")
                     val f = ask(if (demoHindi) ArogyaDemoScript.FOLLOWUP_HI else ArogyaDemoScript.FOLLOWUP_EN)
                     sopFollow = f
-                    ticks += ArogyaAiTick("guide follow-up", "दोबारा सवाल", f.provider, f.elapsedMs, f.online) }
+                    ticks += ArogyaAiTick("guide follow-up", "दोबारा सवाल", f.provider, f.elapsedMs, f.online)
+                    // Item 8: one Check online moment (skipped honestly when offline).
+                    status = tr("Checking the answer online…", "उत्तर ऑनलाइन जाँच रहे हैं…")
+                    if (MetaOnline.ready(context)) {
+                        val o = engine.run(ArogyaAiRequest(ArogyaAiTask.EXPLAIN,
+                            ArogyaVisit(id = SOP_VISIT_ID, personId = SOP_VISIT_ID, name = "", kind = ArogyaKind.FOLLOW_UP),
+                            question = if (demoHindi) ArogyaDemoScript.QUESTION_HI else ArogyaDemoScript.QUESTION_EN,
+                            hindi = demoHindi, onlineCheck = true))
+                        sopOnline = o
+                        ticks += ArogyaAiTick("online check", "ऑनलाइन जाँच", o.provider, o.elapsedMs, true)
+                    } else sopOnlineSkip = true }
                 9 -> {
                     if (!saved) {
                         val vals = filled.mapValues { it.value.value }
@@ -547,7 +560,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     DemoSceneBody(scene, demoHindi, tr = { en, hi -> tr(en, hi) }, data = data, visits = visits, b = b, sp = sp, column = column,
                         filled = filled, formModel = formModel, formMs = formMs, formConfirmed = formConfirmed, onConfirmForm = { formConfirmed = true },
                         transcript = transcript, transcriptEngine = transcriptEngine, transcriptLive = transcriptLive,
-                        dangers = dangers, sop = sop, sopFollow = sopFollow, onOpenSource = { openSource = it }, secs = { secs(it) },
+                        dangers = dangers, sop = sop, sopFollow = sopFollow, sopOnline = sopOnline, sopOnlineSkip = sopOnlineSkip,
+                        onOpenSource = { openSource = it }, secs = { secs(it) },
                         demoMsg = demoMsg, onDemoMsg = { demoMsg = it }, anm = anm, anmModel = anmModel,
                         guideDocs = guideDocs, onOpenLibrary = { libraryOpen = true },
                         card = card, cardModel = cardModel, cardChecked = cardChecked, onCheckCard = { i, on ->
@@ -625,7 +639,8 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
     data: RegistryData, visits: List<ArogyaVisit>, b: Beneficiary, sp: FormSpec, column: Int,
     filled: Map<String, FilledValue>, formModel: String, formMs: Long, formConfirmed: Boolean, onConfirmForm: () -> Unit,
     transcript: String, transcriptEngine: String, transcriptLive: Boolean,
-    dangers: List<String>, sop: ArogyaAiResult?, sopFollow: ArogyaAiResult?, onOpenSource: (ArogyaSource) -> Unit, secs: (Long) -> String,
+    dangers: List<String>, sop: ArogyaAiResult?, sopFollow: ArogyaAiResult?, sopOnline: ArogyaAiResult?, sopOnlineSkip: Boolean,
+    onOpenSource: (ArogyaSource) -> Unit, secs: (Long) -> String,
     demoMsg: String, onDemoMsg: (String) -> Unit, anm: String, anmModel: String,
     guideDocs: List<GuideDoc>?, onOpenLibrary: () -> Unit,
     card: ArogyaCardReading?, cardModel: String, cardChecked: Set<Int>, onCheckCard: (Int, Boolean) -> Unit,
@@ -714,6 +729,19 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                 DemoCard("❓ " + tr("Follow-up (the app remembers the first question)", "दोबारा सवाल (ऐप पहला सवाल याद रखता है)") + ": " +
                     (if (hindi) ArogyaDemoScript.FOLLOWUP_HI else ArogyaDemoScript.FOLLOWUP_EN)) {}
                 sopFollow?.let { DemoSopAnswer(it, hindi, tr, onOpenSource, secs) }
+                sopOnline?.let { o ->
+                    DemoCard("☁ " + tr("Checked online — both answers kept", "ऑनलाइन जाँचा — दोनों उत्तर रखे")) {
+                        val base = sop?.text.orEmpty()
+                        val added = if (base.isNotBlank()) ArogyaOfficialAnswer.newSentences(base, o.text).size else 0
+                        Text(tr("$added sentence(s) add to the offline answer (highlighted in the app's Online tab).",
+                            "$added वाक्य ऑफ़लाइन उत्तर से ज़्यादा (ऐप के Online टैब में रँगे)।"),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                    DemoSopAnswer(o, hindi, tr, onOpenSource, secs)
+                }
+                if (sopOnlineSkip) DemoCard("☁ " + tr("Online check", "ऑनलाइन जाँच")) {
+                    Text(tr("Online only — skipped offline.", "सिर्फ़ ऑनलाइन — ऑफ़लाइन छोड़ा।"), style = MaterialTheme.typography.bodySmall)
+                }
             }
             7 -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -800,14 +828,9 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                 }
             }
             11 -> {
-                val ctx = LocalContext.current
-                var policy by remember { mutableStateOf(AnswerPolicyStore(ctx.applicationContext).get()) }
-                DemoCard(tr("One setting", "एक सेटिंग")) {
-                    Text(tr("Now: ", "अभी: ") + (if (policy == AnswerPolicy.CLOUD_FIRST) "☁ Cloud first" else "📱 Local first"), fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { AnswerPolicyStore(ctx.applicationContext).set(AnswerPolicy.LOCAL_FIRST); policy = AnswerPolicy.LOCAL_FIRST }) { Text("📱 Local first") }
-                        OutlinedButton(onClick = { AnswerPolicyStore(ctx.applicationContext).set(AnswerPolicy.CLOUD_FIRST); policy = AnswerPolicy.CLOUD_FIRST }) { Text("☁ Cloud first") }
-                    }
+                DemoCard(tr("One setting — the same switch as Home", "एक सेटिंग — होम वाला ही बटन")) {
+                    // The Home Offline | Online control itself (flipping here flips Home too).
+                    ArogyaModeSwitch(hindi, LocalContext.current) { }
                     Text(tr("Everything works offline either way — the phone is the fallback.", "दोनों में सब ऑफ़लाइन चलता है — फ़ोन बैकअप है।"), style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -841,18 +864,27 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
 
 @Composable
 private fun DemoSopAnswer(r: ArogyaAiResult, hindi: Boolean, tr: (String, String) -> String, onOpenSource: (ArogyaSource) -> Unit, secs: (Long) -> String) {
+    val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
     if (r.sources.isNotEmpty()) DemoCard(tr("Top passages", "मुख्य हिस्से")) {
         r.sources.take(3).forEach { s ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("📄 ${s.title} · ${s.locator}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                 TextButton(onClick = { onOpenSource(s) }) { Text(tr("Open", "खोलें")) }
             }
+            // Item 8: the same "Open official document" the answer card offers (jumps to the page online).
+            if (s.url.startsWith("http")) TextButton(onClick = {
+                runCatching { uriHandler.openUri(ArogyaGuideLibrary.pageUrl(s.url, s.locator)) }
+                    .onFailure { Toast.makeText(context, tr("No browser available.", "ब्राउज़र नहीं है।"), Toast.LENGTH_LONG).show() }
+            }) { Text(tr("Open official document", "आधिकारिक दस्तावेज़ खोलें"), style = MaterialTheme.typography.bodySmall) }
             if (s.excerpt.isNotBlank()) ArogyaPassageText(s.copy(excerpt = s.excerpt.take(600) + if (s.excerpt.length > 600) "…" else ""))
         }
     }
     DemoCard(tr("Answer from the official guides · ${r.provider} · ${secs(r.elapsedMs)}", "आधिकारिक गाइड से उत्तर · ${r.provider} · ${secs(r.elapsedMs)}")) {
-        Text(r.text.take(900), style = MaterialTheme.typography.bodySmall)
-        if (r.quote.isNotBlank()) Text("“${r.quote}” — ${r.quoteSource}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+        // Item 8: the live answer layout — sections with [n] citation markers (tap = the passage).
+        SopAnswerText(r.text, r.segments, emptySet()) { id -> r.sources.firstOrNull { it.id == id }?.let(onOpenSource) }
+        if (r.quote.isNotBlank() && !ArogyaAnswerFormat.isDuplicate(r.text, r.quote))
+            Text("“${r.quote}” — ${r.quoteSource}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         r.sources.firstOrNull()?.let { s -> Text(tr("Source: ", "स्रोत: ") + "${s.title}, ${s.locator}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall) }
     }
 }
