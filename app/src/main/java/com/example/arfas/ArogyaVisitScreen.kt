@@ -96,6 +96,12 @@ fun ArogyaVisitScreen(
     var aiResult by remember { mutableStateOf<ArogyaAiResult?>(null) }
     // Ask SOP chat thread per visit: survives the window closing and reopening within the visit.
     var sopThreads by remember { mutableStateOf(mapOf<String, List<SopChatMsg>>()) }
+    // Official guides library: entry from Ask SOP + More; topic suggestions for "Ask about this guide".
+    var guideOpen by remember { mutableStateOf(false) }
+    var guideFromSop by remember { mutableStateOf(false) }
+    var sopGuideCount by remember { mutableStateOf(-1) }
+    var sopSuggestions by remember { mutableStateOf(listOf<String>()) }
+    var sopSuggestTitle by remember { mutableStateOf("") }
     var aiOnline by remember { mutableStateOf(false) }
     var aiError by remember { mutableStateOf("") }
     var aiBusy by remember { mutableStateOf(false) }
@@ -122,6 +128,8 @@ fun ArogyaVisitScreen(
     var nowMs by remember { mutableStateOf(0L) }
     var familyText by remember { mutableStateOf("") }
     var familyBusy by remember { mutableStateOf(false) }
+    var familyModel by remember { mutableStateOf("") }
+    var familyMs by remember { mutableStateOf(0L) }
     var cardBusy by remember { mutableStateOf(false) }
     var cardReading by remember { mutableStateOf<ArogyaCardReading?>(null) }
     var cardChecked by remember { mutableStateOf(setOf<Int>()) }
@@ -131,6 +139,10 @@ fun ArogyaVisitScreen(
     var quizItems by remember { mutableStateOf<List<ArogyaQuizItem>>(emptyList()) }
     var quizChoice by remember { mutableStateOf(mapOf<Int,Int>()) }
     var quizError by remember { mutableStateOf("") }
+    var quizModel by remember { mutableStateOf("") }
+    var quizMs by remember { mutableStateOf(0L) }
+    var practiceWeek by remember { mutableStateOf(ArogyaPractice.summarize(context.getSharedPreferences("arogya_practice", 0).getString("history", "").orEmpty(), LocalDate.now().toString())) }
+    var quizRecorded by remember { mutableStateOf(false) }
     var photoTarget by remember { mutableStateOf("") }
     // Finish Visit
     var modelSettingsOpen by remember { mutableStateOf(false) }
@@ -338,13 +350,17 @@ fun ArogyaVisitScreen(
     }
     fun loadQuiz() {
         if(ai==null) return
-        quizBusy=true; quizError=""; quizItems=emptyList(); quizChoice=emptyMap()
+        quizBusy=true; quizError=""; quizItems=emptyList(); quizChoice=emptyMap(); quizModel=""; quizMs=0L; quizRecorded=false
         scope.launch {
-            try { quizItems=ai.refresher(3) }
+            try { val (items,by,ms)=ai.refresherDetailed(3); quizItems=items; quizModel=by; quizMs=ms }
             catch(e:CancellationException) { throw e }
             catch(e:Exception) { quizError=e.message ?: "Could not prepare the questions." }
             finally { quizBusy=false }
         }
+    }
+    fun openPractice() {
+        if(!knowledgeReady) { Toast.makeText(context,tr("Install the ASHA guide first (below).","पहले ASHA गाइड इंस्टॉल करें (नीचे)।"),Toast.LENGTH_LONG).show(); return }
+        quizOpen=true; if(quizItems.isEmpty() && !quizBusy) loadQuiz()
     }
     BackHandler(selectedId!=null) { if(!locked && !voice && !aiOpen) selectedId=null }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().padding(horizontal=16.dp)) {
@@ -407,6 +423,7 @@ fun ArogyaVisitScreen(
                     onPeople={ hubOpen="patients" }, onVisit={ pickerOpen=true },
                     onAsk={ if(knowledgeReady) openAi(ArogyaAiTask.EXPLAIN,"",sop=true) else Toast.makeText(context,tr("Install the ASHA guide first (below).","पहले ASHA गाइड इंस्टॉल करें (नीचे)।"),Toast.LENGTH_LONG).show() },
                     onRegisters={ hubOpen="registers" },
+                    onPractice={ openPractice() }, practiceSub=ArogyaPractice.summaryLine(practiceWeek,hindi),
                     dueToday=dueNow.count { !it.done && !it.due.isAfter(LocalDate.now()) },
                     referrals=visits.count { it.completed && it.referral==ArogyaReferral.NEEDED && it.date>=LocalDate.now().minusDays(7).toString() }) }
                 item {
@@ -427,7 +444,9 @@ fun ArogyaVisitScreen(
                             DropdownMenu(expanded=moreOpen,onDismissRequest={moreOpen=false}) {
                                 DropdownMenuItem(text={ Text(tr("☁ Backup","☁ बैकअप")) },onClick={moreOpen=false;hubOpen="backup"})
                                 if(knowledgeReady && ai!=null) DropdownMenuItem(text={ Text(tr("📚 Practice","📚 अभ्यास")) },
-                                    onClick={moreOpen=false;quizOpen=true;if(quizItems.isEmpty() && !quizBusy) loadQuiz()})
+                                    onClick={moreOpen=false;openPractice()})
+                                if(ai!=null) DropdownMenuItem(text={ Text(tr("📖 Official guides","📖 आधिकारिक गाइड")) },
+                                    onClick={moreOpen=false;guideFromSop=false;guideOpen=true})
                             }
                         }
                     }
@@ -662,7 +681,7 @@ fun ArogyaVisitScreen(
         if(s.excerpt.isBlank()) Text(tr("The passage text was not recorded for this source.","इस स्रोत का पाठ उपलब्ध नहीं है।")) else ArogyaPassageText(s)
         if(s.highlights.isNotEmpty()) Text(tr("Highlighted: the sentences this answer came from.","हाइलाइट: जिन वाक्यों से उत्तर बना।"),style=MaterialTheme.typography.bodySmall)
         if(!s.url.startsWith("http")) Text(tr("No online copy is linked for this document.","इस दस्तावेज़ की ऑनलाइन प्रति उपलब्ध नहीं है।"),style=MaterialTheme.typography.bodySmall)
-    }},confirmButton={ if(s.url.startsWith("http")) Button(onClick={runCatching {uriHandler.openUri(s.url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()}}) {Text(tr("Open guideline","गाइडलाइन खोलें"))} },
+    }},confirmButton={ if(s.url.startsWith("http")) Button(onClick={runCatching {uriHandler.openUri(ArogyaGuideLibrary.pageUrl(s.url, s.locator))}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()}}) {Text(tr("Open official page","आधिकारिक पेज खोलें"))} },
         dismissButton={TextButton(onClick={source=null}) {Text(tr("Close","बंद करें"))}}) }
     ocr?.let { a ->
         var reviewedText by remember(a.id) { mutableStateOf(a.extractedText) }
@@ -688,8 +707,14 @@ fun ArogyaVisitScreen(
                     Text(when(aiTask) { ArogyaAiTask.EXPLAIN->tr("Ask the ASHA guide","ASHA गाइड से पूछें");ArogyaAiTask.ORGANISE_NOTES->tr("Your AI visit draft","AI का विज़िट ड्राफ़्ट");ArogyaAiTask.HANDOVER->tr("Prepare ANM handover","ANM के लिए विवरण") },style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
                     AiBadge(if(aiTask==ArogyaAiTask.EXPLAIN) "Ask SOP" else "Organise notes")
                     if(aiTask==ArogyaAiTask.EXPLAIN) TextButton(onClick={
-                        sopThreads=sopThreads-gv.id;aiResult=null;aiQuestion="";aiError="";familyText="";scope.launch { ai?.newConversation() }
+                        sopThreads=sopThreads-gv.id;aiResult=null;aiQuestion="";aiError="";familyText="";sopSuggestions=emptyList();sopSuggestTitle="";scope.launch { ai?.newConversation() }
                     },enabled=!aiBusy) {Text(tr("↺ New","↺ नई"))}
+                }
+                if(aiTask==ArogyaAiTask.EXPLAIN) {
+                    LaunchedEffect(aiOpen,aiVisitId) { if(aiOpen && sopGuideCount<0) sopGuideCount=ai?.guideLibrary()?.size ?: 0 }
+                    if(sopGuideCount>0) TextButton(onClick={guideFromSop=true;guideOpen=true}) {
+                        Text(tr("📖 Guides used ($sopGuideCount)","📖 इस्तेमाल गाइड ($sopGuideCount)"),style=MaterialTheme.typography.bodySmall)
+                    }
                 }
                 // Warning appears after "Ask", not while typing (it used to push the text out of view).
                 val warningNow = if(aiTask==ArogyaAiTask.EXPLAIN && askedQuestionForWarning.isNotBlank()) ArogyaUrgentTriage.assess(askedQuestionForWarning,gv) else null
@@ -697,7 +722,7 @@ fun ArogyaVisitScreen(
                     val snapshot=gv
                     val askedQuestion=aiQuestion.ifBlank { tr("About the attached file","अटैच की गई फ़ाइल के बारे में") }+(if(qFiles.isNotEmpty()) "  [📎 ${qFiles.joinToString(", ")}]" else "")
                     aiOnline=forceOnline
-                    aiBusy=true;aiError="";aiDraft="";aiChecking=false;familyText="";aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L
+                    aiBusy=true;aiError="";aiDraft="";aiChecking=false;familyText="";familyModel="";familyMs=0L;aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L
                     aiJob=scope.launch {
                         try {
                             val result=onRunAi(ArogyaAiRequest(aiTask,snapshot,aiQuestion,hindi,aiTopic,aiPrevious,forceOnline,afterSafetyPrompt=afterSafety,
@@ -746,10 +771,10 @@ fun ArogyaVisitScreen(
                                 Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                     val q=thread.lastOrNull()?.question ?: aiQuestion
                                     if(q.isNotBlank()) Text(q,fontWeight=FontWeight.Bold)
-                                    fun family(h:Boolean) { val engine=ai ?: return; familyBusy=true; scope.launch { try { familyText=engine.familyExplain(result.text,result.quote,h) } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
+                                    fun family(h:Boolean) { val engine=ai ?: return; familyBusy=true; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(result.text,result.quote,h); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
                                     SopAnswerCard(result,q,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,showPassages,{showPassages=!showPassages},{source=it},
                                         { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
-                                        {speak(it)},{tts.stop()},familyText,familyBusy,{family(it)},{runVisitAi(true,afterSafety=true)},{escalate(it)},context,hindi)
+                                        {speak(it)},{tts.stop()},familyText,familyBusy,familyModel,familyMs,{family(it)},{runVisitAi(true,afterSafety=true)},{escalate(it)},context,hindi)
                                 }
                             }
                         }
@@ -779,6 +804,14 @@ fun ArogyaVisitScreen(
                         TextButton(onClick={ai?.clearAttachments();qFiles=emptyList()},enabled=!aiBusy) {Text(tr("Remove","हटाएँ"))}
                     }
                     if(qFiles.isNotEmpty()) Text(tr("A photo is added to your question. A PDF is answered from that PDF itself.","फ़ोटो सवाल के साथ गाइड में खोजी जाती है। PDF का उत्तर उसी PDF से आता है।"),style=MaterialTheme.typography.bodySmall)
+                    if(sopSuggestions.isNotEmpty()) {
+                        Text(tr("Ask about ", "पूछें ") + sopSuggestTitle.take(60) + ":",style=MaterialTheme.typography.bodySmall,fontWeight=FontWeight.Bold)
+                        Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.horizontalScroll(rememberScrollState())) {
+                            sopSuggestions.take(8).forEach { topic ->
+                                FilterChip(selected=false,onClick={aiQuestion=topic.take(200)},label={Text(topic.take(40))})
+                            }
+                        }
+                    }
                     Button(onClick={askedQuestionForWarning=aiQuestion;runVisitAi(false,afterSafety=ArogyaUrgentTriage.assess(aiQuestion,gv)!=null)},enabled=!aiBusy && !qFileBusy && pending==0 && (aiQuestion.isNotBlank() || qFiles.isNotEmpty()),modifier=Modifier.fillMaxWidth()) {
                         Text(if(aiBusy) tr("Working on your phone…","फ़ोन पर काम हो रहा है…") else tr("Ask the guide","गाइड से पूछें"))
                     }
@@ -790,7 +823,8 @@ fun ArogyaVisitScreen(
                 if(aiBusy) SopBusyCard(hindi,aiOnline,aiChecking,aiTask==ArogyaAiTask.EXPLAIN,aiDraft,((nowMs-aiStartedAt).coerceAtLeast(0))/1000,aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500) {onCancelAi();aiJob?.cancel()}
                 if(aiError.isNotBlank()) Text(aiError,color=MaterialTheme.colorScheme.error)
                 aiResult?.let { result ->
-                    Text("${result.provider} • ${result.elapsedMs/1000.0}s",style=MaterialTheme.typography.bodySmall)
+                    AiResultChip(result.provider,result.online,result.elapsedMs,hindi)
+                    if(result.canCopyToNotes) ConfirmChip(hindi)
                     Text(if(result.canCopyToNotes) tr("Review each recorded fact","हर तथ्य की जाँच करें") else tr("Guidance with sources","स्रोत के साथ जानकारी"),fontWeight=FontWeight.Bold)
                     if(result.canCopyToNotes) {
                         aiCapture.forEachIndexed { index,item -> Card(Modifier.fillMaxWidth()) {Column(Modifier.padding(14.dp)) {
@@ -820,10 +854,10 @@ fun ArogyaVisitScreen(
                     } else {
                         // Unreachable in the draft flow (organise results always carry canCopyToNotes);
                         // the shared card keeps it correct if that ever changes.
-                        fun familyElse(h:Boolean) { val engine=ai ?: return; familyBusy=true; scope.launch { try { familyText=engine.familyExplain(result.text,result.quote,h) } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
+                        fun familyElse(h:Boolean) { val engine=ai ?: return; familyBusy=true; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(result.text,result.quote,h); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
                         SopAnswerCard(result,aiQuestion,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,showPassages,{showPassages=!showPassages},{source=it},
                             { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
-                            {speak(it)},{tts.stop()},familyText,familyBusy,{familyElse(it)},{runVisitAi(true,afterSafety=true)},{escalate(it)},context,hindi)
+                            {speak(it)},{tts.stop()},familyText,familyBusy,familyModel,familyMs,{familyElse(it)},{runVisitAi(true,afterSafety=true)},{escalate(it)},context,hindi)
                     }
                     Row {TextButton(onClick={speak(if(result.canCopyToNotes) aiCopy else result.text)}) {Text(tr("🔊 Read aloud","🔊 सुनें"))};TextButton(onClick={tts.stop()}) {Text(tr("Stop","रोकें"))}}
                 }
@@ -932,6 +966,7 @@ fun ArogyaVisitScreen(
     if(quizOpen) AlertDialog(onDismissRequest={quizOpen=false},title={Row(verticalAlignment=Alignment.CenterVertically) { Text(tr("2-minute refresher","2 मिनट अभ्यास"),modifier=Modifier.weight(1f)); AiBadge("Daily practice") }},text={
         Column(Modifier.heightIn(max=540.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             if(quizBusy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(tr("Making 3 questions from your ASHA guide on this phone…","आपकी ASHA गाइड से फ़ोन पर 3 सवाल बन रहे हैं…")) }
+            if(quizModel.isNotBlank()) AiResultChip(quizModel,!quizModel.startsWith("On-phone"),quizMs,hindi)
             if(quizError.isNotBlank()) Text(quizError,color=MaterialTheme.colorScheme.error)
             quizItems.forEachIndexed { qi,item ->
                 Text("${qi+1}. ${item.question}",fontWeight=FontWeight.Bold)
@@ -945,12 +980,26 @@ fun ArogyaVisitScreen(
                 }
                 if(chosen!=null) TextButton(onClick={source=item.source}) { Text(tr("From the guide: ","गाइड से: ")+item.source.title.take(50)+" · "+item.source.locator,style=MaterialTheme.typography.bodySmall) }
             }
+            // Finished once: record the day's best score for the streak (offline, on this phone).
+            LaunchedEffect(quizChoice,quizItems) {
+                if(!quizRecorded && quizItems.isNotEmpty() && quizChoice.size==quizItems.size) {
+                    quizRecorded=true
+                    val score=quizChoice.count { (qi,oi) -> quizItems[qi].correct==oi }
+                    practiceWeek=ArogyaPractice.record(context.getSharedPreferences("arogya_practice",0).getString("history","").orEmpty(),LocalDate.now().toString(),score,quizItems.size)
+                    context.getSharedPreferences("arogya_practice",0).edit().putString("history",practiceWeek.history).apply()
+                }
+            }
+            Text(ArogyaPractice.summaryLine(practiceWeek,hindi),style=MaterialTheme.typography.bodySmall)
             if(quizItems.isNotEmpty() && quizChoice.size==quizItems.size)
                 Text(tr("Score: ","स्कोर: ")+"${quizChoice.count { (qi,oi) -> quizItems[qi].correct==oi }} / ${quizItems.size}",fontWeight=FontWeight.Bold)
             Text(tr("Questions are written by AI from guide passages; the right answer is checked to be in the passage.","सवाल AI ने गाइड से बनाए हैं; सही उत्तर गाइड में होने की जाँच की गई है।"),style=MaterialTheme.typography.bodySmall)
         }
     },confirmButton={TextButton(onClick={quizOpen=false}) {Text(tr("Close","बंद करें"))}},
     dismissButton={TextButton(onClick={loadQuiz()},enabled=!quizBusy) {Text(tr("New questions","नए सवाल"))}})
+    if(guideOpen) ArogyaGuideLibrary(hindi,ai,ArogyaRegistryStore.get(context),onAskGuide={ title,topics ->
+        sopSuggestions=topics;sopSuggestTitle=title;guideOpen=false
+        if(!guideFromSop) openAi(ArogyaAiTask.EXPLAIN,sop=true)
+    },onClose={guideOpen=false})
     if(welcome) ArogyaWelcome(hindi) { ArogyaLang.setWelcomed(context); welcome=false }
     if(demoOpen) ArogyaDemoTour(ai,queue,visits,hindi,speak={ t -> speak(t) },onLoadSample={ loadSample() },onClose={ demoOpen=false; tts.stop() },
         onDeepLink={ target -> demoOpen=false; tts.stop(); if(target.startsWith("guided:")) guidedFor=reg.beneficiaries.firstOrNull { it.id==target.removePrefix("guided:") } else hubOpen=target })

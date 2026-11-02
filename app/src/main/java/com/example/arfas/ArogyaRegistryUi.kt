@@ -124,6 +124,12 @@ fun ArogyaAiPage(hindi: Boolean, modelStatus: String, onlineStatus: String, onDi
                 }
             }
             Text(tr("Ⓜ = Meta model.", "Ⓜ = Meta मॉडल।"), style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FixedRuleChip(hindi)
+                Text(tr("Danger signs, schedules, due dates and incentives are fixed government rules, not AI.",
+                    "खतरे के लक्षण, समय-सारणी, नियत तारीख़ें और प्रोत्साहन तय सरकारी नियम हैं, AI नहीं।"), style = MaterialTheme.typography.bodySmall)
+            }
+            Text(tr("Built with Muse Code.", "Muse Code से बनाया गया।"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }, confirmButton = { TextButton(onClick = onDismiss) { Text(tr("Close", "बंद करें")) } })
 }
@@ -185,7 +191,7 @@ fun ArogyaWelcome(hindi: Boolean, onDone: () -> Unit) {
 /** Home: the four things an ASHA does. Big, two words each, Hindi on request. */
 @Composable
 fun ArogyaHomeGrid(hindi: Boolean, people: Int, onPeople: () -> Unit, onVisit: () -> Unit, onAsk: () -> Unit, onRegisters: () -> Unit,
-                   dueToday: Int = 0, referrals: Int = 0) {
+                   dueToday: Int = 0, referrals: Int = 0, onPractice: () -> Unit = {}, practiceSub: String = "") {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     @Composable fun Tile(icon: String, title: String, sub: String, primary: Boolean, modifier: Modifier, onClick: () -> Unit) {
         Card(modifier.heightIn(min = 118.dp).clickable { onClick() }, shape = MaterialTheme.shapes.extraLarge,
@@ -206,6 +212,7 @@ fun ArogyaHomeGrid(hindi: Boolean, people: Int, onPeople: () -> Unit, onVisit: (
             Tile("❓", tr("Ask SOP", "SOP पूछें"), tr("Answer with guideline page", "गाइडलाइन पेज के साथ उत्तर"), false, Modifier.weight(1f), onAsk)
             Tile("📒", tr("Registers", "रजिस्टर"), (if (referrals > 0) tr("⚠ $referrals referral${if (referrals == 1) "" else "s"} to follow up · ", "⚠ $referrals रेफ़रल फ़ॉलो-अप · ") else "") + tr("diary, drug kit, monthly claim", "डायरी, दवा किट, मासिक दावा"), false, Modifier.weight(1f), onRegisters)
         }
+        Tile("📚", tr("Today's practice", "आज का अभ्यास"), tr("3 questions", "3 सवाल") + (if (practiceSub.isNotBlank()) " · $practiceSub" else ""), false, Modifier.fillMaxWidth(), onPractice)
     }
 }
 
@@ -246,7 +253,7 @@ fun ArogyaRegistryHub(hindi: Boolean, initial: String, visits: List<ArogyaVisit>
                     when (tab) {
                         "due" -> DueTab(hindi, data, visits, today, store) { openPatient = it }
                         "patients" -> PatientsTab(hindi, data, visits, today, onOpen = { openPatient = it }, onAdd = { editPatient = Beneficiary() })
-                        "registers" -> RegistersTab(hindi, data, visits, store, today, onOpen = { openPatient = it }) { c -> save(c) }
+                        "registers" -> RegistersTab(hindi, data, visits, store, today, onOpen = { openPatient = it }, ai = ai) { c -> save(c) }
                         else -> BackupTab(hindi, store, queue)
                     }
                 }
@@ -273,6 +280,7 @@ private fun DueTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaVisit>
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(0L to tr("Today", "आज"), 7L to tr("This week", "इस हफ़्ते"), 30L to tr("This month", "इस महीने")).forEach { (d, l) -> FilterChip(selected = days == d, onClick = { days = d }, label = { Text(l) }) }
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { FixedRuleChip(hindi); Text(tr("Fixed government schedules", "तय सरकारी सूची"), style = MaterialTheme.typography.bodySmall) }
         if (due.isEmpty()) Text(tr("Nothing due. Add patients with dates of birth or LMP to build the schedule.", "कुछ बाकी नहीं। जन्मतिथि या LMP के साथ लोग जोड़ें ताकि सूची बने।"), Modifier.padding(8.dp))
         else ArogyaRegisterTable(hindi, tr("Due visits", "बाकी विज़िट"), table, store, statusCol = 4, villageCol = 1, statusFilter = true,
             onOpenPerson = onOpen, colWidths = listOf(120.dp, 84.dp, 190.dp, 130.dp, 96.dp), maxHeight = 520.dp,
@@ -383,13 +391,15 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
     val scope = rememberCoroutineScope()
     var readBusy by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf<ArogyaCardReading?>(null) }
+    var readModel by remember { mutableStateOf("") }
+    var readMs by remember { mutableStateOf(0L) }
     var picked by remember { mutableStateOf(setOf<Int>()) }
     var shotUri by remember { mutableStateOf<Uri?>(null) }
     fun readUri(uri: Uri, temp: Boolean) {
         val engine = ai ?: return
         readBusy = true
         scope.launch {
-            try { val r = engine.readCard(uri); reading = r; picked = r.fields.indices.toSet() }
+            try { val t = System.currentTimeMillis(); val (r, by) = engine.readCardDetailed(uri); reading = r; readModel = by; readMs = System.currentTimeMillis() - t; picked = r.fields.indices.toSet() }
             catch (e: CancellationException) { throw e } catch (e: Exception) { Toast.makeText(context, e.message ?: "Could not read the card", Toast.LENGTH_LONG).show() }
             finally { readBusy = false; if (temp) runCatching { context.contentResolver.delete(uri, null, null) } }
         }
@@ -496,6 +506,8 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
     }
     reading?.let { r -> AlertDialog(onDismissRequest = { reading = null }, title = { Row(verticalAlignment = Alignment.CenterVertically) { Text(tr("Found on the card", "कार्ड पर मिला"), modifier = Modifier.weight(1f)); AiBadge("Read MCP card photo") } }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (readModel.isNotBlank()) AiResultChip("ML Kit text + $readModel", !readModel.startsWith("On-phone"), readMs, hindi)
+            ConfirmChip(hindi)
             if (r.fields.isEmpty()) Text(tr("Nothing could be confirmed from this photo. Take a closer, brighter photo with the card flat.", "इस फ़ोटो से कुछ पक्का नहीं हुआ। कार्ड सीधा रखकर पास से, रोशनी में फ़ोटो लें।"))
             else Text(tr("Untick anything that does not match the card.", "जो कार्ड से न मिले उसका निशान हटाएँ।"), style = MaterialTheme.typography.bodySmall)
             r.fields.forEachIndexed { i, f -> Row(verticalAlignment = Alignment.Top) {
@@ -543,7 +555,7 @@ private fun EventDialog(hindi: Boolean, onDismiss: () -> Unit, onSave: (VitalKin
 }
 
 @Composable
-private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaVisit>, store: ArogyaRegistryStore, today: LocalDate, onOpen: (String) -> Unit, save: ((RegistryData) -> RegistryData) -> Boolean) {
+private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<ArogyaVisit>, store: ArogyaRegistryStore, today: LocalDate, onOpen: (String) -> Unit, ai: ArogyaVisitAi? = null, save: ((RegistryData) -> RegistryData) -> Boolean) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
     var sub by remember { mutableStateOf("") }
@@ -633,6 +645,9 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 var giveOpen by remember { mutableStateOf(false) }
                 var viewer by remember { mutableStateOf<FormTable?>(null) }
                 var historyItem by remember { mutableStateOf("") }
+                var scanOpen by remember { mutableStateOf(false) }
+                var scanReceive by remember { mutableStateOf<Pair<MedScan, String>?>(null) }
+                var scanAdd by remember { mutableStateOf<MedScan?>(null) }
                 val cat = remember(data) { ArogyaRegistryLogic.catalog(data.stockItems) }
                 val bal = remember(data) { ArogyaRegistryLogic.stockBalance(data.stock) }
                 val reg = remember(data, stockMonth) { ArogyaRegistryLogic.stockRegister(data.stock, data.stockItems, stockMonth, today, hindi) }
@@ -648,7 +663,8 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                     OutlinedButton(onClick = { writeoffOpen = true }) { Text(tr("Expired", "एक्सपायर"), maxLines = 1) }
                     OutlinedButton(onClick = { addOpen = true }) { Text(tr("+ Item", "+ दवा"), maxLines = 1) }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    if (ai != null) OutlinedButton(onClick = { scanOpen = true }) { Text(tr("🔍 Scan medicine", "🔍 दवा स्कैन करें"), maxLines = 1) }
                     OutlinedButton(onClick = { samOpen = true }) { Text(tr("📷 Count from photo", "📷 फ़ोटो से गिनें"), maxLines = 1) }
                     OutlinedButton(onClick = { viewer = ArogyaForms.drugKitCard(data.stock) }) { Text(tr("Annexure 5", "Annexure 5"), maxLines = 1) }
                 }
@@ -662,10 +678,17 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                     onRowKey = { historyItem = it },
                     colWidths = listOf(150.dp, 80.dp, 80.dp, 80.dp, 80.dp, 80.dp, 90.dp, 104.dp, 110.dp),
                     note = tr("Opening = before this month. Tap a row for its full history.", "शुरुआत = इस महीने से पहले। पूरी जानकारी के लिए पंक्ति दबाएँ।"))
-                if (addOpen) StockAddItemDialog(hindi, onDismiss = { addOpen = false }) { item ->
-                    if (save { r -> r.copy(stockItems = r.stockItems.filterNot { it.name == item.name } + item) }) addOpen = false }
-                if (receiveOpen) StockReceiveDialog(hindi, cat, onDismiss = { receiveOpen = false }) { txn ->
-                    if (save { r -> r.copy(stock = r.stock + txn) }) receiveOpen = false }
+                if (scanOpen && ai != null) MedScanDialog(hindi, ai, cat,
+                    onReceive = { s, m -> scanOpen = false; scanReceive = s to m; receiveOpen = true },
+                    onAdd = { s -> scanOpen = false; scanAdd = s; addOpen = true },
+                    onDismiss = { scanOpen = false })
+                if (addOpen) StockAddItemDialog(hindi, initialName = scanAdd?.name.orEmpty(), onDismiss = { addOpen = false; scanAdd = null }) { item ->
+                    if (save { r -> r.copy(stockItems = r.stockItems.filterNot { it.name == item.name } + item) }) { addOpen = false; scanAdd = null } }
+                if (receiveOpen) { val pre = scanReceive
+                    StockReceiveDialog(hindi, cat, initialItem = pre?.second.orEmpty(), initialQty = pre?.first?.qty ?: 0,
+                        initialBatch = pre?.first?.batch.orEmpty(), initialExpiry = pre?.first?.expiry?.let { ArogyaMedScan.normExpiry(it) }.orEmpty(),
+                        onDismiss = { receiveOpen = false; scanReceive = null }) { txn ->
+                        if (save { r -> r.copy(stock = r.stock + txn) }) { receiveOpen = false; scanReceive = null } } }
                 if (adjustOpen) StockAdjustDialog(hindi, cat, bal, onDismiss = { adjustOpen = false }) { txn ->
                     if (save { r -> r.copy(stock = r.stock + txn) }) adjustOpen = false }
                 if (writeoffOpen) StockWriteoffDialog(hindi, cat, bal, onDismiss = { writeoffOpen = false }) { txn ->
@@ -692,6 +715,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 val inc = remember(data, visits, month) { ArogyaRegistryLogic.incentiveEstimate(data, visits, month) }
                 val claim = rep.text + "\n\nINCENTIVE ESTIMATE (national list in your guide; state rates may differ — verify with ANM):\n" +
                     inc.lines.filter { it.count > 0 }.joinToString("\n") { "${it.item}: ${it.count} × Rs ${it.rate} = Rs ${it.amount}" } + "\nEstimated total: Rs ${inc.total}"
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { FixedRuleChip(hindi); Text(tr("Fixed government rules", "तय सरकारी नियम"), style = MaterialTheme.typography.bodySmall) }
                 Card(Modifier.fillMaxWidth()) { Text(claim, Modifier.padding(12.dp)) }
                 Button(onClick = { ArogyaShare.shareText(context, "ASHA monthly summary $month", claim) }) { Text(tr("Share summary & claim", "सारांश और दावा भेजें")) }
                 Text(tr("Use it to fill the monthly claim / RCH portal entry with your ANM. Check against your paper records.", "ANM के साथ मासिक दावा / RCH भरने में काम लें। कागज़ी रिकॉर्ड से मिलाएँ।"), style = MaterialTheme.typography.bodySmall)

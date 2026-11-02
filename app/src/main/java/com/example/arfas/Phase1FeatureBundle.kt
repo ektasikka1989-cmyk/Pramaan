@@ -269,6 +269,12 @@ class Phase1FeatureBundle(private val context: Context) {
         return KbInstallOutcome(true, "installed")
     }
 
+    /** Official guides library rows (read-only query; retrieval untouched). Call off the main thread. */
+    fun guideLibrary(): List<GuideDoc> = genericKnowledgeDb.listGuideSources()
+
+    /** Topic headings inside one guide, for "Ask about this guide". Call off the main thread. */
+    fun guideTopics(sourceName: String): List<String> = genericKnowledgeDb.guideTopics(sourceName)
+
     /** Best-effort real reason for a failed install (the Boolean installer hides it). */
     private fun installFailureReason(): String = when {
         !semanticEngine.isReady -> "search models not ready — open Setup → AI on this phone first, then retry"

@@ -1,5 +1,6 @@
 package com.example.arfas
 
+import java.time.LocalDate
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -15,6 +16,157 @@ data class ArogyaCardReading(val ocrText: String, val fields: List<ArogyaCardFie
  * numbers that are not in the input are removed, quiz answers must come from the passage,
  * card values must appear in the card text. Nothing here writes to a visit by itself.
  */
+/**
+ * A3 daily-practice streak (pure, host-tested). History is "date:score/total" entries,
+ * newest first, capped at 30 days. A day counts once its quiz is finished (any score).
+ */
+object ArogyaPractice {
+    data class Week(val history: String, val streak: Int, val weekScores: List<String>)
+
+    /** Streak + week scores from stored history without recording (for load). */
+    fun summarize(history: String, today: String): Week {
+        val entries = parse(history)
+        var streak = 0
+        var day = runCatching { LocalDate.parse(today) }.getOrDefault(LocalDate.now())
+        while (entries.containsKey(day)) { streak++; day = day.minusDays(1) }
+        val week = entries.toList().sortedByDescending { it.first }
+            .filter { !it.first.isBefore(runCatching { LocalDate.parse(today) }.getOrDefault(LocalDate.now()).minusDays(6)) }
+            .map { it.second }
+        return Week(history, streak, week)
+    }
+
+    fun record(history: String, today: String, score: Int, total: Int): Week {
+        val entries = parse(history).toMutableMap()
+        val day = runCatching { LocalDate.parse(today) }.getOrDefault(LocalDate.now())
+        val prev = entries[day]?.substringBefore("/")?.toIntOrNull() ?: -1
+        if (score >= 0 && score >= prev) entries[day] = "$score/$total"
+        val kept = entries.toList().sortedByDescending { it.first }.take(30)
+            .joinToString(",") { "${it.first}:${it.second}" }
+        return summarize(kept, today).copy(history = kept)
+    }
+
+    private fun parse(history: String): Map<LocalDate, String> =
+        history.split(",").mapNotNull { e ->
+            val (d, s) = e.split(":").takeIf { it.size == 2 } ?: return@mapNotNull null
+            runCatching { LocalDate.parse(d.trim()) }.getOrNull()?.let { it to s.trim() }
+        }.toMap()
+
+    fun summaryLine(week: Week, hindi: Boolean): String {
+        val fire = if (week.streak > 0) (if (hindi) "🔥 ${week.streak} दिन की लड़ी · " else "🔥 ${week.streak}-day streak · ") else ""
+        val w = if (week.weekScores.isEmpty()) (if (hindi) "इस हफ़्ते अभी नहीं" else "not yet this week")
+        else (if (hindi) "इस हफ़्ते: " else "this week: ") + week.weekScores.joinToString(", ")
+        return fire + w
+    }
+}
+
+/** A4 medicine scan: name, batch, expiry and quantity read off a strip/box photo. */
+data class MedScan(val name: String = "", val batch: String = "", val expiry: String = "", val qty: Int = 0)
+
+/**
+ * Medicine-strip parser (pure, host-tested). Reads raw OCR text or the 4-line LLM answer
+ * (NAME:/BATCH:/EXPIRY:/QTY:). [ground] drops every value that is not literally present
+ * in the OCR text, so the ASHA only ever confirms what the photo actually says.
+ */
+object ArogyaMedScan {
+    private val BATCH = Regex("""(?i)\b(?:batch|b\.?\s*no\.?|lot)\b\.?\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-/]{1,19})""")
+    private val EXPIRY = Regex("""(?i)\b(?:exp(?:iry|\.?date)?|expiry date|use (?:by|before))\b\.?\s*[:\-]?\s*(\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{1,2}|[A-Z]{3,9}\s+\d{2,4}|\d{1,2}\s+[A-Z]{3,9}\s+\d{2,4})""")
+    private const val UNITS = "(tablets?|tabs?|capsules?|caps?|sachets?|packets?|strips?|bottles?|vials?|pieces?|pcs?|ml)"
+    private val QTY = Regex("""(?i)\b(\d{1,5})\s*$UNITS\b""")
+    private val NOISE = Regex("""(?i)^(batch|lot|exp|expiry|mfg|mfd|mrp|rs\.?|net|qty|pkd|use by|use before)\b""")
+
+    fun prompt(ocr: String): String =
+        "Read this medicine strip OCR text and output exactly 4 lines, nothing else:\n" +
+            "NAME: <medicine name as printed, or blank>\nBATCH: <batch/lot code, or blank>\n" +
+            "EXPIRY: <expiry as printed, or blank>\nQTY: <number only, or blank>\n" +
+            "Copy values exactly as printed. Never invent a value.\n---\n" + ocr.take(1200)
+
+    fun parse(text: String): MedScan {
+        // LLM 4-line answer first.
+        val lines = text.lines().associate { l ->
+            val k = l.substringBefore(":").trim().uppercase()
+            val v = l.substringAfter(":", "").trim()
+            k to v
+        }
+        if (lines.keys.intersect(setOf("NAME", "BATCH", "EXPIRY", "QTY")).size >= 2) {
+            return MedScan(
+                lines.getOrDefault("NAME", "").take(80),
+                lines.getOrDefault("BATCH", "").take(24),
+                lines.getOrDefault("EXPIRY", "").take(16),
+                lines.getOrDefault("QTY", "").filter { it.isDigit() }.take(5).toIntOrNull() ?: 0)
+        }
+        val batch = BATCH.find(text)?.groupValues?.get(1).orEmpty().take(24)
+        val expiry = EXPIRY.find(text)?.groupValues?.get(1).orEmpty().take(16)
+        val qty = QTY.findAll(text).mapNotNull { it.groupValues[1].toIntOrNull() }.firstOrNull { it in 1..5000 } ?: 0
+        // Name: the longest plausible printed line (caps product line), skipping label lines.
+        val name = text.lines().map { it.trim().trim(',', '.', ':', ';', '-', '|') }
+            .filter { it.length >= 4 && !NOISE.containsMatchIn(it) && it.any { c -> c.isLetter() } }
+            .maxWithOrNull(compareBy({ capsScore(it) }, { it.length })).orEmpty().take(80)
+        return MedScan(name, batch, expiry, qty)
+    }
+
+    private fun capsScore(line: String): Int {
+        val letters = line.filter { it.isLetter() }
+        if (letters.isEmpty()) return -1
+        return letters.count { it.isUpperCase() } * 2 - letters.length / 4
+    }
+
+    /** Keep only values literally present in the OCR text (case/punctuation-insensitive). */
+    fun ground(scan: MedScan, ocr: String): MedScan {
+        fun norm(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+        val hay = norm(ocr)
+        fun keep(v: String, minLen: Int = 2) = v.isNotBlank() && v.length >= minLen && norm(v).isNotBlank() && hay.contains(norm(v))
+        // A quantity counts only next to a unit ("100 sachets") or a qty label ("Qty: 50"),
+        // so a price ("Rs 22") or a year can never be mistaken for the pack quantity.
+        val qtyOk = scan.qty <= 0 ||
+            Regex("""(?i)\b${scan.qty}\s*$UNITS\b""").containsMatchIn(ocr) ||
+            Regex("""(?i)\b(?:qty|quantity|pack of|strip of)\b\s*[:\-]?\s*${scan.qty}\b""").containsMatchIn(ocr)
+        return MedScan(
+            if (keep(scan.name, 4)) scan.name else "",
+            if (keep(scan.batch)) scan.batch else "",
+            if (keep(scan.expiry)) scan.expiry else "",
+            if (qtyOk) scan.qty else 0)
+    }
+
+    /**
+     * Expiry as printed ("09/27", "09/2027", "SEP 2027", "30/09/2027") → yyyy-MM-dd record
+     * format (last day of the month for month-only prints). Unparseable prints pass through
+     * unchanged for the ASHA to fix; only yyyy-MM-dd drives the expiring-soon flag.
+     */
+    fun normExpiry(raw: String): String {
+        val t = raw.trim()
+        if (t.isEmpty()) return ""
+        runCatching { java.time.LocalDate.parse(t) }.getOrNull()?.let { return it.toString() }
+        val months = mapOf("JAN" to 1, "FEB" to 2, "MAR" to 3, "APR" to 4, "MAY" to 5, "JUN" to 6,
+            "JUL" to 7, "AUG" to 8, "SEP" to 9, "OCT" to 10, "NOV" to 11, "DEC" to 12)
+        Regex("""^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$""").matchEntire(t)?.let { m ->
+            val (d, mo, y) = m.destructured
+            val year = if (y.length == 2) 2000 + y.toInt() else y.toInt()
+            return runCatching { java.time.LocalDate.of(year, mo.toInt(), d.toInt()).toString() }.getOrDefault(t)
+        }
+        Regex("""^(\d{1,2})[/\-.](\d{2,4})$""").matchEntire(t)?.let { m ->
+            val (mo, y) = m.destructured
+            val year = if (y.length == 2) 2000 + y.toInt() else y.toInt()
+            return runCatching { java.time.YearMonth.of(year, mo.toInt()).atEndOfMonth().toString() }.getOrDefault(t)
+        }
+        Regex("""^([A-Z]{3,9})\s+(\d{2,4})$""", RegexOption.IGNORE_CASE).matchEntire(t)?.let { m ->
+            val mo = months[m.groupValues[1].uppercase().take(3)] ?: return t
+            val y = m.groupValues[2]
+            val year = if (y.length == 2) 2000 + y.toInt() else y.toInt()
+            return runCatching { java.time.YearMonth.of(year, mo).atEndOfMonth().toString() }.getOrDefault(t)
+        }
+        return t
+    }
+
+    /** Match the scanned name against the kit catalogue (exact, then contains). */
+    fun matchItem(name: String, items: List<String>): String {
+        if (name.isBlank()) return ""
+        items.firstOrNull { it.equals(name, ignoreCase = true) }?.let { return it }
+        val words = name.split(Regex("\\s+")).filter { it.length >= 4 }
+        return items.firstOrNull { item -> words.any { w -> item.contains(w, ignoreCase = true) } }
+            ?: items.firstOrNull { name.contains(it, ignoreCase = true) }.orEmpty()
+    }
+}
+
 object ArogyaAiExtras {
 
     // ── Shared grounding helpers ──
@@ -235,6 +387,10 @@ object ArogyaAiCatalog {
             "Muse Voice Transcribe 1.0 (Meta Model API)", "Meta", true, "Cloud, when online and a key is saved"),
         ArogyaAiFeature("Count drug kit", "Finds each ORS sachet, tablet strip or packet in a photo and counts them; the ASHA confirms the number before it goes in the register",
             "SAM 3.1 — Segment Anything (Meta Model API)", "Meta", true, "Cloud, when online and a key is saved"),
+        ArogyaAiFeature("Scan medicine", "Reads a strip/box label and pulls out name, batch, expiry and quantity; only text on the label is kept, and the ASHA confirms the stock entry",
+            "ML Kit text recognition + on-phone rules and model fill", "Google + Meta", true, "On phone, offline"),
+        ArogyaAiFeature("Reading aloud", "Reads answers and the demo to the ASHA in Hindi or English",
+            "Android text-to-speech, offline voices", "Google", false, "On phone, offline"),
         ArogyaAiFeature("Danger signs, schedules, incentives", "Fixed rules from the guidelines — deliberately NOT AI, so they are predictable", "Rules (no AI)", "—", false, "On phone")
     )
 }

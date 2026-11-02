@@ -41,7 +41,7 @@ fun SopChatHistoryCard(
             if (result == null) {
                 Text(tr("No answer recorded.", "कोई उत्तर दर्ज नहीं।"), style = MaterialTheme.typography.bodySmall)
             } else {
-                Text("${result.provider} • ${result.elapsedMs / 1000.0}s", style = MaterialTheme.typography.bodySmall)
+                AiResultChip(result.provider, result.online, result.elapsedMs, hindi)
                 if (result.quote.isNotBlank()) Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
                 ) {
@@ -135,6 +135,8 @@ fun SopAnswerCard(
     onStopSpeak: () -> Unit,
     familyText: String,
     familyBusy: Boolean,
+    familyModel: String,
+    familyMs: Long,
     onFamily: (Boolean) -> Unit,
     onCheckOnline: () -> Unit,
     onEscalate: (String) -> Unit,
@@ -142,9 +144,13 @@ fun SopAnswerCard(
     hindi: Boolean
 ) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
+    val grounded = result.sources.isNotEmpty() && !result.sourceOnly && !result.r8Blocked
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("${result.provider} • ${result.elapsedMs / 1000.0}s", style = MaterialTheme.typography.bodySmall)
-        Text(tr("Guidance with sources", "स्रोत के साथ जानकारी"), fontWeight = FontWeight.Bold)
+        AiResultChip(result.provider, result.online, result.elapsedMs, hindi)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(tr("Guidance with sources", "स्रोत के साथ जानकारी"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            if (grounded) Text(tr("📚 From official guides", "📚 आधिकारिक गाइड से"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        }
         if (result.quote.isNotBlank()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
             Column(Modifier.padding(12.dp)) {
                 Text(tr("The guide says", "गाइड में लिखा है"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
@@ -155,7 +161,9 @@ fun SopAnswerCard(
         Text(ArogyaMarkdown.strip(result.text))
         if (ArogyaFlags.r7SourceLine && result.sources.isNotEmpty()) {
             val s0 = result.sources.first()
-            Text(tr("Source: ", "स्रोत: ") + s0.title + (if (s0.locator.isNotBlank()) ", ${s0.locator}" else ""), fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { onOpenSource(s0) }) {
+                Text(tr("Source: ", "स्रोत: ") + s0.title + (if (s0.locator.isNotBlank()) ", ${s0.locator}" else ""), fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+            }
         }
         if (result.r8Blocked) {
             Button(onClick = {
@@ -181,7 +189,7 @@ fun SopAnswerCard(
                     Column(Modifier.padding(12.dp)) {
                         Text("[${s.id}] ${s.title}" + (if (s.locator.isNotBlank()) " · ${s.locator}" else ""), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
                         ArogyaPassageText(s)
-                        if (s.url.startsWith("http")) TextButton(onClick = { onOpenUrl(s.url) }) { Text(tr("Open guideline", "गाइडलाइन खोलें")) }
+                        if (s.url.startsWith("http")) TextButton(onClick = { onOpenUrl(ArogyaGuideLibrary.pageUrl(s.url, s.locator)) }) { Text(tr("Open official page", "आधिकारिक पेज खोलें")) }
                     }
                 }
             }
@@ -199,6 +207,7 @@ fun SopAnswerCard(
             if (familyText.isNotBlank()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                 Column(Modifier.padding(12.dp)) {
                     Text(tr("For the family", "परिवार के लिए"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    if (familyModel.isNotBlank()) AiResultChip(familyModel, !familyModel.startsWith("On-phone"), familyMs, hindi)
                     Text(familyText, style = MaterialTheme.typography.bodyLarge)
                     TextButton(onClick = { onSpeak(familyText) }) { Text(tr("🔊 Read to the family", "🔊 परिवार को सुनाएँ")) }
                     Text(tr("AI rewrite of the guide answer in simple words. No new advice or numbers are added — check before reading out.", "गाइड के उत्तर का सरल रूप। कोई नई सलाह या संख्या नहीं जोड़ी गई — सुनाने से पहले देख लें।"), style = MaterialTheme.typography.bodySmall)

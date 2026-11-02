@@ -206,6 +206,7 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, onRecord:
     var per by remember { mutableStateOf(ArogyaKitPhrases.perItem(item).toString()) }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
+    var countMs by remember { mutableStateOf(0L) }
     var shotUri by remember { mutableStateOf<Uri?>(null) }
     fun run(uri: Uri, temp: Boolean) {
         busy = true; msg = ""; boxes = emptyList()
@@ -225,7 +226,7 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, onRecord:
                 if (!withContext(Dispatchers.IO) { MetaOnline.ready(context) }) { msg = tr("SAM 3.1 needs internet and the Meta key (Settings). You can still type the count.", "SAM 3.1 को इंटरनेट और Meta key (Settings) चाहिए। गिनती खुद लिख सकती हैं।"); return@launch }
                 val t = System.currentTimeMillis()
                 val found = MetaOnline.api(context).sam("arogya_kit_count", jpeg, phrase.ifBlank { "packet" })
-                boxes = found; val n = ArogyaSamCount.count(found.map { it.confidence }); counted = (n * (per.toIntOrNull() ?: 1)).toString()
+                boxes = found; val n = ArogyaSamCount.count(found.map { it.confidence }); counted = (n * (per.toIntOrNull() ?: 1)).toString(); countMs = System.currentTimeMillis() - t
                 msg = "SAM 3.1 " + tr("found $n \"$phrase\" in ${(System.currentTimeMillis() - t) / 1000}s", "\"$phrase\" $n मिला ${(System.currentTimeMillis() - t) / 1000} सेकंड में") + (if ((per.toIntOrNull() ?: 1) > 1) " × $per " + tr("per item", "प्रति नग") else "") + ". " + tr("Check the boxes and correct the number if needed.", "डिब्बे देखकर संख्या सुधारें।")
                 Log.i("ArogyaDemo", "AROGYA_SAM_COUNT item=\"$item\" phrase=\"$phrase\" found=${found.size} counted=$n ms=${System.currentTimeMillis() - t}")
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
@@ -263,6 +264,8 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, onRecord:
                 } }
             } }
             if (msg.isNotBlank()) Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            if (boxes.isNotEmpty()) AiResultChip("SAM 3.1 (Meta)", true, countMs, hindi)
+            ConfirmChip(hindi)
             OutlinedTextField(counted, { counted = it.filter { c -> c.isDigit() }.take(4) }, label = { Text(tr("Count you confirm", "पक्की गिनती")) }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             counted.toIntOrNull()?.let { n -> val diff = n - (balances[item] ?: 0)

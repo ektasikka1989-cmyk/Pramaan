@@ -174,6 +174,27 @@ fun ArogyaRegisterTable(
     }
 }
 
+/**
+ * A5: every AI result carries its engine chip — the real model that ran, offline/online, time.
+ * Rule-based results use [FixedRuleChip]; AI proposals add [ConfirmChip].
+ */
+@Composable
+fun AiResultChip(provider: String, online: Boolean, ms: Long, hindi: Boolean) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val secs = if (ms < 1000) tr("<1 s", "<1 से.") else tr("${ms / 1000} s", "${ms / 1000} से.")
+    AssistChip(onClick = {}, label = { Text("✨ ${provider.take(34)} · " + (if (online) tr("☁ online", "☁ ऑनलाइन") else tr("📴 offline", "📴 ऑफ़लाइन")) + " · $secs", style = MaterialTheme.typography.labelSmall) })
+}
+
+@Composable
+fun FixedRuleChip(hindi: Boolean) {
+    AssistChip(onClick = {}, label = { Text(if (hindi) "⚙ तय नियम" else "⚙ Fixed rule", style = MaterialTheme.typography.labelSmall) })
+}
+
+@Composable
+fun ConfirmChip(hindi: Boolean) {
+    AssistChip(onClick = {}, label = { Text(if (hindi) "✋ सहेजने से पहले आप पक्की करें" else "✋ You confirm before saving", style = MaterialTheme.typography.labelSmall) })
+}
+
 /** System print (sharesheet Print / printers) for a PDF already rendered in memory. */
 object ArogyaPrint {
     fun printPdf(context: Context, jobName: String, bytes: ByteArray): Boolean = runCatching {

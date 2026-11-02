@@ -103,6 +103,10 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     /** R9 marker of the installed guide pack (2 = v2, 0 = v1, -1 = none). */
     fun guideVersion(): Int = runCatching { features.guideVersion() }.getOrDefault(-1)
 
+    /** Official guides library rows + topic headings (IO thread; empty when no pack installed). */
+    suspend fun guideLibrary(): List<GuideDoc> = withContext(Dispatchers.IO) { runCatching { features.guideLibrary() }.getOrDefault(emptyList()) }
+    suspend fun guideTopics(sourceName: String): List<String> = withContext(Dispatchers.IO) { runCatching { features.guideTopics(sourceName) }.getOrDefault(emptyList()) }
+
     /** Evidence size from the profile switch (1 = R1 6 x 1100, 2 = 5 x 900 candidate, 0 = legacy 4 x 900). */
     private fun applyEvidenceSize() {
         when (ArogyaFlags.r1Profile) {
@@ -232,7 +236,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             Log.i(TAG, "AROGYA_R8_BLOCKED kind=${if (liveWeb) "live_web" else "general"} topics=${topics.size}")
             val hindiQ = KbReplyText.dominantScript(question) == KbReplyText.Script.DEVANAGARI
             val msg = if (hindiQ) "यह आपकी आधिकारिक गाइड में नहीं है — अपनी ANM से पूछें।"
-            else "This is not in your official guides — ask your ANM."
+            else "Not in your official guides — ask your ANM."
             val topicLine = if (topics.isEmpty()) "" else (if (hindiQ) "\n\nगाइड में सबसे करीबी विषय: " else "\n\nClosest guide topics: ") + topics.joinToString("; ")
             return ArogyaAiResult(msg + topicLine, "ArogyaDoot", elapsed,
                 online = turn.provider == AndroBaselineRuntime.Provider.CLOUD, sourceOnly = true,
@@ -319,13 +323,17 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     }
 
     /** Simple words for the family, rewritten from the guide answer only. New numbers are removed; falls back to the guide sentence. */
-    suspend fun familyExplain(answer: String, quote: String, hindi: Boolean): String = mutex.withLock {
+    suspend fun familyExplain(answer: String, quote: String, hindi: Boolean): String = familyExplainDetailed(answer, quote, hindi).first
+
+    /** Same, plus the engine label + time for the A5 result chip. */
+    suspend fun familyExplainDetailed(answer: String, quote: String, hindi: Boolean): Triple<String, String, Long> = mutex.withLock {
         val t = System.currentTimeMillis()
-        val clean = route("family_explain", ArogyaAiExtras.familyPrompt(answer, quote, hindi), 220) { out ->
-            ArogyaAiExtras.groundedSentences(out, answer + "\n" + quote, max = 4).takeIf { it.isNotBlank() } }.first.orEmpty()
+        val (opt, by) = route("family_explain", ArogyaAiExtras.familyPrompt(answer, quote, hindi), 220) { out ->
+            ArogyaAiExtras.groundedSentences(out, answer + "\n" + quote, max = 4).takeIf { it.isNotBlank() } }
+        val clean = opt.orEmpty()
         Log.i(TAG, "AROGYA_TIMING event=family_explain ms=${System.currentTimeMillis() - t} chars=${clean.length}")
         check(clean.isNotBlank()) { "Could not make a simple explanation. Read the guide sentence to the family instead." }
-        clean
+        Triple(clean, by, System.currentTimeMillis() - t)
     }
 
     /** A short ANM message drafted from the visit facts only; the worker edits it before sending. */
@@ -343,17 +351,22 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     }
 
     /** Daily refresher: one question per guide passage, kept only if the right answer is in the passage. */
-    suspend fun refresher(count: Int = 3): List<ArogyaQuizItem> = mutex.withLock {
+    suspend fun refresher(count: Int = 3): List<ArogyaQuizItem> = refresherDetailed(count).first
+
+    /** Same, plus the engine label + time for the A5 result chip. */
+    suspend fun refresherDetailed(count: Int = 3): Triple<List<ArogyaQuizItem>, String, Long> = mutex.withLock {
         val t = System.currentTimeMillis()
         val picks = ArogyaSources.all.values.filter { it.excerpt.length > 120 }.shuffled().take(count + 2)
         val out = ArrayList<ArogyaQuizItem>()
+        var by = ""
         for (src in picks) {
             if (out.size >= count) break
-            route("daily_practice", ArogyaAiExtras.quizPrompt(src.excerpt), 200) { ArogyaAiExtras.parseQuiz(it, src) }.first?.let { out += it }
+            val (item, label) = route("daily_practice", ArogyaAiExtras.quizPrompt(src.excerpt), 200) { ArogyaAiExtras.parseQuiz(it, src) }
+            item?.let { out += it; by = label }
         }
         Log.i(TAG, "AROGYA_TIMING event=refresher ms=${System.currentTimeMillis() - t} items=${out.size}")
         check(out.isNotEmpty()) { "Could not prepare today's questions. Try again." }
-        out
+        Triple(out, by, System.currentTimeMillis() - t)
     }
 
     /** Reads an MCP card photo/PDF: text by ML Kit on the phone, fields by Llama, and only fields found in the text are kept. */
@@ -376,6 +389,33 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             Log.i(TAG, "AROGYA_TIMING event=card_read ms=${System.currentTimeMillis() - t} ocrChars=${text.length} fields=${fields.size}")
             ArogyaCardReading(text, fields) to by
         } finally { mgr.releaseTurnAttachments(claimed.map { it.id }, consumed = true) }
+    }
+
+    /**
+     * A4 medicine scan: name, batch, expiry and quantity off a strip/box photo. The OCR text
+     * comes from ML Kit on the phone; the deterministic parse runs first and the model (via
+     * route()) only fills what is missing. Every kept value is grounded in the OCR text.
+     * Returns the scan, the engine label and the parse time (OCR time is measured by the caller).
+     */
+    suspend fun scanMedicine(ocr: String): Triple<MedScan, String, Long> = mutex.withLock {
+        val t = System.currentTimeMillis()
+        check(ocr.trim().length >= 4) { "No readable text was found. Take a closer photo in good light." }
+        var scan = ArogyaMedScan.parse(ocr)
+        var by = "On-phone rules (offline): regex"
+        if (scan.name.isBlank() || scan.batch.isBlank() || scan.expiry.isBlank()) {
+            val (opt, label) = route("medicine_scan", ArogyaMedScan.prompt(ocr), 120) { out ->
+                ArogyaMedScan.ground(ArogyaMedScan.parse(out), ocr)
+            }
+            opt?.let {
+                scan = MedScan(
+                    it.name.ifBlank { scan.name }, it.batch.ifBlank { scan.batch },
+                    it.expiry.ifBlank { scan.expiry }, if (it.qty > 0) it.qty else scan.qty)
+                by = label
+            }
+        }
+        scan = ArogyaMedScan.ground(scan, ocr)
+        Log.i(TAG, "AROGYA_TIMING event=medicine_scan ms=${System.currentTimeMillis() - t} name=${scan.name.isNotBlank()} batch=${scan.batch.isNotBlank()} expiry=${scan.expiry.isNotBlank()} qty=${scan.qty}")
+        Triple(scan, by, System.currentTimeMillis() - t)
     }
 
     /**

@@ -1625,6 +1625,41 @@ class GenericKnowledgePackRepository(
     }
 
     /**
+     * Official guides library (read-only; retrieval untouched): every installed source with its
+     * on-phone passage/page counts. Empty when no pack is installed.
+     */
+    fun listGuideSources(): List<GuideDoc> {
+        val database = db ?: return emptyList()
+        return runCatching {
+            database.rawQuery(
+                """SELECT s.source_name, s.title, s.authority, s.category, s.language, s.source_url, s.register_url,
+                   s.retrieved_at_utc, s.publication_date, COUNT(p.id), COUNT(DISTINCT p.page_number)
+                   FROM knowledge_sources s LEFT JOIN procurement_chunks p ON p.source_name = s.source_name
+                   GROUP BY s.source_name ORDER BY s.authority, s.title""", null
+            ).use { c ->
+                ArrayList<GuideDoc>().also { out ->
+                    while (c.moveToNext()) out += GuideDoc(
+                        c.getString(0).orEmpty(), c.getString(1).orEmpty(), c.getString(2).orEmpty(), c.getString(3).orEmpty(),
+                        c.getString(4).orEmpty(), c.getString(5).orEmpty(), c.getString(6).orEmpty(),
+                        c.getString(7).orEmpty(), c.getString(8).orEmpty(), c.getInt(9), c.getInt(10))
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /** Topic headings inside one guide, for "Ask about this guide" suggestions. */
+    fun guideTopics(sourceName: String, limit: Int = 8): List<String> {
+        val database = db ?: return emptyList()
+        return runCatching {
+            database.rawQuery(
+                "SELECT DISTINCT heading_context FROM procurement_chunks WHERE source_name = ? AND heading_context IS NOT NULL AND heading_context <> '' LIMIT $limit",
+                arrayOf(sourceName)).use { c ->
+                ArrayList<String>().also { out -> while (c.moveToNext()) out += c.getString(0).orEmpty().trim() }
+            }.filter { it.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
      * Optional build-time enrichment (tools/kb_enrich.py): likely questions per passage and their
      * centroid vector. Searchable only; answers and sources always come from the passage row.
      */
