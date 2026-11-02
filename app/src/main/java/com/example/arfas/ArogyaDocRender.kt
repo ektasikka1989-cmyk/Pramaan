@@ -169,7 +169,8 @@ object ArogyaDocRender {
      */
     fun mcpDoc(
         b: Beneficiary, all: List<Beneficiary>, today: LocalDate,
-        header: DocHeader, dateVal: String, template: String, css: String
+        header: DocHeader, dateVal: String, template: String, css: String,
+        growthSvg: String = "", growthNote: String = "", ancTrend: String = ""
     ): FilledDoc {
         val mother = if (b.category == BenCategory.CHILD)
             all.firstOrNull { it.household == b.household && it.household.isNotBlank() && it.category != BenCategory.CHILD } else b
@@ -210,6 +211,8 @@ object ArogyaDocRender {
                 "hasAnc" to if (b.category == BenCategory.PREGNANT) "1" else "", "ancRows" to ancRows,
                 "vaccines" to vaccines,
                 "hasWeights" to if (weights.isNotEmpty()) "1" else "", "weights" to weights,
+                "hasGrowth" to if (growthSvg.isNotBlank()) "1" else "", "growthSvg" to growthSvg,
+                "growthNote" to growthNote, "ancTrend" to ancTrend,
                 "wmText" to if (watermarkFor(listOf(b.id), b.demo)) "SAMPLE" else ""
             )
         )

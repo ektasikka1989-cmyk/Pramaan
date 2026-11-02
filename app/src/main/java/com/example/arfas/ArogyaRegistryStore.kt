@@ -177,8 +177,15 @@ class ArogyaRegistryStore private constructor(private val context: Context, priv
     /** MCP card in the printed card's shape (viewer + PDF share the same document). */
     fun mcpDoc(b: Beneficiary, all: List<Beneficiary>, today: LocalDate): ArogyaDocRender.FilledDoc {
         val t = ArogyaDocPdf.templates(context)
+        // Gap round item 4: growth chart (child) + ANC trend (pregnant) from the bundled WHO table.
+        val table = runCatching {
+            ArogyaGrowth.parseTable(context.assets.open(ArogyaGrowth.ASSET).bufferedReader().readText())
+        }.getOrDefault(ArogyaGrowth.Table(emptyList(), emptyList()))
+        val growthSvg = if (b.category == BenCategory.CHILD) ArogyaGrowth.svg(b.sex, b.dob, b.mcp.weights, table) else ""
+        val growthNote = if (growthSvg.isNotBlank()) ArogyaGrowth.weightNote(b.mcp.weights).orEmpty() else ""
+        val ancTrend = if (b.category == BenCategory.PREGNANT) ArogyaGrowth.ancTrend(b.mcp.ancDetails) else ""
         return ArogyaDocRender.mcpDoc(b, all, today, ArogyaDocPdf.header(context), ArogyaDocPdf.todayStr(),
-            t["mcp"].orEmpty(), t["css"].orEmpty())
+            t["mcp"].orEmpty(), t["css"].orEmpty(), growthSvg, growthNote, ancTrend)
     }
 
     /** MCP card shared as a PDF. */

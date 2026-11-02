@@ -14,3 +14,8 @@
 ## Item 3 — Evaluator-proof first run
 - No setup wizard, no first-run flag, no `semantic.zip` anywhere in repo/assets/code (only `assets/semantic/` = the E5 embedding model, in use — nothing to remove). Reuse: `ModelFileManager.installFromUri` (llama+progress), MediaStore Downloads lookup (`MainActivity.findDownloadDbUri`), guide install `onImportKnowledge` → `installKnowledgeDatabaseDetailed`, `loadSample()` (`ArogyaVisitScreen.kt:188`), More menu (`:497-504`).
 - Build: `ArogyaSetupMatch` (pure name classifier + `SetupMatchTest`), `ArogyaSetup` (prefs flag, scan, Downloads find, whisper copy, asset→Downloads→install), `ArogyaSetupUi` wizard (steps + progress + fixes + Ready), auto-open on first run + More entry; bundle v2 DB in `assets/guide/`; Meta-key line in `ArogyaCloudSettingsDialog`. APK before: 767 MB.
+
+## Item 4 -- Growth chart and ANC trend (fixed rules)
+- Weights live in McpCard.weights + ancDetails (ArogyaRegistry.kt:31-35); child page lists weights (ArogyaRegistryUi.kt:831-836); pregnant page lists ANC rows (:810-817); MCP PDF has weight-record + ANC tables (ArogyaDocRender.mcpDoc, mcp.html); weightNote gives the fell/gained line (ArogyaFormSpecs.kt:318).
+- Guide DB has zone names but no numeric cutoffs, so WHO weight-for-age z-score tables (boys+girls, 0-60 mo, median/-2SD/-3SD) are parsed from the official WHO simplified field-table PDFs into assets/growth/who_wfa.json (spot-checked: boys 12 mo = 9.6/7.7/6.9).
+- New pure ArogyaGrowth (parse/zone/geometry/SVG/ANC-trend) + GrowthChart Canvas composable with tap-a-dot; PDF gets inline SVG via {{{growthSvg}}}; ANC trend line on her page + PDF; new GrowthTest.

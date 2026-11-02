@@ -814,6 +814,7 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
                         Text("ANC $n" + (b.mcp.anc[n]?.let { " — $it" } ?: "") + (b.mcp.ancDetails[n]?.let { " · ${it.weightKg} kg · " + tr("BP ", "रक्तचाप ") + it.bp + " · Hb " + it.hb } ?: ""), modifier = Modifier.weight(1f))
                         if (b.mcp.anc[n] != null) TextButton(onClick = { ancEdit = n }) { Text(tr("Details", "विवरण")) }
                     } }
+                    AncTrendLine(hindi, b.mcp.ancDetails)
                 }
                 if (b.category == BenCategory.CHILD) {
                     Text(tr("Vaccines (tick when given today)", "टीके (आज लगाए तो निशान लगाएँ)"), fontWeight = FontWeight.Bold)
@@ -830,6 +831,7 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
                     }
                     Text(tr("Weight", "वज़न"), fontWeight = FontWeight.Bold)
                     b.mcp.weights.sortedBy { it.date }.forEach { Text("${it.date}: ${it.kg} kg", style = MaterialTheme.typography.bodySmall) }
+                    GrowthChartCard(hindi, b.sex, b.dob, b.mcp.weights)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(kg, { kg = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text(tr("kg today", "आज किलो")) }, singleLine = true, modifier = Modifier.weight(1f))
                         TextButton(onClick = { kg.toDoubleOrNull()?.takeIf { it in 0.3..40.0 }?.let { w -> if (updateBen { x -> x.copy(mcp = x.mcp.copy(weights = x.mcp.weights + WeightEntry(today.toString(), w))) }) kg = "" } }) { Text(tr("Add", "जोड़ें")) }
