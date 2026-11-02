@@ -392,6 +392,7 @@ private fun AddPersonReview(hindi: Boolean, aiReady: Boolean, people: List<Revie
         }
         val toSave = people.filter { !it.skip && it.b.name.isNotBlank() }
         Button(onClick = {
+            val summary = ArogyaChangeSummary.forNewPeople(toSave.map { it.b.name }, hindi)
             val ok = save { r ->
                 var bens = r.beneficiaries
                 var diary = r.diary
@@ -400,13 +401,14 @@ private fun AddPersonReview(hindi: Boolean, aiReady: Boolean, people: List<Revie
                     val target = rp.mergeId
                     bens = if (!target.isNullOrBlank()) bens.map { if (it.id == target) ArogyaPersonDup.merge(it, b) else it }
                     else bens + b
-                    diary = diary + DiaryEntry(beneficiaryId = target?.ifBlank { b.id } ?: b.id, note = tr("Registered: ", "पंजीकृत: ") + b.name)
+                    diary = diary + DiaryEntry(beneficiaryId = target?.ifBlank { b.id } ?: b.id,
+                        note = tr("Registered: ", "पंजीकृत: ") + b.name + "\n" + summary)
                 }
                 r.copy(beneficiaries = bens, diary = diary)
             }
             if (ok) {
                 Log.i("ArogyaDemo", "AROGYA_ADD_PERSON source=$source rows=${people.size} saved=${toSave.size} duplicates=$dupCount")
-                done = tr("Saved ${toSave.size} people.", "${toSave.size} लोग सेव।")
+                done = summary
             } else done = tr("Could not save.", "सेव नहीं हुआ।")
         }, enabled = consent && toSave.isNotEmpty() && done.isEmpty(), modifier = Modifier.fillMaxWidth()) {
             Text(tr("Save ${toSave.size} people", "${toSave.size} लोग सेव करें"))

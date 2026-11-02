@@ -100,6 +100,7 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
     var aiMsg by rememberSaveable { mutableStateOf("") }
     var modelLabel by rememberSaveable { mutableStateOf("") }
     var saved by rememberSaveable { mutableStateOf(false) }
+    var savedSummary by rememberSaveable { mutableStateOf("") }
     var showCard by rememberSaveable { mutableStateOf(false) }
     val dueVaccines = remember(b) { if (b.category != BenCategory.CHILD) emptyList() else runCatching { LocalDate.parse(b.dob) }.getOrNull()?.let { dob ->
         ArogyaSchedule.VACCINE_CONTACTS.filter { !it.due(dob).isAfter(today.plusDays(7)) }.flatMap { it.codes }.filter { b.mcp.vaccines[it] == null } } ?: emptyList() }
@@ -269,7 +270,8 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
                                 values["weight"]?.takeIf { it.isNotBlank() && spec.id != "mcp_anc" }?.let { Text(tr("🗂 MCP card growth chart: $it kg", "🗂 MCP कार्ड वज़न: $it kg")) }
                                 if (spec.id == "mcp_anc") Text(tr("🗂 MCP card ANC ${column + 1}: weight, BP, Hb, TT/Td, IFA", "🗂 MCP कार्ड ANC ${column + 1}"))
                                 if (vaccines.isNotEmpty()) Text("🗂 MCP card: " + vaccines.joinToString { ArogyaSchedule.VACCINE_NAMES[it] ?: it })
-                                listOf("ors" to "ORS", "zinc" to "Zinc", "ifa" to "IFA", "ifa_syrup" to "IFA syrup", "condoms" to "Condoms", "ocp" to "Pills", "napkins" to "Napkins").forEach { (k, l) ->
+                                listOf("ors" to "ORS", "zinc" to "Zinc", "ifa" to "IFA", "ifa_syrup" to "IFA syrup", "condoms" to "Condoms", "ocp" to "Pills", "napkins" to "Napkins",
+                                    "calcium" to "Calcium", "albendazole" to "Albendazole", "parac" to "Paracetamol", "ctz" to "Cotrimoxazole", "mal_rdt" to "Malaria RDT", "act" to "ACT", "ecp" to "ECP", "ptk" to "Pregnancy test").forEach { (k, l) ->
                                     values[k]?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }?.let { Text(tr("💊 Drug kit register: $l −$it", "💊 दवा किट: $l −$it")) } }
                                 Text(tr("📒 Activity diary + visit list", "📒 डायरी + विज़िट सूची"))
                                 if (dangers.isNotEmpty()) Text(tr("⚠ Referral needed", "⚠ रेफ़रल ज़रूरी"), color = MaterialTheme.colorScheme.error)
@@ -288,10 +290,10 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
                         0 -> step = 1
                         1 -> step = 2
                         else -> {
-                            val ok = runCatching {
-                                ArogyaVisitSave.save(store, queue, b, spec, column, values, sources, vaccines, today)
-                            }.onFailure { Toast.makeText(context, it.message ?: "Could not save", Toast.LENGTH_LONG).show() }.isSuccess
-                            if (ok) { saved = true; android.util.Log.i("ArogyaDemo", "AROGYA_FORM_SAVED form=${spec.id} col=$column filled=${values.count { it.value.isNotBlank() }}/${rows.size} ai=${sources.count { it.value == "ai" }} danger=${dangers.size} next=$next model=\"$modelLabel\"") }
+                            val res = runCatching {
+                                ArogyaVisitSave.save(store, queue, b, spec, column, values, sources, vaccines, today, hindi)
+                            }.onFailure { Toast.makeText(context, it.message ?: "Could not save", Toast.LENGTH_LONG).show() }
+                            if (res.isSuccess) { saved = true; savedSummary = res.getOrDefault(""); android.util.Log.i("ArogyaDemo", "AROGYA_FORM_SAVED form=${spec.id} col=$column filled=${values.count { it.value.isNotBlank() }}/${rows.size} ai=${sources.count { it.value == "ai" }} danger=${dangers.size} next=$next model=\"$modelLabel\"") }
                         }
                     }
                 }, enabled = !aiBusy, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
@@ -304,4 +306,5 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
     if (showCard) AlertDialog(onDismissRequest = { showCard = false }, confirmButton = { TextButton(onClick = { showCard = false }) { Text(tr("Close", "बंद")) } },
         dismissButton = { TextButton(onClick = { scope.launch { store.shareFormPdf(ArogyaOfficialForms.table(spec, b, data.forms)) } }) { Text(tr("Share PDF", "PDF भेजें")) } },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) { OfficialFormGrid(ArogyaOfficialForms.table(spec, b, data.forms, if (saved) null else column to values), column) } })
+    if (savedSummary.isNotBlank()) WhatChangedDialog(savedSummary, hindi) { savedSummary = "" }
 }

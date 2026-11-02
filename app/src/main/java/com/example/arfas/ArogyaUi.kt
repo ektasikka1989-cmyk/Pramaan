@@ -4,10 +4,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,6 +30,14 @@ object ArogyaUi {
     @Composable fun dangerContainer(): Color = MaterialTheme.colorScheme.errorContainer
     @Composable fun rules(): Color = MaterialTheme.colorScheme.tertiary
     @Composable fun rulesContainer(): Color = MaterialTheme.colorScheme.tertiaryContainer
+}
+
+/** "What changed" after a save: the same text that went into the diary entry. */
+@Composable
+fun WhatChangedDialog(summary: String, hindi: Boolean, onDismiss: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, confirmButton = { TextButton(onClick = onDismiss) { Text(if (hindi) "ठीक है" else "OK") } },
+        title = { Text(if (hindi) "क्या बदला" else "What changed") },
+        text = { Text(summary) })
 }
 
 /** The shared card: medium shape, 12 dp padding, bold title, 6 dp between rows. */

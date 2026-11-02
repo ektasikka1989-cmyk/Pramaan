@@ -570,6 +570,7 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
     fun tr(en: String, hi: String) = if (hindi) hi else en
     fun updateBen(f: (Beneficiary) -> Beneficiary) = save { r -> r.copy(beneficiaries = r.beneficiaries.map { if (it.id == b.id) f(it).copy(updatedAt = System.currentTimeMillis()) else it }) }
     var giveOpen by remember { mutableStateOf(false) }
+    var changedSummary by remember { mutableStateOf("") }
     var eventOpen by remember { mutableStateOf(false) }
     var viewForm by remember { mutableStateOf<FormTable?>(null) }
     var kg by remember { mutableStateOf("") }
@@ -764,10 +765,13 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
     }
     if (giveOpen) StockGiveDialog(hindi, emptyList(), ArogyaRegistryLogic.catalog(data.stockItems),
         ArogyaRegistryLogic.stockBalance(data.stock), fixedPerson = b, onDismiss = { giveOpen = false }) { item, qty, person, giveId ->
-        if (save { r -> ArogyaOfficialForms.applyGive(r, person, item, qty, giveId) }) giveOpen = false }
+        var s = ""
+        if (save { r -> ArogyaOfficialForms.applyGive(r, person, item, qty, giveId).let { a0 ->
+            s = ArogyaChangeSummary.diff(r, a0, person.id, hindi); ArogyaChangeSummary.attachDiary(a0, person.id, today.toString(), s) } }) { giveOpen = false; changedSummary = s } }
     if (eventOpen) EventDialog(hindi, onDismiss = { eventOpen = false }) { kind, place, note ->
         if (save { r -> r.copy(vitals = r.vitals + VitalEvent(kind = kind, beneficiaryId = b.id, place = place, note = note)) }) eventOpen = false }
     viewForm?.let { f -> ArogyaFormViewer(f, hindi, ArogyaRegistryStore.get(context)) { viewForm = null } }
+    if (changedSummary.isNotBlank()) WhatChangedDialog(changedSummary, hindi) { changedSummary = "" }
 }
 
 @Composable
@@ -879,6 +883,7 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                 var historyItem by remember { mutableStateOf("") }
                 var scanOpen by remember { mutableStateOf(false) }
                 var voiceOpen by remember { mutableStateOf(false) }
+                var changedSummary by remember { mutableStateOf("") }
                 var scanReceive by remember { mutableStateOf<Pair<MedScan, String>?>(null) }
                 var scanAdd by remember { mutableStateOf<MedScan?>(null) }
                 val cat = remember(data) { ArogyaRegistryLogic.catalog(data.stockItems) }
@@ -914,7 +919,8 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                     note = tr("Opening = before this month. Tap a row for its full history.", "शुरुआत = इस महीने से पहले। पूरी जानकारी के लिए पंक्ति दबाएँ।"),
                     sample = data.beneficiaries.any { it.demo })
                 if (voiceOpen) VoiceStockDialog(hindi, ai, cat, bal,
-                    onSave = { txns -> if (save { r -> r.copy(stock = r.stock + txns) }) voiceOpen = false },
+                    onSave = { txns -> var s = ""
+                        if (save { r -> r.copy(stock = r.stock + txns).also { s = ArogyaChangeSummary.diff(r, it, "", hindi) } }) { voiceOpen = false; changedSummary = s } },
                     onDismiss = { voiceOpen = false })
                 if (scanOpen && ai != null) MedScanDialog(hindi, ai, cat,
                     onReceive = { s, m -> scanOpen = false; scanReceive = s to m; receiveOpen = true },
@@ -926,16 +932,22 @@ private fun RegistersTab(hindi: Boolean, data: RegistryData, visits: List<Arogya
                     StockReceiveDialog(hindi, cat, initialItem = pre?.second.orEmpty(), initialQty = pre?.first?.qty ?: 0,
                         initialBatch = pre?.first?.batch.orEmpty(), initialExpiry = pre?.first?.expiry?.let { ArogyaMedScan.normExpiry(it) }.orEmpty(),
                         onDismiss = { receiveOpen = false; scanReceive = null }) { txn ->
-                        if (save { r -> r.copy(stock = r.stock + txn) }) { receiveOpen = false; scanReceive = null } } }
+                        var s = ""
+                        if (save { r -> r.copy(stock = r.stock + txn).also { s = ArogyaChangeSummary.diff(r, it, "", hindi) } }) { receiveOpen = false; scanReceive = null; changedSummary = s } } }
                 if (adjustOpen) StockAdjustDialog(hindi, cat, bal, onDismiss = { adjustOpen = false }) { txn ->
-                    if (save { r -> r.copy(stock = r.stock + txn) }) adjustOpen = false }
+                    var s = ""
+                    if (save { r -> r.copy(stock = r.stock + txn).also { s = ArogyaChangeSummary.diff(r, it, "", hindi) } }) { adjustOpen = false; changedSummary = s } }
                 if (writeoffOpen) StockWriteoffDialog(hindi, cat, bal, onDismiss = { writeoffOpen = false }) { txn ->
-                    if (save { r -> r.copy(stock = r.stock + txn) }) writeoffOpen = false }
+                    var s = ""
+                    if (save { r -> r.copy(stock = r.stock + txn).also { s = ArogyaChangeSummary.diff(r, it, "", hindi) } }) { writeoffOpen = false; changedSummary = s } }
                 if (giveOpen) StockGiveDialog(hindi, data.beneficiaries, cat, bal, onDismiss = { giveOpen = false }) { item, qty, person, giveId ->
-                    if (save { r -> ArogyaOfficialForms.applyGive(r, person, item, qty, giveId) }) giveOpen = false }
+                    var s = ""
+                    if (save { r -> ArogyaOfficialForms.applyGive(r, person, item, qty, giveId).let { a0 ->
+                        s = ArogyaChangeSummary.diff(r, a0, person.id, hindi); ArogyaChangeSummary.attachDiary(a0, person.id, today.toString(), s) } }) { giveOpen = false; changedSummary = s } }
                 if (historyItem.isNotBlank()) StockHistoryDialog(hindi, historyItem,
                     ArogyaRegistryLogic.stockHistory(data.stock, historyItem), names, onDismiss = { historyItem = "" })
                 viewer?.let { f -> ArogyaFormViewer(f, hindi, store) { viewer = null } }
+                if (changedSummary.isNotBlank()) WhatChangedDialog(changedSummary, hindi) { changedSummary = "" }
             }
             "vitals" -> {
                 Text(tr("Vital events & surveillance", "घटनाएँ और निगरानी"), fontWeight = FontWeight.Bold)
