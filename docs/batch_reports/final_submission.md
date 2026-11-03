@@ -226,3 +226,12 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Tests (speed mode): GoldPinTest 19/19 (new: aHi parsed, EN + HI stored text, source pages, medium→null); GoldMatchTest 21/21; BUILD SUCCESSFUL (11m39s, c3build.log).
 - Verified on host: strong-only gate, both labels, source mapping.
 - To be checked manually: stored copy on a real model failure/timeout (hard to force; airplane-mid-cloud-call in Cloud first exercises the retry path, not this one).
+
+## PART D — Proof: manual phone checklist, laptop benchmark, demo
+
+### D1. Manual phone test checklist
+- Changed (Final D.1): new docs/manual_phone_test.md — numbered A–G checklist for the user on the phone (no phone runs by the agent): A. 3 core questions × offline/cloud × EN/HI (cord stump, ORS, newborn danger signs) + More detail; B. 3 unlike-worded live-proof questions × offline/cloud; C. Explain-to-family EN/HI + ANM escalation incl. Hindi + WhatsApp; D. MCP card views/PDF/photo reads/register photo/Hindi voice receipt; E. airplane-mode answers + guided demo EN/HI; F. printed expected results (Hindi completeness, ≥6 sentences, 5–8 family, full ANM template, nothing cut, cloud fuller, ≤3 s cloud / ≤15 s offline to first word); G. log-reading guide (AROGYA_BUDGET, AROGYA_GOLD, AROGYA_EXTRACT_SPLIT, AROGYA_ANSWER_LEN) for sending app_log.txt back. Every step has Pass/Fail boxes + time columns.
+- Files: docs/manual_phone_test.md (new).
+- Tests: docs only — no code touched; tree covered by the C2+C3 build + suites.
+- Verified on host: checklist content matches Parts A–C acceptance lines.
+- To be checked manually: everything in it — that is its purpose.
