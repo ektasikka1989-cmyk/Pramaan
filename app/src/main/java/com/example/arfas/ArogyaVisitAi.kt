@@ -163,7 +163,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         }
     }
 
-    suspend fun warmUp() {
+    suspend fun warmUp(appContext: Context? = null) {
         applyEvidenceSize()
         val t = System.currentTimeMillis()
         val model = runCatching { ensureLocalModel() }.getOrDefault(false)
@@ -171,6 +171,15 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val search = kb && ArogyaFlags.speedWarmSearch && runCatching { features.warmKnowledgeSearch() }.getOrDefault(false)
         Log.i(TAG, "AROGYA_WARMUP model=$model kb=$kb ms=${System.currentTimeMillis() - t}")
         Log.i(TAG, "AROGYA_WARMUP_SEARCH warmed=$search")
+        // Part C1: the 100 verified questions embed in the background (same call the KB uses).
+        if (appContext != null) runCatching {
+            val ctx = appContext.applicationContext
+            val asset = ctx.assets.open("verified_answers.json").use { it.readBytes() }
+            val engine = features.semanticEngine
+            ArogyaVerifiedAnswers.warmAsync(asset, java.io.File(ctx.filesDir, ArogyaVerifiedAnswers.CACHE_NAME)) { q ->
+                runBlocking { engine.embed(q) }
+            }
+        }.onFailure { Log.w(TAG, "AROGYA_GOLD warm kick failed ${it.message}") }
     }
 
     // ── Attachments for a guide question (Pramaan's pending-attachment path, unchanged) ──

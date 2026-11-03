@@ -202,3 +202,12 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Tests: full host gate 44 suites green, EXIT=0 (gateb8.log); BUILD SUCCESSFUL (2m23s).
 - Verified on host: suites green; streaming paths compile.
 - To be checked manually: live streaming on phone (offline + cloud + check-online + more-detail + family + polish); idle fallback; net-loss fallback; autoscroll pause.
+
+## PART C -- The 100 official Q&A guide the AI (never canned)
+
+### C1. Semantic match
+- Changed (Final C.1): new ArogyaVerifiedAnswers.kt -- parses verified_answers.json (100 items, chunk_id sources); score = 0.7 x cosine (best of EN/HI) + 0.3 x keyword overlap with the Hinglish map (naal->cord, doodh->milk, tika->vaccine, bukhar->fever, dast->diarrhoea, garbhvati->pregnant, saans->breathing, peeliya->jaundice); strong >= 0.80, medium 0.65-0.80; embedding cache filesDir/verified_q_emb.bin (fingerprint-guarded, rebuild on asset change); keyword-only until vectors exist; query-vector reuse (passed-in, then last-query cache, then one embed); AROGYA_GOLD match log. warmUp takes the app context and kicks the background build with the KBs own semanticEngine.embed("query: ...") (384-dim); lazy retry on first match if the engine was not ready. No lengths changed.
+- Files: ArogyaVerifiedAnswers.kt (new), ArogyaVisitAi.kt, ArogyaVisitScreen.kt, GoldMatchTest.kt (new), run.ps1, run.sh, run_some.ps1.
+- Tests: full host gate 45 suites green, EXIT=0 (gatec1.log); GoldMatchTest 21/21 (parse, real-asset 100 + VA-001 fields, tokens, Hinglish, overlap, cosine, blend, codec round-trip/tamper/corrupt, keyword + semantic match incl. background warm); BUILD SUCCESSFUL (2m28s).
+- Verified on host: matching math, cache codec, real-asset load.
+- To be checked manually: cache build on phone; AROGYA_GOLD lines; semantic (non-keyword) matches.

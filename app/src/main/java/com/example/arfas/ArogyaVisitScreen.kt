@@ -215,7 +215,7 @@ fun ArogyaVisitScreen(
     LaunchedEffect(Unit) { registry.load(); registry.autoBackupIfDue() }
     var photoUri by remember { mutableStateOf<Uri?>(null) }
     // Load the model and select the guide as soon as ArogyaDoot opens, so the first question does not wait for it.
-    LaunchedEffect(knowledgeReady) { if(knowledgeReady) runCatching { ai?.warmUp() } }
+    LaunchedEffect(knowledgeReady) { if(knowledgeReady) runCatching { ai?.warmUp(context.applicationContext) } }
     // Every ArogyaDoot AI action follows the Settings order (Cloud first / Local first).
     LaunchedEffect(ai) { ai?.cloudChoice = { ArogyaCloud.choice(context.applicationContext) } }
     fun openAi(task:ArogyaAiTask, topic:String="", sop:Boolean=false) {
