@@ -498,19 +498,38 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         Triple(clean, by, System.currentTimeMillis() - t)
     }
 
-    /** A short ANM message drafted from the visit facts only; the worker edits it before sending. */
+    /** Part B5: AI only polishes the fixed template's wording; the worker edits it before sending. */
     suspend fun anmMessage(facts: String, visit: ArogyaVisit? = null): String = anmMessageDetailed(facts, visit).first
 
     /** Same, plus the engine label that ran it (for the demo's honest "AI at work" panel). */
-    suspend fun anmMessageDetailed(facts: String, visit: ArogyaVisit? = null): Pair<String, String> = mutex.withLock {
+    suspend fun anmMessageDetailed(facts: String, visit: ArogyaVisit? = null, hindi: Boolean = false): Pair<String, String> =
+        polishAnmMessage(facts, visit, hindi).let { it.first to it.second }
+
+    /**
+     * Part B5 "Improve wording": polish [template] without changing any fact. The phone
+     * sees the template; the cloud sees it with identifiers as [Pn] tokens (restored
+     * afterwards, so names and phones never leave the device). Returns the message, the
+     * engine label, and a note: "" when polished, else why the template is shown instead.
+     */
+    suspend fun polishAnmMessage(template: String, visit: ArogyaVisit?, hindi: Boolean, extraTokens: List<String> = emptyList()): Triple<String, String, String> = mutex.withLock {
         val t = System.currentTimeMillis()
-        val scrubbed = if (visit != null) ArogyaOnlinePolicy.scrub(facts, visit) else ArogyaOnlinePolicy.scrubGeneric(facts)
-        val (opt, by) = route("anm_message", ArogyaAiExtras.anmPrompt(facts), 450, ArogyaAiExtras.anmPrompt(scrubbed), cloudTokens = 900, lang = ArogyaBudget.langOf(facts)) { out ->
-            ArogyaAiExtras.groundedSentences(out, facts, max = 8, lineMode = true).takeIf { it.length >= 30 } }
-        val clean = opt.orEmpty()
-        Log.i(TAG, "AROGYA_TIMING event=anm_message ms=${System.currentTimeMillis() - t} chars=${clean.length}")
-        check(clean.length >= 30) { "Could not draft the message. The ready-made message is still there." }
-        clean to by
+        val v = visit ?: ArogyaVisit()
+        val values = listOf(v.name, v.village, v.birthDate) + extraTokens
+        val (tokenized, used) = ArogyaAnmTemplate.tokenize(template, values)
+        val toks = used.mapIndexed { i, _ -> "[P${i + 1}]" }
+        val cloudPrompt = if (visit != null) ArogyaOnlinePolicy.scrub(tokenized, v) else ArogyaOnlinePolicy.scrubGeneric(tokenized)
+        val lang = if (hindi) "hi" else ArogyaBudget.langOf(template)
+        val (opt, by) = route("anm_message", ArogyaAiExtras.anmPrompt(template, hindi), 450, ArogyaAiExtras.anmPrompt(cloudPrompt, hindi), cloudTokens = 900, lang = lang) { out ->
+            ArogyaAiExtras.groundedSentences(out, template + "\n" + tokenized, max = 60, lineMode = true).takeIf { it.length >= 30 } }
+        val cloudRan = !by.startsWith("On-phone")
+        val seen = if (cloudRan) tokenized else template
+        val polishedRaw = opt.orEmpty()
+        val signs = ArogyaAnmTemplate.signNames(seen, v, hindi)
+        val reason = if (polishedRaw.isBlank()) "the AI returned nothing usable"
+        else ArogyaAnmTemplate.verifyPolished(seen, polishedRaw, signs, if (cloudRan) toks else emptyList())
+        val clean = if (reason == null) ArogyaAnmTemplate.detokenize(polishedRaw, used) else template
+        Log.i(TAG, "AROGYA_TIMING event=anm_message ms=${System.currentTimeMillis() - t} chars=${clean.length} polished=${reason == null} reason=${reason ?: "ok"}")
+        Triple(clean, by, reason.orEmpty())
     }
 
     /** Daily refresher: one question per guide passage, kept only if the right answer is in the passage. */

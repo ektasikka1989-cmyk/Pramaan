@@ -700,7 +700,7 @@ fun ArogyaVisitScreen(
                         if(!visit.completed && visit.notes.isNotBlank() && ai!=null) Button(onClick={startFinish()},enabled=!locked,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)) { Text(tr("✅ Finish visit with AI","✅ AI से विज़िट पूरी करें")) }
                         Text(tr("Share this visit","विज़िट साझा करें"),fontWeight=FontWeight.Bold)
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            Button(onClick={ if(!ArogyaShare.shareText(context,"Visit — ${visit.name}",ArogyaShare.visitText(visit))) Toast.makeText(context,"No app available to share.",Toast.LENGTH_LONG).show() },enabled=!locked,modifier=Modifier.weight(1f)) { Text(tr("Share as text","टेक्स्ट भेजें")) }
+                            Button(onClick={ if(!ArogyaShare.shareText(context,"Visit — ${visit.name}",ArogyaShare.visitText(visit,ashaName,ashaVillage,ArogyaShare.anmName(context),hindi))) Toast.makeText(context,"No app available to share.",Toast.LENGTH_LONG).show() },enabled=!locked,modifier=Modifier.weight(1f)) { Text(tr("Share as text","टेक्स्ट भेजें")) }
                             OutlinedButton(onClick={ mediaBusy=true; scope.launch { try { if(!ArogyaShare.shareVisitPdf(context,visit)) Toast.makeText(context,"PDF could not be created.",Toast.LENGTH_LONG).show() } finally { mediaBusy=false } } },enabled=!locked,modifier=Modifier.weight(1f)) { Text(tr("Share PDF","PDF भेजें")) }
                         }
                         Text(tr("Includes the visit, observations, referral and every guide question with its sources. You choose who receives it.","विज़िट, नोट, रेफ़रल और हर गाइड सवाल स्रोत सहित। किसे भेजना है आप चुनें।"),style=MaterialTheme.typography.bodySmall)
@@ -1050,7 +1050,17 @@ fun ArogyaVisitScreen(
     if(escalateOpen && visit!=null) {
         var anmName by remember { mutableStateOf(ArogyaShare.anmName(context)) }
         var anmPhone by remember { mutableStateOf(ArogyaShare.anmPhone(context)) }
-        var message by remember(visit.id,escalateConcern) { mutableStateOf(ArogyaShare.anmMessage(visit,escalateConcern)) }
+        var msgHindi by remember(visit.id,escalateConcern) { mutableStateOf(hindi) }
+        fun templateInput(hi:Boolean): ArogyaAnmTemplate.Input {
+            val person=reg.beneficiaries.firstOrNull {it.id==visit.personId}
+            val prev=queue.state.value.visits.filter {it.personId==visit.personId && it.date<visit.date}.maxByOrNull {it.date}
+            val meds=reg.stock.filter {(it.beneficiaryId==visit.personId || (person!=null && it.beneficiaryId==person.id)) && it.date==visit.date && it.qty<0}
+                .map {"${it.item} x${-it.qty}"}
+            return ArogyaAnmTemplate.Input(visit=visit,person=person,prevVisit=prev,concern=escalateConcern,
+                ashaName=ashaName,ashaVillage=ashaVillage,anmName=anmName,need="",givenMeds=meds,hindi=hi)
+        }
+        var message by remember(visit.id,escalateConcern) { mutableStateOf(ArogyaAnmTemplate.build(templateInput(hindi))) }
+        var polishNote by remember(visit.id,escalateConcern) { mutableStateOf("") }
         fun record(how:String) {
             ArogyaShare.setAnmName(context,anmName); ArogyaShare.setAnmPhone(context,anmPhone)
             val current=queue.state.value.visits.firstOrNull {it.id==visit.id}
@@ -1062,37 +1072,57 @@ fun ArogyaVisitScreen(
                     Toast.makeText(context,tr("Recorded in this visit: $how","विज़िट में दर्ज: $how"),Toast.LENGTH_SHORT).show()
             }
         }
-        AlertDialog(onDismissRequest={escalateOpen=false},title={Text(tr("Escalate to ANM","ANM को सूचित करें"))},text={
-            Column(Modifier.heightIn(max=520.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(anmName,{anmName=it.take(60)},label={Text(tr("ANM name","ANM का नाम"))},singleLine=true,modifier=Modifier.weight(1f))
-                    OutlinedTextField(anmPhone,{anmPhone=it.filter {c->c.isDigit() || c=='+'}.take(15)},label={Text(tr("ANM phone","ANM फ़ोन"))},singleLine=true,modifier=Modifier.weight(1f),
-                        keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Phone))
+        Dialog(onDismissRequest={escalateOpen=false},properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize().padding(16.dp)) {
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                        Text(tr("Message to ANM","ANM को संदेश"),style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
+                        Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                            OutlinedButton(onClick={msgHindi=false;message=ArogyaAnmTemplate.build(templateInput(false));polishNote=""}) { Text("EN") }
+                            OutlinedButton(onClick={msgHindi=true;message=ArogyaAnmTemplate.build(templateInput(true));polishNote=""}) { Text("हिं") }
+                        }
+                    }
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(anmName,{anmName=it.take(60)},label={Text(tr("ANM name","ANM का नाम"))},singleLine=true,modifier=Modifier.weight(1f))
+                            OutlinedTextField(anmPhone,{anmPhone=it.filter {c->c.isDigit() || c=='+'}.take(15)},label={Text(tr("ANM phone","ANM फ़ोन"))},singleLine=true,modifier=Modifier.weight(1f),
+                                keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Phone))
+                        }
+                        val hasPhone=anmPhone.count {it.isDigit()}>=10
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            Button(onClick={record("phone call");ArogyaShare.dial(context,anmPhone)},enabled=hasPhone,modifier=Modifier.weight(1f)) { Text(tr("📞 Call ANM","📞 ANM को कॉल")) }
+                            Button(onClick={record("108 call");ArogyaShare.dial(context,"108")},colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error),modifier=Modifier.weight(1f)) { Text(tr("📞 Call 108","📞 108 कॉल")) }
+                        }
+                        Text(tr("Message from your records (you can edit it)","आपके रिकॉर्ड से संदेश (बदल सकते हैं)"),style=MaterialTheme.typography.labelMedium)
+                        OutlinedTextField(message,{message=it},modifier=Modifier.fillMaxWidth(),minLines=8)
+                        var anmBusy by remember { mutableStateOf(false) }
+                        if(ai!=null) Button(onClick={ anmBusy=true; scope.launch {
+                            try {
+                                val person=reg.beneficiaries.firstOrNull {it.id==visit.personId}
+                                val toks=listOfNotNull(person?.name,person?.phone,person?.relativeName,person?.household,ashaName,anmName).filter {it.isNotBlank()}
+                                val (polished,_,note)=ai.polishAnmMessage(message,visit,msgHindi,toks)
+                                message=polished; polishNote=note
+                            } catch(e:CancellationException) { throw e } catch(e:Exception) { toast(e.message ?: "Could not improve the wording.") }
+                            finally { anmBusy=false } } },enabled=!anmBusy,modifier=Modifier.fillMaxWidth()) { Text(if(anmBusy) tr("Writing…","लिखा जा रहा है…") else tr("✨ Improve wording","✨ शब्द सुधारें")) }
+                        if(ai!=null) AiBadge("Message to ANM")
+                        if(anmBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        if(polishNote.isNotBlank()) Text(tr("Kept the original wording","मूल शब्द रखे")+": "+polishNote,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick={record("WhatsApp");ArogyaShare.whatsApp(context,anmPhone,message)},modifier=Modifier.weight(1f)) { Text(tr("WhatsApp","WhatsApp")) }
+                            OutlinedButton(onClick={record("SMS");ArogyaShare.sms(context,anmPhone,message)},enabled=hasPhone,modifier=Modifier.weight(1f)) { Text(tr("SMS","SMS")) }
+                            OutlinedButton(onClick={if(ArogyaShare.copyText(context,"ANM message",message)) toast(tr("Copied","कॉपी हो गया"))},modifier=Modifier.weight(1f)) { Text(tr("Copy","कॉपी")) }
+                        }
+                        if(!hasPhone) Text(tr("Add the ANM's number once; it is remembered on this phone.","ANM का नंबर एक बार डालें; फ़ोन पर याद रहेगा।"),style=MaterialTheme.typography.bodySmall)
+                        Text(tr("Nothing is sent until you press Send in the call / WhatsApp / SMS app. Each contact is noted in the visit's referral record.","आप भेजें दबाएँगी तभी जाएगा। हर संपर्क विज़िट के रेफ़रल में दर्ज होता है।"),style=MaterialTheme.typography.bodySmall)
+                        Text(tr("Referral status: ","रेफ़रल स्थिति: ")+(queue.state.value.visits.firstOrNull {it.id==visit.id}?.referral ?: visit.referral).name,fontWeight=FontWeight.Bold)
+                    }
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Button(onClick={escalateOpen=false;stage=3;if(aiOpen && !aiBusy) aiOpen=false},modifier=Modifier.weight(1f)) { Text(tr("Record outcome","परिणाम दर्ज करें")) }
+                        OutlinedButton(onClick={escalateOpen=false},modifier=Modifier.weight(1f)) { Text(tr("Close","बंद करें")) }
+                    }
                 }
-                val hasPhone=anmPhone.count {it.isDigit()}>=10
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Button(onClick={record("phone call");ArogyaShare.dial(context,anmPhone)},enabled=hasPhone,modifier=Modifier.weight(1f)) { Text(tr("📞 Call ANM","📞 ANM को कॉल")) }
-                    Button(onClick={record("108 call");ArogyaShare.dial(context,"108")},colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error),modifier=Modifier.weight(1f)) { Text(tr("📞 Call 108","📞 108 कॉल")) }
-                }
-                Text(tr("Message (you can edit it)","संदेश (बदल सकते हैं)"),style=MaterialTheme.typography.labelMedium)
-                OutlinedTextField(message,{message=it.take(1500)},modifier=Modifier.fillMaxWidth(),minLines=5)
-                var anmBusy by remember { mutableStateOf(false) }
-                if(ai!=null) TextButton(onClick={ anmBusy=true; scope.launch {
-                    try { message=ai.anmMessage(ArogyaShare.anmMessage(visit,escalateConcern)+"\nVisit notes: "+visit.notes.take(1500)+(if(visit.referralNote.isNotBlank()) "\nActions: "+visit.referralNote.take(500) else ""),visit) }
-                    catch(e:CancellationException) { throw e } catch(e:Exception) { toast(e.message ?: "Could not draft the message.") }
-                    finally { anmBusy=false } } },enabled=!anmBusy) { Text(if(anmBusy) tr("Writing…","लिखा जा रहा है…") else tr("✨ Write it from my notes (AI)","✨ मेरे नोट्स से लिखें (AI)")) }
-                if(ai!=null) AiBadge("Message to ANM")
-                if(anmBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick={record("WhatsApp");ArogyaShare.whatsApp(context,anmPhone,message)},modifier=Modifier.weight(1f)) { Text(tr("WhatsApp","WhatsApp")) }
-                    OutlinedButton(onClick={record("SMS");ArogyaShare.sms(context,anmPhone,message)},enabled=hasPhone,modifier=Modifier.weight(1f)) { Text(tr("SMS","SMS")) }
-                }
-                if(!hasPhone) Text(tr("Add the ANM's number once; it is remembered on this phone.","ANM का नंबर एक बार डालें; फ़ोन पर याद रहेगा।"),style=MaterialTheme.typography.bodySmall)
-                Text(tr("Nothing is sent until you press Send in the call / WhatsApp / SMS app. Each contact is noted in the visit's referral record.","आप भेजें दबाएँगी तभी जाएगा। हर संपर्क विज़िट के रेफ़रल में दर्ज होता है।"),style=MaterialTheme.typography.bodySmall)
-                Text(tr("Referral status: ","रेफ़रल स्थिति: ")+(queue.state.value.visits.firstOrNull {it.id==visit.id}?.referral ?: visit.referral).name,fontWeight=FontWeight.Bold)
             }
-        },confirmButton={TextButton(onClick={escalateOpen=false;stage=3;if(aiOpen && !aiBusy) aiOpen=false}) {Text(tr("Record outcome","परिणाम दर्ज करें"))}},
-        dismissButton={TextButton(onClick={escalateOpen=false}) {Text(tr("Close","बंद करें"))}})
+        }
     }
     if(historyOpen && visit!=null) AlertDialog(onDismissRequest={historyOpen=false;historyEntry=null},title={Text(if(historyEntry==null) tr("Guide questions — this visit","गाइड सवाल — यह विज़िट") else historyEntry!!.question)},text={
         Column(Modifier.heightIn(max=520.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {

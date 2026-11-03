@@ -286,7 +286,13 @@ fun ArogyaLowStockCard(hindi: Boolean, low: List<ArogyaRegistryLogic.LowItem>, s
     val context = LocalContext.current
     var phone by remember { mutableStateOf(ArogyaShare.anmPhone(context)) }
     val hasPhone = phone.count { it.isDigit() } >= 10
-    val text = remember(stock, storedItems, today, hindi) { ArogyaRegistryLogic.refillRequest(stock, storedItems, today, hindi) }
+    val profile = remember { context.getSharedPreferences("arogya_profile", android.content.Context.MODE_PRIVATE) }
+    val text = remember(stock, storedItems, today, hindi) {
+        ArogyaAnmTemplate.refillMessage(
+            profile.getString("name", "").orEmpty(), profile.getString("village", "").orEmpty(), "",
+            ArogyaShare.anmName(context), today.toString(),
+            ArogyaRegistryLogic.refillRequest(stock, storedItems, today, hindi), hindi)
+    }
     fun send(whatsApp: Boolean) {
         ArogyaShare.setAnmPhone(context, phone)
         val ok = if (whatsApp) ArogyaShare.whatsApp(context, phone, text)

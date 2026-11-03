@@ -58,28 +58,27 @@ object ArogyaShare {
                 (if (s.date.isNotBlank()) ", ${s.date}" else "") + ")" else ""))
         if (s.url.isNotBlank()) out.appendLine("      ${s.url}")
         if (withPassages) {
-            val lines = s.highlights.ifEmpty { listOf(s.excerpt.take(400)) }.filter { it.isNotBlank() }
-            lines.take(3).forEach { out.appendLine("      › ${it.take(400)}") }
+            val lines = s.highlights.ifEmpty { listOf(s.excerpt) }.filter { it.isNotBlank() }
+            lines.forEach { out.appendLine("      › $it") }
         }
     }
 
-    /** Short referral message for the ANM: who, where, what was found, what was done. Fits one SMS screen. */
-    fun anmMessage(v: ArogyaVisit, concern: String = ""): String = buildString {
-        val danger = ArogyaDangerSigns.evaluate((concern + "\n" + v.notes).trim(), v)
-        val signs = danger.findings.joinToString(", ") { it.sign.en }
-        appendLine("ASHA referral — please advise")
-        appendLine("${v.name.ifBlank { "Beneficiary" }}, ${v.village.ifBlank { "village not recorded" }}")
-        appendLine(listOf(v.kind.title, ageText(v)).filter { it.isNotBlank() }.joinToString(", "))
-        if (signs.isNotBlank()) appendLine("Danger sign: $signs" + if (danger.urgent) " (URGENT)" else "")
-        if (concern.isNotBlank()) appendLine("Concern: ${concern.take(200)}")
-        val obs = if (v.captureItems.isNotEmpty()) v.captureItems.joinToString("; ") { it.quote } else v.notes
-        if (obs.isNotBlank()) appendLine("Observed: ${obs.replace(Regex("\\s+"), " ").take(300)}")
-        if (v.referralNote.isNotBlank()) appendLine("Action so far: ${v.referralNote.take(200)}")
-        append("Visit date ${v.date}. Sent by ASHA via ArogyaDoot.")
+    /** Part B5: the ANM message is the fixed template from the records (never truncated). */
+    fun anmMessage(v: ArogyaVisit, concern: String = ""): String =
+        ArogyaAnmTemplate.build(ArogyaAnmTemplate.Input(visit = v, concern = concern))
+
+    /** Full visit summary for sharing (WhatsApp / email / Drive): handover header + record + every guide question with sources. */
+    fun visitText(v: ArogyaVisit, ashaName: String = "", ashaVillage: String = "", anmName: String = "", hindi: Boolean = false): String {
+        val head = ArogyaAnmTemplate.header(
+            if (hindi) "🔄 विज़िट सौंपना — ArogyaDoot" else "🔄 Visit handover — ArogyaDoot",
+            anmName.ifBlank { "ANM" }, ArogyaAnmTemplate.fromLine(ashaName, ashaVillage, "", hindi), v.date, hindi)
+        return head + "\n\n" + ArogyaWorkflow.report(v)
     }
 
-    /** Full visit summary for sharing (WhatsApp / email / Drive): record + every guide question with sources. */
-    fun visitText(v: ArogyaVisit): String = ArogyaWorkflow.report(v)
+    fun copyText(context: Context, label: String, text: String): Boolean = runCatching {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newPlainText(label, text)); true
+    }.getOrDefault(false)
 
     fun shareText(context: Context, subject: String, text: String): Boolean = runCatching {
         val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, subject); putExtra(Intent.EXTRA_TEXT, text) }
