@@ -21,8 +21,8 @@ configurations.all {
 android {
     namespace = "com.example.arfas"
 
-    ndkVersion = "26.1.10909125" // AROGYADOOT: same NDK as the :whisper module
-    externalNativeBuild { // AROGYADOOT: Meta Llama (llama.cpp) bridge
+    ndkVersion = "26.1.10909125" // PRAMAAN: same NDK as the :whisper module
+    externalNativeBuild { // PRAMAAN: Meta Llama (llama.cpp) bridge
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
@@ -36,7 +36,7 @@ android {
     }
 
     defaultConfig {
-        externalNativeBuild { // AROGYADOOT
+        externalNativeBuild { // PRAMAAN
             cmake {
                 arguments += listOf(
                     "-DANDROID_STL=c++_shared",
@@ -48,7 +48,7 @@ android {
             }
         }
 
-        applicationId = "com.example.arogyadoot"
+        applicationId = "com.example.pramaan"
 
         minSdk = 24
         targetSdk = 36
@@ -96,7 +96,7 @@ android {
             // Required for native LiteRT-LM / Sherpa ONNX libraries.
             useLegacyPackaging = true
 
-            pickFirsts += "**/libc++_shared.so" // AROGYADOOT: whisper, LiteRT and llama all ship it
+            pickFirsts += "**/libc++_shared.so" // PRAMAAN: whisper, LiteRT and llama all ship it
 
             // ONNX Runtime can be supplied by more than one dependency.
             // Package only one copy when duplicates exist.
@@ -126,7 +126,7 @@ tasks
 
 dependencies {
 
-    // AROGYADOOT: Hindi / Devanagari text on medicine strips, MCP cards and registers (offline)
+    // PRAMAAN: Hindi / Devanagari text on medicine strips, MCP cards and registers (offline)
     implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
 
     // -------------------------------------------------------------------------

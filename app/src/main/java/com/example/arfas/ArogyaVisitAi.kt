@@ -21,10 +21,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlin.coroutines.coroutineContext
 
 /**
- * ArogyaDoot is a WRAPPER over Pramaan. Guide questions go through Pramaan's own turn
- * (AndroBaselineRuntime.chat with the installed knowledge base selected): the same AndroLLM,
- * PocketSage RAG, semantic search, re-ranking and grounding the Pramaan chat uses, unchanged.
- * ArogyaDoot adds only:
+ * Pramaan's visit layer is a WRAPPER over the base platform. Guide questions go through the
+ * platform's own turn (AndroBaselineRuntime.chat with the installed knowledge base selected): the
+ * same AndroLLM, PocketSage RAG, semantic search, re-ranking and grounding the platform chat uses,
+ * unchanged. The visit layer adds only:
  *  - deterministic newborn / postnatal danger-sign alert BEFORE any model (ArogyaDangerSigns);
  *  - visit context in the question (age group) so retrieval finds the right population;
  *  - visit-note organisation using Pramaan's generateDetached + ArogyaCapture (labels only).
@@ -66,7 +66,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     @Volatile var cloudChoice: (() -> ArogyaCloudChoice)? = null
 
     /**
-     * Every ArogyaDoot AI action goes through here. Cloud first: cloud model, then the phone if there is no signal,
+     * Every Pramaan AI action goes through here. Cloud first: cloud model, then the phone if there is no signal,
      * no key, a slow network or an unusable reply. Local first: the phone, then the cloud if the phone model is not
      * ready or its reply is unusable. [accept] checks each reply (grounding etc.); returns the result and who made it.
      */
@@ -148,7 +148,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             (m != null && m.isReady && !m.permanentlyDisabled)
     }
 
-    /** Loads the model and selects the ASHA guide as soon as ArogyaDoot opens, so the first question does not wait ~30 s. */
+    /** Loads the model and selects the ASHA guide as soon as Pramaan opens, so the first question does not wait ~30 s. */
     /** R9 marker of the installed guide pack (2 = v2, 0 = v1, -1 = none). */
     fun guideVersion(): Int = runCatching { features.guideVersion() }.getOrDefault(-1)
 
@@ -271,7 +271,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             val built = ArogyaGoldPin.storedCopyIfStrong(scored, hindiQ) ?: return null
             Log.i(TAG, "AROGYA_GOLD fallback id=${scored.item.id} score=${"%.3f".format(java.util.Locale.US, scored.score)} reason=$reason")
             val first = scored.item.sources.firstOrNull()
-            return ArogyaAiResult(built.first, "ArogyaDoot • stored copy", elapsed, sources = built.second,
+            return ArogyaAiResult(built.first, "Pramaan • stored copy", elapsed, sources = built.second,
                 quote = first?.quote.orEmpty(),
                 quoteSource = if (first == null) "" else "${first.title}, page ${first.page}",
                 timingsMs = mapOf("pramaan_turn" to elapsed), tier = 1, storedCopy = true)
@@ -370,9 +370,9 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val text = ArogyaAnswerFormat.stripCitationMarkers(turn.text.trim())
         val hasAnswer = text.isNotBlank()
         val provider = when (turn.provider) {
-            AndroBaselineRuntime.Provider.LOCAL -> "ArogyaDoot • offline (${runtime.localModelManager?.loadedModelFileName?.substringBeforeLast('.') ?: "local model"})"
-            AndroBaselineRuntime.Provider.CLOUD -> "ArogyaDoot • online"
-            else -> "ArogyaDoot"
+            AndroBaselineRuntime.Provider.LOCAL -> "Pramaan • offline (${runtime.localModelManager?.loadedModelFileName?.substringBeforeLast('.') ?: "local model"})"
+            AndroBaselineRuntime.Provider.CLOUD -> "Pramaan • online"
+            else -> "Pramaan"
         }
         // Sources exactly as Pramaan presents them: document rows (title, pages, official link) and the
         // passages behind each row with the sentences the answer came from.
@@ -417,7 +417,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             else "This is not in your official guides or official government websites — ask your ANM."
             val topicLine = if (topics.isEmpty()) "" else (if (hindiQ) "\n\nगाइड में सबसे करीबी विषय: " else "\n\nClosest guide topics: ") + topics.joinToString("; ")
             Log.i(TAG, "AROGYA_ANSWER_TIER tier=3 mode=$mode sources=guide:${sources.size},web:0")
-            return ArogyaAiResult(msg + topicLine, "ArogyaDoot", elapsed,
+            return ArogyaAiResult(msg + topicLine, "Pramaan", elapsed,
                 online = online, sourceOnly = true,
                 timingsMs = mapOf("pramaan_turn" to elapsed), r8Blocked = true, r8Topics = topics, tier = 3)
         }
@@ -508,7 +508,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         }
         val body = segments.joinToString(" ") { it.text } + conflictLine
         Log.i(TAG, "AROGYA_TIER2_ACCEPT sentences=${segments.size} web=${webSources.size} guides=${citedGuides.size} conflict=${conflictLine.isNotBlank()}")
-        return ArogyaAiResult(body, "ArogyaDoot • online (official website)", elapsed,
+        return ArogyaAiResult(body, "Pramaan • online (official website)", elapsed,
             sources = citedGuides + webSources, online = true,
             checkedAt = java.time.Instant.now().toString(),
             timingsMs = mapOf("pramaan_turn" to elapsed), tier = 2, segments = segments)
@@ -521,7 +521,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         check(notes.length <= 6500) { "This recording is too long for one AI review. Keep the original notes and review them manually." }
         val (items, by) = route("organise_notes", ArogyaCapture.prompt(notes), 700, ArogyaCapture.prompt(ArogyaOnlinePolicy.scrub(notes, request.visit)), cloudTokens = 1500, lang = ArogyaBudget.langOf(notes)) { ArogyaCapture.parse(it, notes) }
         items ?: error("The AI could not organise this recording. Your original words are saved; edit them or retry.")
-        return ArogyaAiResult(ArogyaCapture.render(items), "ArogyaDoot • $by", System.currentTimeMillis() - start, canCopyToNotes = true, captureItems = items)
+        return ArogyaAiResult(ArogyaCapture.render(items), "Pramaan • $by", System.currentTimeMillis() - start, canCopyToNotes = true, captureItems = items)
     }
 
     private suspend fun generate(prompt: String, model: LocalModelManager, maxTokens: Int = 420, onPartial: ((String) -> Unit)? = null): String? = coroutineScope {

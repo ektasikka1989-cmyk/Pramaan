@@ -210,7 +210,7 @@ object ArogyaRegistryLogic {
         inc.lines.filter { it.count > 0 }.forEach { rows += listOf(it.item, "${it.count}", "Rs ${it.rate}", "Rs ${it.amount}") }
         rows += listOf(tr("Estimated total", "अनुमानित कुल"), "", "", "Rs ${inc.total}")
         return FormTable(tr("Monthly summary & claim", "मासिक सारांश और दावा") + " — $month",
-            "ArogyaDoot register",
+            "Pramaan register",
             listOf(tr("Item", "मद"), tr("Count", "संख्या"), tr("Rate (Rs)", "दर (रु)"), tr("Amount (Rs)", "राशि (रु)")),
             rows, tr("Use it to fill the monthly claim / RCH portal entry with your ANM. Check against your paper records.",
                 "ANM के साथ मासिक दावा / RCH भरने में काम लें। कागज़ी रिकॉर्ड से मिलाएँ."),
@@ -232,7 +232,7 @@ object ArogyaRegistryLogic {
         val vitals = data.vitals.filter { inMonth(it.date) }.groupingBy { it.kind }.eachCount()
         val newReg = data.beneficiaries.count { b -> java.time.Instant.ofEpochMilli(b.createdAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate().let { YearMonth.from(it) == month } }
         val text = buildString {
-            appendLine("ASHA MONTHLY SUMMARY — $month (prepared offline in ArogyaDoot; verify before submitting)")
+            appendLine("ASHA MONTHLY SUMMARY — $month (prepared offline in Pramaan; verify before submitting)")
             appendLine("Home visits: $homeVisits")
             if (done.isNotEmpty()) appendLine("Scheduled contacts completed: " + done.entries.joinToString(", ") { "${it.key} ${it.value}" })
             if (diary.isNotEmpty()) appendLine("Activity diary: " + diary.entries.joinToString(", ") { "${it.key.title} ${it.value}" })
@@ -652,7 +652,7 @@ object ArogyaBackupCrypto {
     }
 
     fun decrypt(data: ByteArray, password: String): ByteArray {
-        require(data.size > 9 + 16 + 12 + 16 && data.copyOfRange(0, 4).contentEquals(MAGIC) && data[4].toInt() == 1) { "Not an ArogyaDoot backup file." }
+        require(data.size > 9 + 16 + 12 + 16 && data.copyOfRange(0, 4).contentEquals(MAGIC) && data[4].toInt() == 1) { "Not a Pramaan backup file." }
         val iterations = java.nio.ByteBuffer.wrap(data, 5, 4).int
         require(iterations in 1000..2_000_000) { "Damaged backup file." }
         val salt = data.copyOfRange(9, 25); val iv = data.copyOfRange(25, 37)

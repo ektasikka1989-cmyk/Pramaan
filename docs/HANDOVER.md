@@ -1,17 +1,17 @@
-# ArogyaDoot — Project Handover
+# Pramaan — Project Handover
 
 Status as of **31 October 2026, 20:30 IST**. Written for whoever continues the work, human or Muse Code.
 Read `AGENTS.md` (repo root) first for the working rules; this file explains the product and the code.
 
 ---
 
-## 1. What ArogyaDoot is
+## 1. What Pramaan is
 
-ArogyaDoot is an Android app that makes an **ASHA worker's** daily work easier with AI. ASHAs are India's
+Pramaan is an Android app that makes an **ASHA worker's** daily work easier with AI. ASHAs are India's
 community health workers. Every home visit means filling paper forms, the family's MCP card and several
 registers, and looking things up in hundreds of SOPs.
 
-ArogyaDoot does three things:
+Pramaan does three things:
 
 1. **Ask SOP.** She asks a question by voice or text and gets an answer drawn from the official ASHA guides.
    Each answer names its source document and page, links to it, and shows the passages it used.
@@ -36,9 +36,9 @@ ArogyaDoot does three things:
 **5 Nov 2026, 6:30 AM IST**, and judging runs 5–9 Nov. Eligible tools named by the hackathon include the
 Meta Model API, Muse Image, SAM 3.1 and Muse Code.
 
-ArogyaDoot is built as a **wrapper on an existing app (internally "Pramaan")**, which provides the
-on-device LLM, the retrieval engine (RAG), speech, OCR and Meta API plumbing. ArogyaDoot's own code is the
-`Arogya*.kt` files. User-visible branding is ArogyaDoot everywhere.
+Pramaan is built as a **wrapper on an existing base platform**, which provides the
+on-device LLM, the retrieval engine (RAG), speech, OCR and Meta API plumbing. Pramaan's own code is the
+`Arogya*.kt` files (the file and class names keep the old "Arogya" prefix on purpose; see AGENTS.md rule 7). User-visible branding is Pramaan everywhere.
 
 ---
 
@@ -57,7 +57,7 @@ on-device LLM, the retrieval engine (RAG), speech, OCR and Meta API plumbing. Ar
 | Practice | Daily questions generated from guide passages (answer must be in the passage) | ✅ | ✅ |
 | Escalation | Call 108, call or WhatsApp the ANM, drafted ANM message | ✅ | ✅ |
 | Sample data | "Load / reset sample village": 50 fictional people; 20 with earlier visits filled through the real save path, so every register can be cross-checked | ✅ | — |
-| 3-minute demo | Home → "▶ Watch the 3-minute demo": 11 narrated scenes that run the real features on the sample village (due list → Annexure 9 Day 7 → voice-note text → AI fills form → danger rules → Ask SOP with source → AI ANM message + PHC referral → sample MCP card photo found in Pictures/ArogyaDoot and read by AI → save everywhere → registers/claim → models used). Nothing is sent | ✅ | ✅ |
+| 3-minute demo | Home → "▶ Watch the 3-minute demo": 11 narrated scenes that run the real features on the sample village (due list → Annexure 9 Day 7 → voice-note text → AI fills form → danger rules → Ask SOP with source → AI ANM message + PHC referral → sample MCP card photo found in Pictures/Pramaan and read by AI → save everywhere → registers/claim → models used). Nothing is sent | ✅ | ✅ |
 | Profile | ASHA name and village on Home ("Namaste, …"), stored on the phone; tile counts (due today, referrals) | ✅ | — |
 
 ---
@@ -77,7 +77,7 @@ Every AI reply, from either engine, is validated before it is offered:
 
 | Job | Offline (on phone) | Online |
 |---|---|---|
-| Answers (Ask SOP) | Llama 3.2 3B Instruct Q4_K_M via llama.cpp; retrieval multilingual-e5-small + mMiniLMv2 cross-encoder | Muse Spark 1.3 (Pramaan's engine) |
+| Answers (Ask SOP) | Llama 3.2 3B Instruct Q4_K_M via llama.cpp; retrieval multilingual-e5-small + mMiniLMv2 cross-encoder | Muse Spark 1.3 (the platform's engine) |
 | Form filling, Finish visit, family explanation, ANM message, daily practice, organise notes, card fields | Llama 3.2 3B | Muse Spark 1.3 (Meta Model API) or Muse Glimmer 30B (Together AI) |
 | Speech to text | Whisper (on-device) | Muse Voice Transcribe 1.0 |
 | Reading aloud | Android offline voice | Android online voice (Google, not Meta) |
@@ -96,11 +96,11 @@ Every AI reply, from either engine, is validated before it is offered:
 | Muse Image | not used (unavailable from India) |
 
 **Keys:**
-- The Meta key is entered in the app's Settings and stored by Pramaan's `GroqKeyStore` (`MetaKeyStore`
+- The Meta key is entered in the app's Settings and stored by the platform's `GroqKeyStore` (`MetaKeyStore`
   underneath, AES-GCM in AndroidKeyStore).
 - The Together key is entered in ✨ AI → ☁ window and stored by `ArogyaKeyVault`.
 - Text sent to the cloud has the person's name, relative, village, phone, RCH id and household removed
-  (`ArogyaOfficialForms.scrub`, `ArogyaOnlinePolicy.scrub`). Pramaan's `PrivacyGate` also redacts text and
+  (`ArogyaOfficialForms.scrub`, `ArogyaOnlinePolicy.scrub`). the platform's `PrivacyGate` also redacts text and
   logs every egress to `meta_egress.log`.
 
 ---
@@ -108,22 +108,22 @@ Every AI reply, from either engine, is validated before it is offered:
 ## 4. Architecture and code map
 
 - Package: `app/src/main/java/com/example/arfas/` (namespace `com.example.arfas`).
-- applicationId: `com.example.arogyadoot`. App label: `ArogyaDoot`.
+- applicationId: `com.example.pramaan`. App label: `Pramaan`.
 
-### ArogyaDoot code (`Arogya*.kt`, about 6,400 lines)
+### Pramaan code (`Arogya*.kt`, about 6,400 lines)
 
 | File | What it does |
 |---|---|
-| `ArogyaVisitScreen.kt` | Main ArogyaDoot screen: home, Ask SOP dialog (guide answers, sources, passages, attachments), older visit/Finish-visit flow, escalation, dictation dialog (Whisper/Muse routing), reading aloud, quiz, settings hooks, sample village load |
-| `ArogyaDemoTour.kt` | The 3-minute auto-demo (`ArogyaDemoScript` scenes and note, `ArogyaDemoCard` sample MCP card rendered and saved to Pictures/ArogyaDoot, then found via MediaStore) |
+| `ArogyaVisitScreen.kt` | Main Pramaan screen: home, Ask SOP dialog (guide answers, sources, passages, attachments), older visit/Finish-visit flow, escalation, dictation dialog (Whisper/Muse routing), reading aloud, quiz, settings hooks, sample village load |
+| `ArogyaDemoTour.kt` | The 3-minute auto-demo (`ArogyaDemoScript` scenes and note, `ArogyaDemoCard` sample MCP card rendered and saved to Pictures/Pramaan, then found via MediaStore) |
 | `ArogyaGuidedUi.kt` | **Visit flow**: person picker, 3-step official-form visit, `OfficialFormGrid` (paper look) |
 | `ArogyaFormSpecs.kt` | **Official forms**: `FieldSpec`/`FormSpec`/`FormEntry`; ANNEX9, HBYC, MCP_ANC, SICK, FP rows; `formFor` (which form and column for this person today, with early-visit handling), `fieldsFor`, `prompt`, `parse` (grounded), `dangers` (form rules), `nextDue`, `previous`/`carried`/`missing`/`weightNote`, `apply` (saves form + MCP card + drug kit + diary), `visitRecord`, `seedDemo` (20 sample histories), `table` (printable), `subjectFor` (mother → baby's Annex 9), `scrub` |
 | `ArogyaRegistry.kt` | Data model (`Beneficiary`, `McpCard`, `DiaryEntry`, `StockTxn`, `VitalEvent`, `RegistryData` incl. `forms`), `ArogyaRegistryLogic` (high risk, EDD, lists, report, incentives, CSV), `ArogyaSchedule`, `ArogyaRegistryCodec` (JSON), `ArogyaBackupCrypto` (PBKDF2 + AES-GCM), `ArogyaSampleVillage`, `ArogyaForms` (RI Form 3/4, drug kit card, MCP card sections) |
 | `ArogyaRegistryStore.kt` | Encrypted `registry.enc` store, single writer, backup/restore via SAF (Drive), PDF rendering, 1000-patient synthetic load |
 | `ArogyaRegistryUi.kt` | Registry hub, patients, MCP card dialog, registers pages, stock/events dialogs, backup tab, `AiBadge`, ✨ AI page, Today card, Home grid |
-| `ArogyaVisitAi.kt` | AI engine for ArogyaDoot: `route()` (Cloud first / Local first for every AI action), `askPramaan` (RAG answers with sources), `fillForm`, `extractFields`, `familyExplain`, `anmMessage`, `refresher`, `readCard`, organise notes, warm-up |
+| `ArogyaVisitAi.kt` | AI engine for Pramaan: `route()` (Cloud first / Local first for every AI action), `askPramaan` (RAG answers with sources), `fillForm`, `extractFields`, `familyExplain`, `anmMessage`, `refresher`, `readCard`, organise notes, warm-up |
 | `ArogyaCloudApi.kt` | `MetaCloud` constants, `ArogyaCloudChoice`, `ArogyaRouting.order`, `ArogyaSamCount`, `ArogyaKitPhrases` |
-| `ArogyaCloudUi.kt` | `ArogyaKeyVault`, `ArogyaCloud` (setting, keys, online check, `withDeadline`, Muse transcribe via Pramaan's `MetaOnline`), Cloud/phone settings dialog with connection test, `SamCountDialog` |
+| `ArogyaCloudUi.kt` | `ArogyaKeyVault`, `ArogyaCloud` (setting, keys, online check, `withDeadline`, Muse transcribe via the platform's `MetaOnline`), Cloud/phone settings dialog with connection test, `SamCountDialog` |
 | `ArogyaModelClient.kt` | Endpoint presets (Muse Spark, Muse Glimmer) and a small OpenAI-compatible HTTP client |
 | `ArogyaAiExtras.kt` | Grounding helpers, prompts and parsers (family, ANM, quiz, card), `ArogyaAiCatalog` (badge text), `ArogyaCardApply` |
 | `ArogyaFinishVisit.kt` | Older Finish-visit extraction prompt/parser and the temperature/weight rule fallback (also used by forms) |
@@ -131,11 +131,11 @@ Every AI reply, from either engine, is validated before it is offered:
 | `ArogyaDangerSigns.kt`, `ArogyaClinicalText.kt`, `ArogyaClinicalGrounding.kt`, `ArogyaEvidenceSafety.kt`, `ArogyaUrgentTriage.kt` | Fixed danger-sign rules and safety checks |
 | `ArogyaVisit*.kt`, `ArogyaCapture.kt`, `ArogyaShare.kt`, `ArogyaSources.kt`, `ArogyaOnlinePolicy.kt`, `ArogyaHindi.kt`, `ArogyaDesign.kt` | Visit queue/repository/media, note organiser, sharing (ANM, WhatsApp, PDF), guide sources, identifier removal, Hindi strings, design |
 
-### Underlying platform ("Pramaan" internals; do not refactor without need)
+### Underlying base platform (internals; do not refactor without need)
 
 | Files | Role |
 |---|---|
-| `MainActivity.kt` | Hosts ArogyaDoot; constructs `ArogyaVisitAi`. ArogyaDoot touches it only through hooks |
+| `MainActivity.kt` | Hosts Pramaan; constructs `ArogyaVisitAi`. Pramaan touches it only through hooks |
 | `AndroBaselineRuntime.kt` | Chat/answer runtime, Local/Cloud policy for answers |
 | `PocketRag*`, `GenericKb*`, `HybridKnowledgeRetriever`, `SemanticSearchEngine`, `KnowledgeSourcePresentation` | RAG, search, reranking, source display |
 | `LocalModelManager`, `LlamaCppCore`, `LlamaNative` (+ `src/main/cpp/pramaan_llama.cpp`) | On-device Llama |
@@ -243,8 +243,23 @@ HBYC weight row are app summaries, labelled as such; the other forms are row-for
   approved by the ASHA.
 - Official form rows and layout follow the source documents; only data is synthetic.
 - Synthetic/fictional people only in demos.
-- Don't break the RAG, the on-device LLM or speech. Audit existing code before adding anything; Pramaan
+- Don't break the RAG, the on-device LLM or speech. Audit existing code before adding anything; the base platform
   already has much of the plumbing (`MetaModelApi`, `MetaOnline`, keys, policy).
-- Branding: "ArogyaDoot" in everything a user or judge sees.
+- Branding: "Pramaan" in everything a user or judge sees.
 - Don't submit under another person's name; don't claim on-device Llama satisfies the hackathon rules
   without confirmation.
+
+## 10. Rename (4 Nov 2026): ArogyaDoot → Pramaan
+- Users and judges see "Pramaan" everywhere: launcher, screens, PDFs and their footers, share text,
+  the demo, AI badges, notifications and the Downloads folder (`Downloads/Pramaan`).
+- The Gradle project is `Pramaan`, and the app ID is `com.example.pramaan`. It installs as a **new app**
+  beside the old ArogyaDoot one, with empty data: enter the Meta key again, set up the models and the
+  guide, and load the sample village. Uninstall ArogyaDoot when the new app works.
+- Kept on purpose (renaming breaks data, native code or scripts): the Java package `com.example.arfas`,
+  the `Arogya*.kt` file and class names, the `AROGYA_*` log markers, the `arogya_*` prefs, the
+  `arogyadoot_visits` folder and keystore alias, and the `ARGB` backup header. Restore still accepts
+  backups whose app field says "ArogyaDoot".
+- Removed as unused (no references anywhere): AndroGemmaCompat, AndroStreamingRecognizer, AndroVad,
+  FixSightCapabilityRouter, KnowledgeConversationEngine, MetaVisionMathTest, ModelSetupDialog,
+  ObservationSource, PocketHybridFusion, StreamingTTSManager, VisualFrameChangeDetector. Also removed:
+  the old Muse Code prompts, NEXT_CHANGES.md and the earlier batch reports (git history keeps them).

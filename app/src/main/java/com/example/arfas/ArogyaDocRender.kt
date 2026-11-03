@@ -399,7 +399,7 @@ object ArogyaDocRender {
             template,
             headerValues(header) + mapOf(
                 "css" to fill(css, mapOf("pageSize" to "A4")),
-                "title" to "Ask SOP — answer", "source" to "ArogyaDoot · grounded in the cited sources",
+                "title" to "Ask SOP — answer", "source" to "Pramaan · grounded in the cited sources",
                 "dateVal" to dateVal, "question" to question,
                 "answerHtml" to answerHtml,
                 "hasSources" to if (srcs.isNotEmpty()) "1" else "", "sources" to srcs,

@@ -217,9 +217,9 @@ fun ArogyaVisitScreen(
     }
     LaunchedEffect(Unit) { registry.load(); registry.autoBackupIfDue() }
     var photoUri by remember { mutableStateOf<Uri?>(null) }
-    // Load the model and select the guide as soon as ArogyaDoot opens, so the first question does not wait for it.
+    // Load the model and select the guide as soon as Pramaan opens, so the first question does not wait for it.
     LaunchedEffect(knowledgeReady) { if(knowledgeReady) runCatching { ai?.warmUp(context.applicationContext) } }
-    // Every ArogyaDoot AI action follows the Settings order (Cloud first / Local first).
+    // Every Pramaan AI action follows the Settings order (Cloud first / Local first).
     LaunchedEffect(ai) { ai?.cloudChoice = { ArogyaCloud.choice(context.applicationContext) } }
     fun openAi(task:ArogyaAiTask, topic:String="", sop:Boolean=false) {
         aiOriginalNotes=queue.state.value.visits.firstOrNull {it.id==selectedId}?.notes.orEmpty();aiVisitId=if(sop) SOP_VISIT_ID else selectedId;aiTask=task;aiTopic=topic;aiQuestion=if(task==ArogyaAiTask.EXPLAIN && topic.isNotBlank() && topic!="home visit") "Explain $topic in simple language for the family." else ""
@@ -420,7 +420,7 @@ fun ArogyaVisitScreen(
             // Home header: app name, what this screen is, today, and whether AI is on the phone or the cloud.
             Row(Modifier.fillMaxWidth().padding(top=8.dp),verticalAlignment=Alignment.Top) {
                 Column(Modifier.weight(1f)) {
-                    Text("ArogyaDoot",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.primary)
+                    Text("Pramaan",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.primary)
                     Text(tr("ASHA Dashboard","आशा डैशबोर्ड"),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
                     Text(tr("Accredited Social Health Activist","मान्यता प्राप्त सामाजिक स्वास्थ्य कार्यकर्ता"),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(if(ashaName.isBlank()) tr("👤 Tap to add your name and village","👤 अपना नाम और गाँव जोड़ें") else tr("Namaste, $ashaName","नमस्ते, $ashaName")+(if(ashaVillage.isNotBlank()) " · $ashaVillage" else ""),
@@ -441,7 +441,7 @@ fun ArogyaVisitScreen(
                 dismissButton={ TextButton(onClick={ clearAsk=false }) { Text(tr("Keep","रखें")) } })
         } else {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                TextButton(onClick={ if(!locked) selectedId=null },enabled=!locked) { Text("‹ ArogyaDoot",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold) }
+                TextButton(onClick={ if(!locked) selectedId=null },enabled=!locked) { Text("‹ Pramaan",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold) }
                 TextButton(onClick={setHindi(!hindi)}) {Text(if(hindi) "English" else "हिन्दी")}
             }
             Text(visit.name.ifBlank { tr("New visit","नई विज़िट") },style=MaterialTheme.typography.titleLarge)
@@ -706,7 +706,7 @@ fun ArogyaVisitScreen(
                             OutlinedButton(onClick={ mediaBusy=true; scope.launch { try { if(!ArogyaShare.shareVisitPdf(context,visit)) Toast.makeText(context,"PDF could not be created.",Toast.LENGTH_LONG).show() } finally { mediaBusy=false } } },enabled=!locked,modifier=Modifier.weight(1f)) { Text(tr("Share PDF","PDF भेजें")) }
                         }
                         Text(tr("Includes the visit, observations, referral and every guide question with its sources. You choose who receives it.","विज़िट, नोट, रेफ़रल और हर गाइड सवाल स्रोत सहित। किसे भेजना है आप चुनें।"),style=MaterialTheme.typography.bodySmall)
-                        OutlinedButton(onClick={exportVisitId=visit.id;exportRevision=visit.updatedAt;pdf.launch("ArogyaDoot-visit-${visit.date}.pdf")},enabled=!locked) { Text(if(visit.completed) "Export visit PDF" else "Export DRAFT PDF") }
+                        OutlinedButton(onClick={exportVisitId=visit.id;exportRevision=visit.updatedAt;pdf.launch("Pramaan-visit-${visit.date}.pdf")},enabled=!locked) { Text(if(visit.completed) "Export visit PDF" else "Export DRAFT PDF") }
                         Text(tr("Export includes the beneficiary details above. Choose a destination you trust. This app does not send it to anyone.","निर्यात में ऊपर का लाभार्थी विवरण होगा। भरोसे की जगह चुनें। यह ऐप किसी को नहीं भेजता।"),style=MaterialTheme.typography.bodySmall)
                         if(visit.completed) Button(onClick={start(ArogyaWorkflow.followUp(visit))},enabled=!locked) { Text(tr("Start follow-up visit","फ़ॉलो-अप विज़िट शुरू करें")) }
                         TextButton(onClick={deleteId=visit.id},enabled=!locked) { Text(tr("Delete this local record","यह स्थानीय रिकॉर्ड हटाएँ")) }

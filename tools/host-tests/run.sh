@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compile ArogyaDoot's pure-Kotlin logic with the host tests and run every suite.
+# Compile Pramaan's pure-Kotlin logic with the host tests and run every suite.
 set -e
 cd "$(dirname "$0")"
 SRC=../../app/src/main/java/com/example/arfas

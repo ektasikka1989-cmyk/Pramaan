@@ -146,7 +146,7 @@ object ArogyaOfficialSources {
                 connectTimeout = timeoutMs
                 readTimeout = timeoutMs
                 instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "ArogyaDoot/1.0 (ASHA guide citations)")
+                setRequestProperty("User-Agent", "Pramaan/1.0 (ASHA guide citations)")
             }
             c.connect()
             if (c.responseCode !in 200..299) return null

@@ -1118,7 +1118,7 @@ class AndroVoiceForegroundService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "ArogyaDoot", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL_ID, "Pramaan", NotificationManager.IMPORTANCE_LOW)
             )
         }
     }
@@ -1146,7 +1146,7 @@ class AndroVoiceForegroundService : Service() {
     private fun buildNotification(): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("ArogyaDoot session")
+            .setContentTitle("Pramaan session")
             .setContentText("Text assistant active • voice on demand")
             .setOngoing(true)
             .setOnlyAlertOnce(true)

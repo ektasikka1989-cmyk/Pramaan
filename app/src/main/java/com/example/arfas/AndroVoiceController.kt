@@ -72,7 +72,7 @@ object AndroVoiceController {
             phase = AppState.WAITING,
             visionMode = visionMode,
             troubleshootingMode = troubleshootingMode,
-            displayText = if (troubleshootingMode) "Troubleshooting mode starting…" else "ArogyaDoot ready.",
+            displayText = if (troubleshootingMode) "Troubleshooting mode starting…" else "Pramaan ready.",
             voiceInitComplete = true
         )
     }

@@ -286,7 +286,7 @@ fun SopAnswerCard(
     val shareSegments = if (tab == 1) result.onlineSegments else result.segments
     val shareSources = if (tab == 1) result.onlineSources else result.sources
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (tab == 1) AiResultChip(result.onlineProvider.ifBlank { "ArogyaDoot • online" }, true, result.onlineMs, hindi)
+        if (tab == 1) AiResultChip(result.onlineProvider.ifBlank { "Pramaan • online" }, true, result.onlineMs, hindi)
         else AiResultChip(result.provider, result.online, result.elapsedMs, hindi)
         if (hasOnline) TabRow(selectedTabIndex = tab) {
             Tab(selected = tab == 0, onClick = { tab = 0; hl = "" }, text = { Text(tr("📱 Offline", "📱 ऑफ़लाइन")) })

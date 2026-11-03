@@ -33,7 +33,7 @@ object PocketRagPromptBuilder {
      * calculation line.
      */
     private const val SYSTEM =
-        "You are ArogyaDoot. Answer only from the KNOWLEDGE EVIDENCE (passages from the documents the user selected). " +
+        "You are Pramaan. Answer only from the KNOWLEDGE EVIDENCE (passages from the documents the user selected). " +
             "Always start directly with the answer itself (no heading or label); when the question asks what to do, start with the most urgent action the evidence gives. " +
             "Combine what every relevant passage says (several documents often cover one topic); do not rely on a single passage. " +
             "Never write 'according to the evidence', 'the document says' or 'the passage mentions', and never start a sentence with a source ID. " +

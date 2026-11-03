@@ -320,7 +320,7 @@ class MainActivity : ComponentActivity() {
                                 lm.requestCancelActiveGeneration("uncaught_litertlm_callback_error")
                             }
                             AndroVoiceController.setError(
-                                "The local model backend became unhealthy. ArogyaDoot will avoid reusing that native session.",
+                                "The local model backend became unhealthy. Pramaan will avoid reusing that native session.",
                                 keepSession = AndroVoiceController.state.value.sessionActive
                             )
                         }
@@ -1097,7 +1097,7 @@ class MainActivity : ComponentActivity() {
         VisualEngine.clearAll()
         // Do not clear a just-staged first-turn attachment. Explicit New Chat /
         // conversation switching already clears stale pending sources before calling here.
-        currentObservation = if (startNewChat) "ArogyaDoot session started." else currentObservation
+        currentObservation = if (startNewChat) "Pramaan session started." else currentObservation
         liveCaptionText = ""
         if (startNewChat) {
             notebookSnapshot = null
@@ -1163,7 +1163,7 @@ class MainActivity : ComponentActivity() {
                 }
                 delay(100)
             }
-            Toast.makeText(this@MainActivity, "ArogyaDoot could not start the conversation.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@MainActivity, "Pramaan could not start the conversation.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1201,7 +1201,7 @@ class MainActivity : ComponentActivity() {
                 }
                 delay(100)
             }
-            Toast.makeText(this@MainActivity, "ArogyaDoot could not start online verification.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@MainActivity, "Pramaan could not start online verification.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2203,7 +2203,7 @@ class MainActivity : ComponentActivity() {
         provider.equals(AndroBaselineRuntime.Provider.CLOUD.name, ignoreCase = true) -> "Cloud AI"
         provider.equals(AndroBaselineRuntime.Provider.LOCAL.name, ignoreCase = true) -> "On-device AI"
         provider.equals("INTERRUPTED", ignoreCase = true) -> "Interrupted by user"
-        else -> "ArogyaDoot"
+        else -> "Pramaan"
     }
 
     private fun answerSource(provider: String): AnswerSource = when {
@@ -2219,7 +2219,7 @@ class MainActivity : ComponentActivity() {
             withContext(Dispatchers.Main) {
                 Toast.makeText(
                     this@MainActivity,
-                    if (uri != null) "Session PDF saved to Downloads/ArogyaDoot" else "Unable to save PDF on this device.",
+                    if (uri != null) "Session PDF saved to Downloads/Pramaan" else "Unable to save PDF on this device.",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -2375,7 +2375,7 @@ fun FixSightUnifiedScreen(
             ) {
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    "ArogyaDoot",
+                    "Pramaan",
                     color = Color.White,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -2845,7 +2845,7 @@ private fun FixSightTopBar(
             Box(contentAlignment = Alignment.Center) { Text("☰", color = Color.White, fontSize = 22.sp) }
         }
         Column(modifier = Modifier.padding(start = 4.dp)) {
-            Text(if (isVisionMode) "ArogyaDoot  ·  Camera" else "ArogyaDoot",
+            Text(if (isVisionMode) "Pramaan  ·  Camera" else "Pramaan",
                 color = Color(0xFFF5F5F5), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
             // Always visible while a knowledge base answers the questions, with a one-tap way out.
             if (knowledgeOn) {
@@ -2918,7 +2918,7 @@ private fun FixSightLiveConversationStrip(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (turnActive && latestAssistant.isBlank()) "ArogyaDoot is looking" else "ArogyaDoot reply",
+                        text = if (turnActive && latestAssistant.isBlank()) "Pramaan is looking" else "Pramaan reply",
                         color = Color(0xFF9F9F9F),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
@@ -3009,7 +3009,7 @@ private fun FixSightConversationPanel(
                     Text("What can I help with?", color = Color(0xFFF2F2F2), fontSize = 22.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(8.dp))
                     Text(if (sessionActive) "Type a message, use the microphone, attach a file, or open Live Camera."
-                        else "Start a conversation to use ArogyaDoot offline or online.",
+                        else "Start a conversation to use Pramaan offline or online.",
                         color = Color(0xFFA7A7A7), fontSize = 13.sp, lineHeight = 19.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 }
@@ -3712,7 +3712,7 @@ private fun FixSightBottomComposer(
                         troubleshootingMode && appState == AppState.SPEAKING -> "Troubleshooting • Speaking"
                         troubleshootingMode && appState == AppState.THINKING -> "Troubleshooting • Thinking"
                         listening -> "Listening… tap the mic to stop"
-                        appState == AppState.THINKING -> "ArogyaDoot is generating a response"
+                        appState == AppState.THINKING -> "Pramaan is generating a response"
                         isVisionMode -> "Live Camera is active"
                         else -> ""
                     },
@@ -4393,7 +4393,7 @@ private fun RCAStepCard(step: RCAStep, expanded: Boolean, onToggle: () -> Unit) 
             AnswerSource.LOCAL -> "Local AI"
             AnswerSource.LOCAL_PLUS_CLOUD -> "Hybrid AI"
             AnswerSource.ML_KIT -> "Camera / ML Kit"
-            else -> "ArogyaDoot"
+            else -> "Pramaan"
         }
     }
     val answerText = step.summary.ifBlank { step.result }

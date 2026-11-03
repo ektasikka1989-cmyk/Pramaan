@@ -1,4 +1,4 @@
-"""Synthetic demo photos for ArogyaDoot (fictional people, fictional numbers).
+"""Synthetic demo photos for Pramaan (fictional people, fictional numbers).
 Every person, phone and ID number here is invented; the "Aadhaar" 0000 1111 2222 is
 deliberately invalid (real ones never start with 0 or 1) and only shows the masking.
 Usage: python make_samples.py <out_dir> <yyyy-mm-dd today>

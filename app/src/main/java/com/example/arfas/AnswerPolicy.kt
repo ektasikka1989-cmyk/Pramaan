@@ -40,7 +40,7 @@ class AnswerPolicyStore(context: Context) {
      * Voice Transcribe (Hindi/English code-switching); Whisper on the phone otherwise. Off by
      * default: the recording leaves the phone only when the user turns this on.
      */
-    fun onlineVoice(): Boolean = prefs.getBoolean(KEY_ONLINE_VOICE, false) || get() == AnswerPolicy.CLOUD_FIRST   // ArogyaDoot: one Cloud first / Local first setting for everything
+    fun onlineVoice(): Boolean = prefs.getBoolean(KEY_ONLINE_VOICE, false) || get() == AnswerPolicy.CLOUD_FIRST   // Pramaan: one Cloud first / Local first setting for everything
 
     fun setOnlineVoice(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_ONLINE_VOICE, enabled).apply()

@@ -153,7 +153,7 @@ fun ArogyaRegisterTable(
         if (note.isNotBlank()) Text(note, style = MaterialTheme.typography.bodySmall)
         if (shown.isNotEmpty()) {
             val form = remember(title, table, shown, sample) {
-                ArogyaRegisterTables.toFormTable(title, "ArogyaDoot register · ${java.time.LocalDate.now()}",
+                ArogyaRegisterTables.toFormTable(title, "Pramaan register · ${java.time.LocalDate.now()}",
                     RegTable(table.headers, shown), note, sample)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -163,7 +163,7 @@ fun ArogyaRegisterTable(
                         try {
                             val bytes = store.renderFormPdf(form)
                             val uri = bytes?.let { store.saveFile(form.title.replace(Regex("[^A-Za-z0-9]+"), "-") + ".pdf", "application/pdf", it) }
-                            toast(if (uri != null) tr("Saved in Downloads/ArogyaDoot", "Downloads/ArogyaDoot में सहेजा") else tr("Could not create the PDF", "PDF नहीं बना"))
+                            toast(if (uri != null) tr("Saved in Downloads/Pramaan", "Downloads/Pramaan में सहेजा") else tr("Could not create the PDF", "PDF नहीं बना"))
                         } finally {
                             pdfBusy = false
                         }

@@ -219,7 +219,7 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Button(onClick = { ArogyaShare.dial(context, "108") }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("📞 108") }
                                         OutlinedButton(onClick = { val ph = ArogyaShare.anmPhone(context); if (ph.isBlank()) Toast.makeText(context, tr("Add the ANM number in Escalate to ANM", "ANM नंबर जोड़ें"), Toast.LENGTH_LONG).show() else ArogyaShare.dial(context, ph) }) { Text("📞 ANM") }
-                                        OutlinedButton(onClick = { ArogyaShare.whatsApp(context, ArogyaShare.anmPhone(context), "URGENT — ${b.name}, ${b.household} ${b.village} (${spec.columns.getOrElse(column) { "" }}): " + dangers.joinToString("; ") + ". Please advise. (ASHA via ArogyaDoot)") }) { Text("💬") }
+                                        OutlinedButton(onClick = { ArogyaShare.whatsApp(context, ArogyaShare.anmPhone(context), "URGENT — ${b.name}, ${b.household} ${b.village} (${spec.columns.getOrElse(column) { "" }}): " + dangers.joinToString("; ") + ". Please advise. (ASHA via Pramaan)") }) { Text("💬") }
                                     }
                                     Text(tr("Fixed action rules printed on the form — not AI.", "फ़ॉर्म पर छपे तय नियम — AI नहीं।"), style = MaterialTheme.typography.labelSmall)
                                 }

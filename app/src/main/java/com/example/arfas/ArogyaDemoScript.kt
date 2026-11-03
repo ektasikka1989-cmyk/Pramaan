@@ -41,11 +41,11 @@ object ArogyaDemoScript {
             listOf(
                 "Sunita is the ASHA of Rampur, a sample village.",
                 "Her day is home visits, paper forms, registers and health questions, often with no signal.",
-                "ArogyaDoot does that paperwork with AI on her phone, and she confirms every result."),
+                "Pramaan does that paperwork with AI on her phone, and she confirms every result."),
             listOf(
                 "सुनीता नमूना गाँव रामपुर की आशा हैं।",
                 "उनका दिन घर-घर विज़िट, कागज़ी फ़ॉर्म, रजिस्टर और स्वास्थ्य के सवालों में जाता है, अक्सर बिना सिग्नल।",
-                "ArogyaDoot यह काम फ़ोन पर AI से करता है, और हर नतीजा सुनीता पक्का करती हैं।"),
+                "Pramaan यह काम फ़ोन पर AI से करता है, और हर नतीजा सुनीता पक्का करती हैं।"),
             "Introduction", "परिचय"),
         Scene("due", "Today's visits", "आज की विज़िट",
             listOf(

@@ -1,7 +1,7 @@
 package com.example.arfas
 
 /**
- * Shared clinical text utilities for ArogyaDoot: normalisation (Devanagari digits, Hindi/Hinglish
+ * Shared clinical text utilities for Pramaan: normalisation (Devanagari digits, Hindi/Hinglish
  * number words), a small bilingual clinical concept lexicon, and retrieval expansion.
  *
  * The lexicon is used in three places:

@@ -108,7 +108,7 @@ fun ArogyaGuideLibrary(
                             listBusy = true
                             scope.launch {
                                 try {
-                                    val form = FormTable(tr("Official guides used by ArogyaDoot", "ArogyaDoot की आधिकारिक गाइड"),
+                                    val form = FormTable(tr("Official guides used by Pramaan", "Pramaan की आधिकारिक गाइड"),
                                         tr("Installed guide pack", "इंस्टॉल गाइड"),
                                         listOf(tr("Title", "शीर्षक"), tr("Issuing body", "विभाग"), tr("Link", "लिंक")),
                                         list.map { listOf(it.title.ifBlank { it.sourceName }, it.authority, ArogyaGuideLibrary.link(it)) })

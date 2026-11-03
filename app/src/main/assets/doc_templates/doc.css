@@ -1,4 +1,4 @@
-/* ArogyaDoot printed documents. One stylesheet for preview and PDF (offline: system Noto fonts). */
+/* Pramaan printed documents. One stylesheet for preview and PDF (offline: system Noto fonts). */
 @page { size: {{pageSize}}; margin: 12mm 10mm 14mm 10mm; }
 * { box-sizing: border-box; }
 body { font-family: "Noto Sans", "Noto Sans Devanagari", sans-serif; font-size: 11px; color: #111; margin: 0;

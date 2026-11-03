@@ -175,10 +175,10 @@ class SemanticCapabilityContextProvider(
         // AR is a side effect and therefore uses an independent, deliberately strict
         // semantic permission boundary. Spatial understanding alone never authorizes it.
         private const val AR_OVERLAY_REQUEST_DESCRIPTOR =
-            "the user's requested output explicitly requires ArogyaDoot to visually indicate a target in the camera view using an AR or onscreen marker, arrow, box, highlight, tag, anchor, or equivalent pointing overlay; merely identifying, describing, diagnosing, or verbally locating an object is not enough"
+            "the user's requested output explicitly requires Pramaan to visually indicate a target in the camera view using an AR or onscreen marker, arrow, box, highlight, tag, anchor, or equivalent pointing overlay; merely identifying, describing, diagnosing, or verbally locating an object is not enough"
 
         private const val NO_AR_OVERLAY_DESCRIPTOR =
-            "the user wants a normal visual answer such as identifying what something is, describing what is visible, diagnosing a visible problem, reading the scene, or verbally saying where something is, without asking ArogyaDoot to draw or place a marker, highlight, arrow, box, tag, anchor, or overlay in the camera view"
+            "the user wants a normal visual answer such as identifying what something is, describing what is visible, diagnosing a visible problem, reading the scene, or verbally saying where something is, without asking Pramaan to draw or place a marker, highlight, arrow, box, tag, anchor, or overlay in the camera view"
 
         // Context dependence alone must never authorize AR. A short follow-up can be
         // context-dependent because it refers to a visible object (for example, asking

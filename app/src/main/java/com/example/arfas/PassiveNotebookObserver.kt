@@ -372,7 +372,7 @@ class PassiveNotebookObserver(context: Context) : AcceptedTurnObserver {
                 appendLine("Recent accepted conversation:")
                 rows.forEach { row ->
                     appendLine("User: ${row.user.take(220)}")
-                    appendLine("ArogyaDoot: ${row.assistant.take(300)}")
+                    appendLine("Pramaan: ${row.assistant.take(300)}")
                 }
             }
         }.take(maxChars)
@@ -505,7 +505,7 @@ class PassiveNotebookObserver(context: Context) : AcceptedTurnObserver {
             rejectedTheories = (rejectedTheories + readTroubleshootingRuledOutLocked()).distinctBy(::normalKey).toMutableList(),
             questionsAlreadyAsked = questionsAlreadyAsked,
             conversationSummary = rows.takeLast(8).joinToString("\n") {
-                "User: ${it.user.take(260)}\nArogyaDoot: ${it.assistant.take(360)}"
+                "User: ${it.user.take(260)}\nPramaan: ${it.assistant.take(360)}"
             }.take(3_800),
             typedEntries = typedEntries.toMutableList(),
             lastAnswerSource = lastAnswerSource,

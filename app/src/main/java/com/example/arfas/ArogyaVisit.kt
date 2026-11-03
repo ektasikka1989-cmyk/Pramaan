@@ -174,7 +174,7 @@ object ArogyaWorkflow {
         } else step
     }
     fun report(v: ArogyaVisit): String = buildString {
-        appendLine("AROGYADOOT — VISIT RECORD")
+        appendLine("PRAMAAN — VISIT RECORD")
         if (v.demo) appendLine("SYNTHETIC DEMO — NOT A REAL PATIENT")
         appendLine(if (v.completed) "Reviewed visit record" else "DRAFT — NOT COMPLETED")
         appendLine("Visit: ${v.id}\nBeneficiary: ${v.name}\nLocal ID: ${v.personId}\nVillage: ${v.village}\nVisit date: ${v.date}\nType: ${v.kind.title}\nBirth date: ${v.birthDate}")

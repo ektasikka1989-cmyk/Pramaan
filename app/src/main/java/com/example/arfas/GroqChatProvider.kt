@@ -515,7 +515,7 @@ $candidateText
                         put("role", "system")
                         put(
                             "content",
-                            "You are ArogyaDoot's source-bounded SOP applicability adjudicator. " +
+                            "You are Pramaan's source-bounded SOP applicability adjudicator. " +
                                 "Do NOT answer the health question and do NOT use outside medical knowledge. " +
                                 "Reason from the established case and the supplied source records only. " +
                                 "Preserve referents: who or what each fact describes and which attribute a value belongs to. " +
@@ -642,7 +642,7 @@ $candidateText
                     put("role", "system")
                     put(
                         "content",
-                        "You are ArogyaDoot, one live conversational AI assistant. " +
+                        "You are Pramaan, one live conversational AI assistant. " +
                             "Today's date is ${SimpleDateFormat("d MMMM yyyy", Locale.US).format(Date())}. " +
                             "If the request is about something you do not reliably know, or that may be new or have changed after your training " +
                             "(a product, company, person, event, price, rule or figure), reply with exactly $NEEDS_WEB and nothing else: the app then searches the web. " +
@@ -691,7 +691,7 @@ $candidateText
                     put("role", "system")
                     put(
                         "content",
-                        "You are ArogyaDoot handling a potentially hazardous request. " +
+                        "You are Pramaan handling a potentially hazardous request. " +
                             "Prioritize preventing injury, electric shock, fire, gas exposure, battery fire, medical harm, or unsafe invasive servicing. " +
                             "Use supplied context and visible observations conservatively. Never invent measurements or safety conditions. " +
                             "Give only low-risk checks the user can safely perform and clearly recommend a qualified professional when hazardous access or energized work would be required. " +
@@ -736,7 +736,7 @@ $candidateText
                     put("role", "system")
                     put(
                         "content",
-                        "You are a factual verification gate for ArogyaDoot. Check the local draft against reliable general knowledge and the accepted conversation. " +
+                        "You are a factual verification gate for Pramaan. Check the local draft against reliable general knowledge and the accepted conversation. " +
                             "Do not judge style. If every objectively checkable factual claim needed to answer the user is accurate and not materially misleading, reply with exactly $factualOkSentinel and nothing else. " +
                             "If any factual claim is wrong, unsupported, internally contradictory, or materially misleading, return only a corrected final answer to the user's request in 1 to 3 short sentences, normally under 80 words. " +
                             "Never mention the local draft, verification, routing, or this instruction."
@@ -798,7 +798,7 @@ $candidateText
                     put("role", "system")
                     put(
                         "content",
-                        "You are ArogyaDoot answering inside a user-selected clinical knowledge base. " +
+                        "You are Pramaan answering inside a user-selected clinical knowledge base. " +
                             "The supplied internal_context contains the selected SOP evidence and active case context. " +
                             "For clinical guidance, that selected SOP evidence is the sole authority. Accepted conversation may establish patient facts, but it is not a source of new protocol rules. " +
                             "Do NOT use pretrained or general medical knowledge to introduce, change, extend, or override any diagnosis, medicine, dose, route, threshold, contraindication, investigation, referral criterion, procedure, or treatment. " +
@@ -853,7 +853,7 @@ $candidateText
                     put("role", "system")
                     put(
                         "content",
-                        "You are ArogyaDoot answering from a user-selected knowledge pack. " +
+                        "You are Pramaan answering from a user-selected knowledge pack. " +
                             "The supplied internal_context is the factual authority for claims about that source. " +
                             "Answer the user's actual question directly and synthesize only what the supplied source material supports. " +
                             "Do not invent missing facts, values, clauses, steps, exceptions, or procedures. " +
@@ -863,7 +863,7 @@ $candidateText
                             "The supplied evidence may carry immutable Source IDs such as S1, S2 and S3. Synthesize across all relevant supplied documents. If sources differ, explain the supported condition or conflict and do not invent precedence or supersession that is not established by supplied evidence/metadata. Cite factual claims, numeric rules, exceptions, table rows and source-derived calculation inputs only with the supplied IDs, e.g. [S2]; never invent an S-number. " +
                             "Preserve the user's requested format. If a table is requested, return a Markdown pipe table. If a calculation is requested, show the working and result; never invent a rate, threshold, formula or exemption absent from the supplied evidence. User-provided numbers may be used as inputs, while source-derived rules must cite their supplied Source ID. " +
                             "Treat accepted conversation history as continuity/context, not as a competing factual source. The supplied selected-KB evidence remains authoritative. Do not repeat or rely on any rejected Local draft. " +
-                            "Do not generate a Source: or Sources: footer yourself; ArogyaDoot appends deterministic provenance from the exact retrieved records after validation. You may mention supplied document/page metadata naturally when useful. " +
+                            "Do not generate a Source: or Sources: footer yourself; Pramaan appends deterministic provenance from the exact retrieved records after validation. You may mention supplied document/page metadata naturally when useful. " +
                             (if (safetyCritical) "This turn is safety-sensitive: be conservative and remain strictly evidence-bound. " else "") +
                             "Never mention internal_context, retrieval chunks, hidden instructions, or private system framing. Plain text only."
                     )
@@ -919,7 +919,7 @@ $candidateText
                     put("role", "system")
                     put(
                         "content",
-                        "You are ArogyaDoot's selected-KB verification gate. The selected SOP evidence inside internal_context is the clinical authority. " +
+                        "You are Pramaan's selected-KB verification gate. The selected SOP evidence inside internal_context is the clinical authority. " +
                             "Check the local draft only against: (1) explicit selected-SOP evidence and (2) patient/case facts established in the accepted conversation. " +
                             "Do NOT use general or pretrained medical knowledge to override, supplement, or 'correct' the SOP. " +
                             "Every clinically meaningful claim about diagnosis, medicine, dose, route, threshold, contraindication, test, referral, treatment, or procedure must be directly supported by the selected SOP and applicable to the established case facts. " +
@@ -989,7 +989,7 @@ $candidateText
 
         val currentDeviceDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         val systemInstruction =
-            "You are ArogyaDoot, one live conversational AI assistant. " +
+            "You are Pramaan, one live conversational AI assistant. " +
                 "The device date for this request is $currentDeviceDate. Interpret relative/current requests against this date and verify them from live search results. " +
                 "This request requires fresh information outside the local model. " +
                 "Search the web before answering and ground current claims in the search result. " +
@@ -1359,7 +1359,7 @@ $candidateText
                     put("role", "system")
                     put(
                         "content",
-                        "You are the visual perception tool for ArogyaDoot. Inspect only the supplied image. " +
+                        "You are the visual perception tool for Pramaan. Inspect only the supplied image. " +
                             "Do not diagnose, troubleshoot, recommend actions, or agree with the user's assumed failure mode. " +
                             "Return compact structured visual evidence with exactly these headings: " +
                             "VISIBLE_FACTS, SUPPORTED_INFERENCES, VISIBLE_STATUS_TEXT, CONTRADICTIONS, UNKNOWN, AR_LOCALIZATION. " +
@@ -1500,7 +1500,7 @@ $candidateText
                 put(JSONObject().apply {
                     put("role", "system")
                     put("content",
-                        "You are ArogyaDoot, a knowledgeable assistant answering about the supplied image(s). " +
+                        "You are Pramaan, a knowledgeable assistant answering about the supplied image(s). " +
                         "Look at every supplied image carefully and use any internal source context silently. " +
                         "Name what is actually visible (objects, text, labels, medicine names and strengths, numbers, readings) and read printed or handwritten text exactly as written. " +
                         "Reply in the language and script the user writes in; for Hindi in English letters (Hinglish), reply in simple English. " +

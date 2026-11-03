@@ -83,7 +83,7 @@ class ArogyaRegistryStore private constructor(private val context: Context, priv
 
     fun backupBytes(password: String): ByteArray {
         val visits = visitsRepo.all()
-        val payload = JSONObject().put("app", "ArogyaDoot").put("version", 1).put("createdAt", System.currentTimeMillis())
+        val payload = JSONObject().put("app", "Pramaan").put("version", 1).put("createdAt", System.currentTimeMillis())
             .put("registry", JSONObject(ArogyaRegistryCodec.encode(mutable.value)))
             .put("visits", JSONArray().also { a -> visits.forEach { a.put(ArogyaVisitRepository.encode(it)) } })
         return ArogyaBackupCrypto.encrypt(payload.toString().toByteArray(), password)
@@ -118,7 +118,7 @@ class ArogyaRegistryStore private constructor(private val context: Context, priv
     suspend fun restore(uri: Uri, password: String, queue: ArogyaVisitQueue): String = withContext(Dispatchers.IO) {
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Cannot read the backup file.")
         val json = JSONObject(ArogyaBackupCrypto.decrypt(bytes, password).toString(Charsets.UTF_8))
-        require(json.optString("app") == "ArogyaDoot") { "Not an ArogyaDoot backup." }
+        require(json.optString("app") in setOf("Pramaan", "ArogyaDoot")) { "Not a Pramaan backup." }   // "ArogyaDoot" = backups made before the rename
         val registry = ArogyaRegistryCodec.decode(json.getJSONObject("registry").toString())
         val visits = json.optJSONArray("visits") ?: JSONArray()
         val existing = visitsRepo.all().map { it.id }.toSet()
@@ -133,18 +133,18 @@ class ArogyaRegistryStore private constructor(private val context: Context, priv
         "Restored ${registry.beneficiaries.size} patients and registers; added $added visits ($skipped already here or unreadable)."
     }
 
-    /** Saves a file in Downloads/ArogyaDoot. Returns its Uri, or null. */
+    /** Saves a file in Downloads/Pramaan. Returns its Uri, or null. */
     fun saveFile(name: String, mime: String, bytes: ByteArray): Uri? = runCatching {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name); put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/ArogyaDoot")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Pramaan")
         }
         val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("no destination")
         context.contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
         uri
     }.getOrNull()
 
-    /** Saves a file in Downloads/ArogyaDoot and opens the share sheet (CSV registers, reports). */
+    /** Saves a file in Downloads/Pramaan and opens the share sheet (CSV registers, reports). */
     fun shareFile(name: String, mime: String, bytes: ByteArray): Boolean {
         val uri = saveFile(name, mime, bytes) ?: return false
         return runCatching {

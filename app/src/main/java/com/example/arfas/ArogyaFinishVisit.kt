@@ -144,7 +144,7 @@ object ArogyaFinishVisit {
             val measured = verified.filter { it.key != "action_taken" }.joinToString("; ") { line(it) }
             if (measured.isNotBlank()) appendLine("Recorded: $measured")
             if (actions.isNotBlank()) appendLine("ASHA action: $actions")
-            append("Visit ${visit.date}. Prepared with ArogyaDoot; checked by the ASHA.")
+            append("Visit ${visit.date}. Prepared with Pramaan; checked by the ASHA.")
         }.trim()
         val day = ArogyaWorkflow.parseDate(visit.date) ?: LocalDate.now()
         val (date, reason) = if (urgent) day.plusDays(1).toString() to "Check referral outcome (danger sign: ${findings.firstOrNull().orEmpty()})"

@@ -382,7 +382,7 @@ object ArogyaAiExtras {
         "From MCP card photo (each value checked by ASHA against the card): " + fields.joinToString("; ") { "${it.label}: ${it.value}" }
 }
 
-/** Which model does what in ArogyaDoot — shown to the ASHA and judges exactly as implemented. */
+/** Which model does what in Pramaan — shown to the ASHA and judges exactly as implemented. */
 data class ArogyaAiFeature(val feature: String, val whatAiDoes: String, val model: String, val maker: String, val metaModel: Boolean, val where: String)
 
 object ArogyaAiCatalog {
@@ -415,7 +415,7 @@ object ArogyaAiCatalog {
 }
 
 /**
- * Status snapshot the "What makes ArogyaDoot smart" table is built from. Every
+ * Status snapshot the "What makes Pramaan smart" table is built from. Every
  * value is read live by the UI: the one setting, signal, the loaded phone model
  * file, the configured cloud endpoint, and which keys exist.
  */
@@ -542,7 +542,7 @@ object ArogyaAiTable {
         fun tr(en: String, hi: String) = if (hindi) hi else en
         fun cell(t: String, w: Int) = t.replace("\n", " ").take(w).padEnd(w)
         val b = StringBuilder()
-        b.appendLine(tr("What makes ArogyaDoot smart", "ArogyaDoot को समझदार क्या बनाता है"))
+        b.appendLine(tr("What makes Pramaan smart", "Pramaan को समझदार क्या बनाता है"))
         b.appendLine(tr("Mode: ", "मोड: ") + (if (s.cloudFirst) tr("Cloud first", "Cloud first") else tr("Local first", "Local first")) +
             " · " + (if (s.online) tr("online", "ऑनलाइन") else tr("offline", "ऑफ़लाइन")) +
             " · $guideLabel · " + tr("$guideCount official guides", "$guideCount आधिकारिक गाइड"))

@@ -1,4 +1,4 @@
-# ArogyaDoot device tests (debug only, keeps app data). From repo root:
+# Pramaan device tests (debug only, keeps app data). From repo root:
 #   powershell -ExecutionPolicy Bypass -File tools\device-tests\run_all.ps1 [-SkipInstall] [-Only V1|M1off|M1on|V2|FB]
 # Never uninstalls or clears data. Restores airplane mode / wifi / policy at the end.
 param([switch]$SkipInstall, [string]$Only = "")
@@ -7,7 +7,7 @@ if (-not $env:JAVA_HOME -and (Test-Path 'C:\Program Files\Android\Android Studio
   $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
 }
 $ADB = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-$RUNNER = 'com.example.arogyadoot.test/androidx.test.runner.AndroidJUnitRunner'
+$RUNNER = 'com.example.pramaan.test/androidx.test.runner.AndroidJUnitRunner'
 $OUT = 'docs\benchmark\device'
 New-Item -ItemType Directory $OUT -Force | Out-Null
 
@@ -15,7 +15,7 @@ function Net-Off { & $ADB shell cmd connectivity airplane-mode enable | Out-Null
 function Net-On { & $ADB shell cmd connectivity airplane-mode disable | Out-Null; & $ADB shell svc wifi enable | Out-Null; Start-Sleep 4 }
 function Foreground {
   & $ADB shell svc power stayon true | Out-Null
-  & $ADB shell am start -n com.example.arogyadoot/com.example.arfas.MainActivity 2>$null | Out-Null
+  & $ADB shell am start -n com.example.pramaan/com.example.arfas.MainActivity 2>$null | Out-Null
   Start-Sleep 3
 }
 $LOGTAGS = @('ArogyaSelfTest:*', 'ArogyaDemo:*', 'PocketRagEngine:*', 'GenericKnowledgeContext:*', 'GenericKnowledgePack:*', 'LlamaCppCore:*', 'LocalModelManager:*', 'MetaModelApi:*', 'MetaOnline:*', 'AndroidRuntime:E')
@@ -41,7 +41,7 @@ try {
 } finally { Net-On; & $ADB shell svc power stayon false | Out-Null }
 $prevPref = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
 Remove-Item -Recurse -Force $OUT\selftest -ErrorAction SilentlyContinue
-& $ADB pull /sdcard/Android/data/com.example.arogyadoot/files/selftest/ $OUT\  2>$null | Select-Object -Last 2
+& $ADB pull /sdcard/Android/data/com.example.pramaan/files/selftest/ $OUT\  2>$null | Select-Object -Last 2
 & $ADB logcat -d -v time -s ArogyaSelfTest:* ArogyaDemo:* PocketRagEngine:* GenericKnowledgeContext:* GenericKnowledgePack:* LlamaCppCore:* LocalModelManager:* MetaModelApi:* MetaOnline:* AndroidRuntime:E > $OUT\logcat.txt 2>$null
 $ErrorActionPreference = $prevPref
 Write-Output ("pulled: {0} result files, logcat {1} bytes" -f @(Get-ChildItem $OUT\selftest\* -ErrorAction SilentlyContinue).Count, @(Get-Item $OUT\logcat.txt -ErrorAction SilentlyContinue)[0].Length)

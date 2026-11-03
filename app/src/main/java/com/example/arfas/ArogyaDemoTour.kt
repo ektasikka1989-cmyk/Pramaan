@@ -341,7 +341,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     val facts = "Baby of Neha, day 7, Rampur. " + dangers.joinToString("; ") + ". Referred to PHC Rampur today."
                     val tanm = System.currentTimeMillis()
                     val got = runCatching { ai?.anmMessageDetailed(facts, ArogyaVisit(name = "Baby of Neha", village = "Rampur")) }.getOrNull()
-                    anm = got?.first.orEmpty().ifBlank { "URGENT: $facts Please advise. — ASHA Sunita (ArogyaDoot)" }
+                    anm = got?.first.orEmpty().ifBlank { "URGENT: $facts Please advise. — ASHA Sunita (Pramaan)" }
                     anmModel = got?.second.orEmpty()
                     if (got != null && got.first.isNotBlank()) {
                         val by = got.second
@@ -534,7 +534,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                 Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Spacer(Modifier.height(12.dp))
-                    Text("ArogyaDoot", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
+                    Text("Pramaan", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary)
                     Text(tr("Guided demo · $n screens · every step runs live", "गाइडेड डेमो · $n स्क्रीन · हर चरण लाइव"),
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

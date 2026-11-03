@@ -148,7 +148,7 @@ fun ArogyaSetupWizard(
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!ready) {
-                    Text(tr("Setting up ArogyaDoot…", "ArogyaDoot तैयार हो रहा है…"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Text(tr("Setting up Pramaan…", "Pramaan तैयार हो रहा है…"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                     Text(tr("Finding the offline model, speech and guides — no tapping needed.", "ऑफ़लाइन मॉडल, आवाज़ और गाइड ढूँढ रहे हैं — कुछ दबाना नहीं है।"), style = MaterialTheme.typography.bodySmall)
                     rows.forEach { r ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

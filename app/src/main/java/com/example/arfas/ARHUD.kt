@@ -771,7 +771,7 @@ fun SettingsDialog(
                     status    = kbStatusText,
                     statusOk  = kbInstalled,
                     buttonText = if (kbInstalled) "Add another Knowledge .db" else "Install Knowledge .db",
-                    info      = "Supports ArogyaDoot generic knowledge databases and the legacy ANM SOP database. Installed packs are kept, so you can switch between them below. The selected KB is used only when you enable KB for a session.",
+                    info      = "Supports Pramaan generic knowledge databases and the legacy ANM SOP database. Installed packs are kept, so you can switch between them below. The selected KB is used only when you enable KB for a session.",
                     onButtonClick = { kbPicker.launch("*/*") }
                 )
                 if (kbPacks.size > 1) {
@@ -965,7 +965,7 @@ fun SettingsDialog(
 
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("About", color = Color(0xFF80D8FF), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Text("ArogyaDoot • guidance for ASHA & ANM health workers", color = Color(0xFF9E9E9E), fontSize = 11.sp)
+                    Text("Pramaan • guidance for ASHA & ANM health workers", color = Color(0xFF9E9E9E), fontSize = 11.sp)
                     Text("Offline: Meta Llama 3.2 + Meta vision models, answers cited from your knowledge base", color = Color(0xFF9E9E9E), fontSize = 11.sp)
                     Text("Online (optional): Meta Muse Spark, SAM 3.1, Muse Voice via the Meta Model API", color = Color(0xFF9E9E9E), fontSize = 11.sp)
                     if (showAdvanced) {

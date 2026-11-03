@@ -34,7 +34,7 @@ object SessionReportExporter {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/ArogyaDoot")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Pramaan")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val resolver = context.contentResolver
@@ -65,18 +65,18 @@ object SessionReportExporter {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
             putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, "ArogyaDoot Session Report")
+            putExtra(Intent.EXTRA_SUBJECT, "Pramaan Session Report")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         return runCatching {
-            context.startActivity(Intent.createChooser(intent, "Share ArogyaDoot Session Report"))
+            context.startActivity(Intent.createChooser(intent, "Share Pramaan Session Report"))
             true
         }.getOrDefault(false)
     }
 
     fun shareSummaryText(context: Context, report: RCAReport): Boolean {
         val text = buildString {
-            appendLine("ArogyaDoot Session Summary")
+            appendLine("Pramaan Session Summary")
             appendLine()
             appendLine("Goal: ${report.goal.ifBlank { report.problemStatement }}")
             appendLine("Outcome: ${report.outcome}")
@@ -89,7 +89,7 @@ object SessionReportExporter {
             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, text)
-            }, "Share ArogyaDoot Summary"))
+            }, "Share Pramaan Summary"))
             true
         }.getOrDefault(false)
     }
@@ -97,7 +97,7 @@ object SessionReportExporter {
     private fun render(report: RCAReport, includeTranscript: Boolean): PdfDocument {
         val doc = PdfDocument()
         val renderer = PdfRenderer(doc)
-        renderer.title("ArogyaDoot Session Report")
+        renderer.title("Pramaan Session Report")
         renderer.line("Session ID: ${report.sessionId.ifBlank { "—" }}")
         renderer.line("Date: ${formatDate(report.startedAtMs)}")
         renderer.line("Duration: ${formatDuration(report.sessionDurationMs)}   •   ${report.totalTurns} turns")
@@ -148,7 +148,7 @@ object SessionReportExporter {
             report.steps.forEach { s ->
                 renderer.subhead("Turn ${s.stepNumber} • ${s.answeredByLabel}")
                 renderer.paragraph("User: ${s.description}")
-                renderer.paragraph("ArogyaDoot: ${s.result}")
+                renderer.paragraph("Pramaan: ${s.result}")
             }
         }
         renderer.finish()
@@ -214,7 +214,7 @@ object SessionReportExporter {
         val stamp = SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(Date(report.endedAtMs.takeIf { it > 0 } ?: System.currentTimeMillis()))
         val topic = (report.goal.ifBlank { report.problemStatement })
             .replace(Regex("[^A-Za-z0-9]+"), "_").trim('_').take(40).ifBlank { "Session" }
-        return "ArogyaDoot_${topic}_$stamp.pdf"
+        return "Pramaan_${topic}_$stamp.pdf"
     }
 
     private fun formatDate(ms: Long): String = if (ms <= 0) "—" else SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(ms))

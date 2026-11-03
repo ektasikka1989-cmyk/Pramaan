@@ -80,7 +80,7 @@ class ArogyaKeyVault(context: Context, private val name: String) {
 object ArogyaCloud {
     private const val TAG = "ArogyaDemo"
     fun prefs(c: Context) = c.getSharedPreferences("arogya_model", Context.MODE_PRIVATE)
-    /** Cloud model used for ArogyaDoot's AI: Muse Spark by default, or Muse Glimmer. */
+    /** Cloud model used for Pramaan's AI: Muse Spark by default, or Muse Glimmer. */
     fun textEndpoint(c: Context) = ArogyaModelEndpoints.byId(prefs(c).getString("endpoint", "meta") ?: "meta") ?: ArogyaModelEndpoints.byId("meta")
     /** The Meta key saved in Pramaan's settings (GroqKeyStore). Voice and SAM go through Pramaan's MetaOnline client. */
     fun metaKey(c: Context) = runCatching { GroqKeyStore(c.applicationContext).metaKey() }.getOrDefault("")

@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Shared helpers for the ArogyaDoot device tests (androidTest, debug only). */
+/** Shared helpers for the Pramaan device tests (androidTest, debug only). */
 object ArogyaSelfTest {
     const val TAG = "ArogyaSelfTest"
     data class Check(val area: String, val name: String, val ok: Boolean, val ms: Long, val detail: String)

@@ -1,6 +1,6 @@
-# AGENTS.md — ArogyaDoot
+# AGENTS.md — Pramaan
 
-ArogyaDoot is an offline-first Android app that helps India's ASHA health workers:
+Pramaan is an offline-first Android app that helps India's ASHA health workers:
 - **Ask SOP** gives answers from official guides, with the source.
 - **Voice note → official visit forms** fills the forms, MCP card and registers from one note.
 - **Registers** are kept on the phone, with an encrypted Google Drive backup.
@@ -9,12 +9,11 @@ It is entered in the Meta Global AI Developer Hackathon (deadline 5 Nov 2026, 6:
 **Full product and code handover: `docs/HANDOVER.md`. Read it before changing anything.**
 
 ## Golden rules
-1. **Audit before you implement.** Search the codebase first. The underlying platform (internal name
-   "Pramaan") already has a lot: `MetaModelApi` (Muse Spark, SAM 3.1, Muse Voice Transcribe, Muse Image),
+1. **Audit before you implement.** Search the codebase first. The underlying base platform already has a lot: `MetaModelApi` (Muse Spark, SAM 3.1, Muse Voice Transcribe, Muse Image),
    `MetaOnline`, `PrivacyGate`, `GroqKeyStore`/`MetaKeyStore`, `AnswerPolicy`, RAG, Whisper, OCR, llama.cpp.
    Reuse it; never duplicate it.
 2. **Don't break what works:** RAG (`PocketRag*`, `GenericKb*`), the on-device LLM (`LocalModelManager`,
-   `LlamaCppCore`, `LlamaNative` + `src/main/cpp`), speech, attachments. ArogyaDoot code lives in
+   `LlamaCppCore`, `LlamaNative` + `src/main/cpp`), speech, attachments. Pramaan code lives in
    `Arogya*.kt`; keep changes to platform files minimal and explain them.
 3. **Offline must always work.** One setting, **Local first / Cloud first** (`AnswerPolicyStore`), controls
    every AI action. Cloud calls need a time limit and an automatic fallback to the phone. New AI features
@@ -26,11 +25,15 @@ It is entered in the Meta Global AI Developer Hackathon (deadline 5 Nov 2026, 6:
      numbers must appear in that evidence. It is shown with the evidence and approved by the ASHA.
 6. **Official formats:** form rows and layout follow the source documents (see HANDOVER §5); only the data
    may be synthetic. Demo people are fictional.
-7. **Branding:** say "ArogyaDoot" in everything a user or judge sees. The launcher name comes from
+7. **Branding:** say "Pramaan" in everything a user or judge sees. The launcher name comes from
    `@string/app_name`. `app/src/debug/AndroidManifest.xml` overrides the label for debug builds, so
    keep it pointing at `@string/app_name`. Don't rename the package
    `com.example.arfas`, because the native JNI bridge depends on it. Don't rename the SharedPreferences
    names either, because that wipes saved keys and settings.
+   - The app was renamed from "ArogyaDoot" to "Pramaan" on 4 Nov 2026 (app ID `com.example.pramaan`).
+     These old names stay **on purpose**; don't "fix" them: the `Arogya*.kt` file and class names, the
+     `AROGYA_*` log markers (the scripts grep for them), the `arogya_*` prefs, the `arogyadoot_visits`
+     data folder and keystore alias, and the `ARGB` backup header. Backups made by ArogyaDoot still restore.
 8. **Honesty:** don't claim a feature works until it has been tested on the device. The ✨ AI badges must
    name the real model.
 9. Never put API keys in code, logs or commits. Cloud text has identifiers removed (`ArogyaOfficialForms.scrub`,

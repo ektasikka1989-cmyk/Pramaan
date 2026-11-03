@@ -3,7 +3,7 @@ package com.example.arfas
 import android.util.Log
 
 /**
- * Part B2: one token budget for every ArogyaDoot generation.
+ * Part B2: one token budget for every Pramaan generation.
  *
  * Each feature has a phone base and a cloud (Muse Spark) base. The output
  * language scales the base: Hindi/Devanagari x2.5, Hinglish x1.3, English x1.

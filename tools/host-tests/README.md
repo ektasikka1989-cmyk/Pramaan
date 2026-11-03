@@ -1,6 +1,6 @@
-# ArogyaDoot host tests (pure Kotlin, no Android device)
+# Pramaan host tests (pure Kotlin, no Android device)
 
-These tests cover ArogyaDoot's non-UI logic: official form definitions, AI-output grounding,
+These tests cover Pramaan's non-UI logic: official form definitions, AI-output grounding,
 danger rules, registers, sample village, backup crypto, MCP card apply, cloud routing.
 They compile the listed `app/src/main/java/com/example/arfas/*.kt` files together with two stubs
 (`LogStub.kt` replaces `android.util.Log`, `ShareStub.kt` replaces Android-only `ArogyaShare`).

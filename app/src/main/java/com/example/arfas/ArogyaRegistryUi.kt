@@ -92,7 +92,7 @@ fun ArogyaAiPage(hindi: Boolean, ai: ArogyaVisitAi?, onOpenLibrary: () -> Unit, 
     }
     var shareMsg by remember { mutableStateOf("") }
     val portrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("What makes ArogyaDoot smart", "ArogyaDoot को समझदार क्या बनाता है")) }, text = {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("What makes Pramaan smart", "Pramaan को समझदार क्या बनाता है")) }, text = {
         Column(Modifier.heightIn(max = 600.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 AssistChip(onClick = {}, label = { Text(if (cloudFirst) "☁ Cloud first" else "📱 Local first") })
@@ -392,7 +392,7 @@ fun ArogyaNextStrip(hindi: Boolean, due: List<DueItem>, onOpen: () -> Unit) {
 fun ArogyaWelcome(hindi: Boolean, onDone: () -> Unit) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val slides = listOf(
-        tr("ArogyaDoot does the paperwork with you", "ArogyaDoot आपके साथ कागज़ी काम करता है") to
+        tr("Pramaan does the paperwork with you", "Pramaan आपके साथ कागज़ी काम करता है") to
             tr("Speak one visit note — the app fills the official form, MCP card, diary and registers.", "एक विज़िट नोट बोलें — ऐप आधिकारिक फ़ॉर्म, MCP कार्ड, डायरी और रजिस्टर भरता है।"),
         tr("Works offline, speaks your language", "ऑफ़लाइन चलता है, आपकी भाषा बोलता है") to
             tr("No internet needed. Ask the ASHA guides in Hindi or English, with the page for every answer.", "इंटरनेट ज़रूरी नहीं। आशा गाइड से हिन्दी या English में पूछें — हर उत्तर के साथ पेज।"),
@@ -1198,7 +1198,7 @@ private fun BackupTab(hindi: Boolean, store: ArogyaRegistryStore, queue: ArogyaV
             Button(onClick = { store.savePassword(pw1); pw1 = ""; pw2 = ""; status = tr("Password saved on this phone (encrypted). Write it down somewhere safe.", "पासवर्ड इस फ़ोन पर सहेजा (गुप्त)। कहीं लिखकर रखें।") }, enabled = pw1.length >= 8 && pw1 == pw2) { Text(tr("Save password", "पासवर्ड सहेजें")) }
         } else Text(tr("✓ Backup password saved", "✓ बैकअप पासवर्ड सहेजा"), color = MaterialTheme.colorScheme.primary)
         Text(tr("Location: ", "जगह: ") + (location?.let { it.authority?.let { a -> if (a.contains("google")) "Google Drive" else a } ?: it.toString() } ?: tr("not chosen", "चुनी नहीं")))
-        Button(onClick = { create.launch("ArogyaDoot-backup.argb") }, enabled = hasPw && !busy, modifier = Modifier.fillMaxWidth()) { Text(tr("Choose backup location (Google Drive)", "बैकअप जगह चुनें (Google Drive)")) }
+        Button(onClick = { create.launch("Pramaan-backup.argb") }, enabled = hasPw && !busy, modifier = Modifier.fillMaxWidth()) { Text(tr("Choose backup location (Google Drive)", "बैकअप जगह चुनें (Google Drive)")) }
         Button(onClick = { location?.let { u -> go { store.backupTo(u, store.password()) } } }, enabled = hasPw && location != null && !busy, modifier = Modifier.fillMaxWidth()) { Text(tr("Back up now", "अभी बैकअप करें")) }
         Row(verticalAlignment = Alignment.CenterVertically) { Switch(auto, { auto = it; store.autoDaily = it }, enabled = hasPw && location != null); Text(tr("  Back up automatically once a day (when the app is opened)", "  रोज़ अपने आप बैकअप (ऐप खोलने पर)")) }
         if (store.lastBackup > 0) Text(tr("Last backup: ", "आखिरी बैकअप: ") + java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(store.lastBackup)), style = MaterialTheme.typography.bodySmall)
@@ -1206,7 +1206,7 @@ private fun BackupTab(hindi: Boolean, store: ArogyaRegistryStore, queue: ArogyaV
         if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
         HorizontalDivider()
         Text(tr("Restore", "वापस लाएँ"), fontWeight = FontWeight.Bold)
-        Text(tr("On a new phone: install ArogyaDoot, open the backup file from Drive, enter the password. Registers are replaced; visits already on the phone are kept.", "नए फ़ोन पर: ArogyaDoot डालें, Drive से बैकअप फ़ाइल खोलें, पासवर्ड डालें। रजिस्टर बदल जाएँगे; फ़ोन की विज़िट रहेंगी।"), style = MaterialTheme.typography.bodySmall)
+        Text(tr("On a new phone: install Pramaan, open the backup file from Drive, enter the password. Registers are replaced; visits already on the phone are kept.", "नए फ़ोन पर: Pramaan डालें, Drive से बैकअप फ़ाइल खोलें, पासवर्ड डालें। रजिस्टर बदल जाएँगे; फ़ोन की विज़िट रहेंगी।"), style = MaterialTheme.typography.bodySmall)
         OutlinedButton(onClick = { open.launch(arrayOf("*/*")) }, enabled = !busy) { Text(tr("Choose backup file", "बैकअप फ़ाइल चुनें")) }
         restoreUri?.let { u ->
             OutlinedTextField(restorePw, { restorePw = it }, label = { Text(tr("Backup password", "बैकअप पासवर्ड")) }, singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())

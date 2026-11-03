@@ -31,7 +31,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ArogyaDoot"
+rootProject.name = "Pramaan"
 
 include(":app")
 

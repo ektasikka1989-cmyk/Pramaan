@@ -105,7 +105,7 @@ object ArogyaVisitMedia {
                 val bottom=layout.getLineBottom(end-1)
                 val page=pdf.startPage(PdfDocument.PageInfo.Builder(595,842,pageNo++).create())
                 page.canvas.save(); page.canvas.translate(42f,48f-top); page.canvas.clipRect(0,top,511,bottom); layout.draw(page.canvas); page.canvas.restore()
-                page.canvas.drawText("ArogyaDoot • page ${pageNo-1}",42f,813f,paint); pdf.finishPage(page); line=end
+                page.canvas.drawText("Pramaan • page ${pageNo-1}",42f,813f,paint); pdf.finishPage(page); line=end
             }
             context.contentResolver.openOutputStream(uri,"w")?.use { pdf.writeTo(it) } ?: error("Cannot open PDF destination")
         } finally { pdf.close() }

@@ -40,13 +40,13 @@ object ArogyaAnmTemplate {
 
     fun fromLine(ashaName: String, ashaVillage: String, ashaPhone: String, hindi: Boolean): String {
         val who = listOf(ashaName, ashaVillage, ashaPhone).filter { it.isNotBlank() }.joinToString(", ")
-        return if (who.isBlank()) "ASHA via ArogyaDoot" else "ASHA $who"
+        return if (who.isBlank()) "ASHA via Pramaan" else "ASHA $who"
     }
 
     /** Low-stock refill request: the same header plus the refill lines (balance + minimum). */
     fun refillMessage(ashaName: String, ashaVillage: String, ashaPhone: String, anmName: String,
                       dateTime: String, body: String, hindi: Boolean): String {
-        val title = tr(hindi, "💊 Drug kit refill request — ArogyaDoot", "💊 दवा किट रिफिल का अनुरोध — ArogyaDoot")
+        val title = tr(hindi, "💊 Drug kit refill request — Pramaan", "💊 दवा किट रिफिल का अनुरोध — Pramaan")
         return header(title, anmName.ifBlank { tr(hindi, "ANM", "ANM") },
             fromLine(ashaName, ashaVillage, ashaPhone, hindi), dateTime, hindi) + "\n" + body
     }
@@ -100,8 +100,8 @@ object ArogyaAnmTemplate {
         val on = runCatching { ArogyaWorkflow.parseDate(v.date) }.getOrNull() ?: LocalDate.now()
         val danger = ArogyaDangerSigns.evaluate((i.concern + "\n" + v.notes).trim(), v)
         val out = StringBuilder()
-        val title = if (danger.urgent) tr(h, "🚨 URGENT referral — ArogyaDoot", "🚨 तुरंत रेफ़रल — ArogyaDoot")
-        else tr(h, "📋 Advice needed — ArogyaDoot", "📋 सलाह चाहिए — ArogyaDoot")
+        val title = if (danger.urgent) tr(h, "🚨 URGENT referral — Pramaan", "🚨 तुरंत रेफ़रल — Pramaan")
+        else tr(h, "📋 Advice needed — Pramaan", "📋 सलाह चाहिए — Pramaan")
         val dt = i.dateTime.ifBlank { "${v.date}, ${java.time.LocalTime.now().withNano(0).withSecond(0)}" }
         out.appendLine(header(title, i.anmName.ifBlank { "ANM" }, fromLine(i.ashaName, i.ashaVillage, i.ashaPhone, h), dt, h))
         // PERSON

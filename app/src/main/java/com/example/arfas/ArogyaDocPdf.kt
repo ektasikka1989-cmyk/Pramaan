@@ -70,7 +70,7 @@ object ArogyaDocPdf {
     fun todayStr(): String = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
 
     fun fileName(title: String, ext: String): String =
-        "ArogyaDoot-" + title.replace(Regex("[^A-Za-z0-9]+"), "-").trim('-').take(60) + ext
+        "Pramaan-" + title.replace(Regex("[^A-Za-z0-9]+"), "-").trim('-').take(60) + ext
 
     private fun printAttrs(landscape: Boolean): PrintAttributes = PrintAttributes.Builder()
         .setMediaSize(if (landscape) PrintAttributes.MediaSize.ISO_A4.asLandscape() else PrintAttributes.MediaSize.ISO_A4.asPortrait())

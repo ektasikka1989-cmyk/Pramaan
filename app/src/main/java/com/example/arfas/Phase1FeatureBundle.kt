@@ -238,8 +238,8 @@ class Phase1FeatureBundle(private val context: Context) {
     data class KbInstallOutcome(val ok: Boolean, val reason: String)
 
     /**
-     * ArogyaDoot install path (Guide v1 → v2). The plain installer rejects while a KB is
-     * selected for the session, and ArogyaDoot selects it at startup — so selection is
+     * Pramaan install path (Guide v1 → v2). The plain installer rejects while a KB is
+     * selected for the session, and Pramaan selects it at startup — so selection is
      * dropped around the install; on success the new pack (already active) is re-enabled
      * and search is re-warmed, on failure the previous selection is restored. Returns the
      * real failure reason so the Knowledge Base screen can show it.
@@ -395,7 +395,7 @@ class Phase1FeatureBundle(private val context: Context) {
             val stats = knowledgeDb.getDbStats()
             "Ready — ${stats.totalSops} ANM SOP records"
         }
-        else -> "Not loaded — install an ArogyaDoot knowledge database"
+        else -> "Not loaded — install a Pramaan knowledge database"
     }
 
     /**

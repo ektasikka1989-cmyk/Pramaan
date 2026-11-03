@@ -2358,7 +2358,7 @@ class AndroBaselineRuntime(
                             ARPlacementResult.IMAGE_GROUNDED_2D ->
                                 "VISIBLE_FACTS: Requested target '${detected.label}' was localized and highlighted on screen. SUPPORTED_INFERENCES: ARCore geometry was not reliable enough for a world anchor. UNKNOWN: persistent world placement."
                             ARPlacementResult.NOT_READY ->
-                                "VISIBLE_FACTS: Requested target '${detected.label}' was localized in the captured turn image, but no AR marker was placed in the current Live Video view. SUPPORTED_INFERENCES: ArogyaDoot rejected placement rather than draw a potentially wrong marker. UNKNOWN: current live-view position and persistent world placement."
+                                "VISIBLE_FACTS: Requested target '${detected.label}' was localized in the captured turn image, but no AR marker was placed in the current Live Video view. SUPPORTED_INFERENCES: Pramaan rejected placement rather than draw a potentially wrong marker. UNKNOWN: current live-view position and persistent world placement."
                         }
                         onVisualObservation?.invoke(visualObservation)
                         val provider = if (lastArLocalizationProvider == Provider.CLOUD) Provider.CLOUD else Provider.LOCAL

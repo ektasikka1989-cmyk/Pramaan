@@ -1,4 +1,4 @@
-# ArogyaDoot host tests on Windows (mirrors run.sh). Run from repo root:
+# Pramaan host tests on Windows (mirrors run.sh). Run from repo root:
 #   powershell -ExecutionPolicy Bypass -File tools\host-tests\run.ps1
 $ErrorActionPreference = 'Stop'
 if (-not $env:JAVA_HOME -and (Test-Path 'C:\Program Files\Android\Android Studio\jbr\bin\java.exe')) {
