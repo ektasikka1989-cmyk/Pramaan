@@ -111,3 +111,41 @@ manually".
 - Tests: FormsVerifyTest 48/48 PASS; full host gate 41 suites green (gatea5.log); BUILD SUCCESSFUL.
 - Verified on host: official MCP row labels/order asserted; FP table source corrected.
 - To be checked manually: MCP card PDF look vs printed card (phone).
+
+## PART B -- Answer quality: nothing compressed
+
+### B1. Truncation audit table
+Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSourcePresentation.kt and the runtime answer paths for token ceilings, groundedSentences(max), .take(N), maxLines, "at most N / N sentences / short", salvage lengths, message caps. All findings below confirmed in code.
+
+| file:line | limit | value | keep/change | reason |
+|---|---|---|---|---|
+| ArogyaQuestionType.kt:66 ceilingPerPart | output ceiling per part | FACT/URGENT 400, PROCEDURE/LIST 560; same for Hindi | change (B2/B3) | too small for 6-10 sentence answers; Hindi needs x2.5 |
+| ArogyaQuestionType.kt:76 lengthLine | prompt length line | "two to five sentences (three to five for a fact)" | change (B3) | contradicts complete-answer goal; needs B3 structure |
+| PocketRagEngine.kt MAX_ANSWER_TOKENS_PER_PART | per-part fallback cap | 400 | change (B2) | route through ArogyaBudget |
+| PocketRagEngine.kt EXTRACTIVE_CHARS | extractive fallback length | 700 chars | change (B3) | can leave 1-2 sentences; fuller fallback |
+| PocketRagEngine.kt tryStatementSalvage | salvage on reject | trims to supported sentences | change (B3/B8) | show salvaged + "From the guide (exact words)" if < 4 |
+| ArogyaAiExtras.kt:218 familyPrompt | prompt instruction | "3 short sentences" | change (B4) | spec wants 5-8 sentences |
+| ArogyaAiExtras.kt:221-222 familyPrompt | input truncation | quote.take(600), answer.take(1500) | change (B4) | pass full answer + quotes |
+| ArogyaAiExtras.kt groundedSentences (family) | keeper cap | max=4 | change (B4) | raise to max=8 |
+| ArogyaVisitAi.kt:488 family_explain route | generation tokens | 220 | change (B2) | budget base 450 phone / 900 cloud |
+| ArogyaAiExtras.kt:230 anmPrompt | prompt instruction | "At most 6 short lines", max 8 | change (B5) | template + polish instead |
+| ArogyaAiExtras.kt:233 anmPrompt | input truncation | facts.take(2000) | change (B5) | template carries all facts |
+| ArogyaVisitAi.kt:504 anm_message route | generation tokens | 200 | change (B2) | budget base 450 / 900 |
+| ArogyaShare.kt:61-62 anmMessage | evidence truncation | highlights.take(3) x .take(400) | change (B5) | template lists every value |
+| ArogyaShare.kt:74,76,77 anmMessage | field truncation | concern.take(200), observed.take(300), action.take(200) | change (B5) | remove all truncation |
+| ArogyaVisitScreen.kt:1078,1081 escalate dialog | editor truncation | message/notes.take(1500), actions.take(500) | change (B5) | full-screen editor, no caps |
+| ArogyaVisitAi.kt:548 card_read route | generation tokens | 380, OCR text.take(3500) | change (B2/B6) | budget base 900/1500; split+merge |
+| ArogyaVisitAi.kt:575 person_extract route | generation tokens | 300 | change (B2/B6) | budget base 900/1500 per page |
+| ArogyaVisitAi.kt:590 medicine_scan route | generation tokens | 120 | change (B2/B6) | budget base 400/900 |
+| ArogyaVisitAi.kt:616 voice_stock route | generation tokens | 200 | change (B2/B6) | budget base 400/900 |
+| ArogyaVisitAi.kt:459 organise_notes route | generation tokens | 420 | change (B2) | budget base 700/1500 |
+| ArogyaVisitAi.kt:637 finish_visit route | generation tokens | 600 | change (B2) | budget base 900/1500 |
+| ArogyaVisitAi.kt:525 daily_practice route | generation tokens | 200 | keep | quiz parse needs one short item; unchanged scope |
+| ArogyaSopChat.kt:120 history card | display lines | maxLines = 3 | change (B7) | 6 lines + "Show more" |
+| GroqChatProvider.kt cloud calls | cloud max_tokens | 120/192/224/260/512/768, coerceIn(.,1280) | change (B2) | Ask SOP cloud path uses budget bases (1200-2400) |
+| PocketRagEngine.kt CLOUD_TOTAL_MS | cloud hard cap | 60 s | change (B8) | 120 s hard cap + 15 s idle limit |
+| PocketRagEngine.kt CLOUD_FIRST_TOKEN_MS | cloud first-token wait | 20 s | keep | matches B8 20 s target |
+- Changed (Final B.1): audit only; no code changed.
+- Files: docs/batch_reports/final_submission.md.
+- Tests: code unchanged from Final A.5 gate (41 suites green); no re-run needed.
+- Verified on host: every table row confirmed in code 2-3 Nov.
