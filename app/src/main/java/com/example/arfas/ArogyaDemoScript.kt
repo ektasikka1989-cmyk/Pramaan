@@ -297,7 +297,7 @@ object ArogyaDemoTicks {
 
     /** The catalogue with what ran in this demo (first matching tick; danger rules when they ran). */
     fun toolRows(ticks: List<ArogyaAiTick>, dangerRan: Boolean): List<ToolRow> = tools.map { t ->
-        val tick = ticks.firstOrNull { it.feature in t.keys }
+        val tick = ticks.lastOrNull { it.feature in t.keys }   // latest run (after a Local | Cloud flip)
         when {
             t.rule -> ToolRow(t, 0, null, dangerRan)
             tick != null -> ToolRow(t, tick.ms, tick.cloud, true)
@@ -330,7 +330,7 @@ object ArogyaDemoTicks {
      * [remembered]: feature → (last online ms, last offline ms), from [timesDecode].
      */
     fun impact(ticks: List<ArogyaAiTick>, remembered: Map<String, Pair<Long, Long>>): List<Impact> = tasks.mapNotNull { t ->
-        val tick = ticks.firstOrNull { it.feature in t.keys }
+        val tick = ticks.lastOrNull { it.feature in t.keys }
         val mem = t.keys.mapNotNull { remembered[it] }
         val on = mem.maxOfOrNull { it.first } ?: 0L
         val off = mem.maxOfOrNull { it.second } ?: 0L

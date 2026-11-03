@@ -212,11 +212,26 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
         else if (demoHindi) scenes[scene].narrationHi else scenes[scene].narration
 
     // Navigation: stop narration and any running work cleanly, then move.
+    // Demo UI pass: Local | Cloud toggle on AI scenes (the same setting as Home's Offline | Online).
+    var cloudMode by remember { mutableStateOf(ArogyaCloud.cloudFirst(context)) }
+    // Item 7 + 9: Neha's card as it was when this demo run started (Start rebuilds the sample
+    // village, so every run begins from the same card); the demo view highlights what changed.
+    var cardBeforeHtml by remember { mutableStateOf("") }
+    var cardChanged by remember { mutableStateOf(-1) }
+    val aiScenes = remember { setOf("addperson", "voice", "danger", "explain", "sops", "card", "medscan", "practice") }
     fun go(i: Int) { speech.stop(); manualJob?.cancel(); status = ""; aiWorkOpen = false; liveExpanded = false; tickMark = ticks.size; scene = i.coerceIn(0, n) }
     fun replay() { speech.stop(); manualJob?.cancel(); ran = ran - scene; status = ""; aiWorkOpen = false; liveExpanded = false; tickMark = ticks.size; replayTick++ }
 
     // Resume: the last scene is saved; the start screen offers it back.
     val demoPrefs = remember { context.getSharedPreferences("arogya_demo", 0) }
+    // Item 11: the last measured time of each AI feature, online and offline, kept across runs
+    // (flipping Local | Cloud in a scene measures the other mode). Only measured ticks count.
+    var rememberedTimes by remember { mutableStateOf(ArogyaDemoTicks.timesDecode(demoPrefs.getString("times", "").orEmpty())) }
+    LaunchedEffect(ticks.size) {
+        if (ticks.isEmpty()) return@LaunchedEffect
+        rememberedTimes = ticks.fold(rememberedTimes) { m, t -> ArogyaDemoTicks.timesRecord(m, t) }
+        demoPrefs.edit().putString("times", ArogyaDemoTicks.timesEncode(rememberedTimes)).apply()
+    }
     LaunchedEffect(scene, started) { if (started) demoPrefs.edit().putInt("last_scene", scene).apply() }
 
     // Prepare after Start: fresh sample village, the hero baby, the guide counts, a warm model.
@@ -233,6 +248,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
         }
         if (b == null) { busy = false; status = tr("Sample village not found — load it from Home first.", "नमूना गाँव नहीं मिला — होम से लोड करें।"); return@LaunchedEffect }
         val (sp, col) = ArogyaOfficialForms.formFor(b, store.state.value.forms); spec = sp; column = col; hero = b
+        cardBeforeHtml = runCatching { store.mcpDoc(b, store.state.value.beneficiaries, LocalDate.now()).html }.getOrDefault("")
+        cardChanged = -1
         Log.i("ArogyaDemo", "AROGYA_DEMO_HERO form=${sp.id} column=$col(${sp.columns.getOrElse(col) { "" }})")
         status = tr("Reading the guide library on this phone…", "फ़ोन की गाइड लाइब्रेरी पढ़ रहे हैं…")
         guideDocs = withContext(Dispatchers.IO) { runCatching { ai?.guideLibrary() }.getOrNull() }
@@ -370,7 +387,11 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                 "mcpcard" -> { status = tr("Opening the official card…", "आधिकारिक कार्ड खोल रहे हैं…")
                     runCatching {
                         val cur = store.state.value.beneficiaries.firstOrNull { it.id == b.id }
-                        if (cur != null) cardDoc = store.mcpDoc(cur, store.state.value.beneficiaries, LocalDate.now())
+                        if (cur != null) {
+                            val d = store.mcpDoc(cur, store.state.value.beneficiaries, LocalDate.now())
+                            val (html, changed) = ArogyaDocRender.demoMark(cardBeforeHtml, d.html, demoHindi)
+                            cardDoc = d.copy(html = html); cardChanged = changed
+                        }
                     } }
                 "saved" -> {
                     if (!saved) {
@@ -466,16 +487,16 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         val jpeg = ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
                         samBitmap = bmp
                         if (!withContext(Dispatchers.IO) { MetaOnline.ready(context) }) {
-                            samMsg = tr("Online only — skipped offline (SAM 3.1 needs internet and the Meta key). Nothing is guessed.",
-                                "सिर्फ़ ऑनलाइन — ऑफ़लाइन छोड़ा (SAM 3.1 को इंटरनेट और Meta key चाहिए)। अंदाज़ा नहीं लगाया।")
+                            samMsg = tr("No internet — SAM 3.1 runs only online. Count by hand.",
+                                "इंटरनेट नहीं — SAM 3.1 सिर्फ़ ऑनलाइन चलता है। हाथ से गिनें।")
                         } else {
                             status = tr("SAM 3.1 is counting…", "SAM 3.1 गिन रहा है…")
                             val t = System.currentTimeMillis()
                             val phrase = ArogyaKitPhrases.phrase("ORS")
                             val found = MetaOnline.api(context).sam("arogya_demo_kit", jpeg, phrase)
                             val count = ArogyaSamCount.count(found.map { it.confidence })
-                            samMsg = "SAM 3.1 " + tr("found $count \"$phrase\" in ${(System.currentTimeMillis() - t) / 1000}s. Sunita confirms before it reaches the register (demo: not written).",
-                                "\"$phrase\" $count मिला ${(System.currentTimeMillis() - t) / 1000} सेकंड में। रजिस्टर से पहले सुनीता पक्की करती हैं (डेमो: लिखा नहीं)।")
+                            samMsg = "SAM 3.1 " + tr("found $count \"$phrase\" in ${(System.currentTimeMillis() - t) / 1000}s. Sunita confirms the count before it goes in the register.",
+                                "\"$phrase\" $count मिला ${(System.currentTimeMillis() - t) / 1000} सेकंड में। रजिस्टर से पहले सुनीता गिनती पक्की करती हैं।")
                             ticks += ArogyaAiTick("SAM 3.1 count", "SAM 3.1 गिनती", "SAM 3.1 (Meta, online)", System.currentTimeMillis() - t, true)
                             Log.i("ArogyaDemo", "AROGYA_SAM_COUNT item=\"ORS\" phrase=\"$phrase\" found=${found.size} counted=$count ms=${System.currentTimeMillis() - t}")
                         }
@@ -508,51 +529,53 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
     Dialog(onDismissRequest = { exitAsk = true }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
             if (!started) {
-                val cloudFirst = ArogyaCloud.cloudFirst(context)
                 val (hiVoice, enVoice) = remember(tts) { speech.offlineVoices() }
                 val resumeAt = demoPrefs.getInt("last_scene", 0)
-                Column(Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("▶ " + tr("ArogyaDoot · guided demo", "ArogyaDoot · गाइडेड डेमो"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
-                        Text(tr("DEMO · sample village (fictional people) · every step is done live by the app",
-                            "डेमो · नमूना गाँव (काल्पनिक लोग) · हर चरण ऐप खुद लाइव करता है"), Modifier.padding(12.dp), fontWeight = FontWeight.Bold)
+                Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("ArogyaDoot", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary)
+                    Text(tr("Guided demo · $n screens · every step runs live", "गाइडेड डेमो · $n स्क्रीन · हर चरण लाइव"),
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Text(tr("Sample data · fictional village", "नमूना डेटा · काल्पनिक गाँव"),
+                            Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
                     }
-                    Text(tr("Language / भाषा", "Language / भाषा"), style = MaterialTheme.typography.labelLarge)
+                    HorizontalDivider()
+                    Text(tr("Language", "भाषा"), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = !demoHindi, onClick = { demoHindi = false }, label = { Text("English") })
                         FilterChip(selected = demoHindi, onClick = { demoHindi = true }, label = { Text("हिन्दी") })
                     }
-                    Text(tr("Mode now: ", "अभी मोड: ") + (if (cloudFirst) "☁ Cloud first" else "📱 Local first") + " · " +
-                        (if (online) tr("online", "ऑनलाइन") else tr("offline", "ऑफ़लाइन")), fontWeight = FontWeight.Bold)
-                    if (!online) Text(tr("Offline now: the full demo runs on the phone; answers take longer. Cloud-only steps show as skipped.",
-                        "अभी ऑफ़लाइन: पूरा डेमो फ़ोन पर चलेगा; उत्तरों में ज़्यादा समय लगेगा। क्लाउड वाले चरण छूटे दिखेंगे।"), style = MaterialTheme.typography.bodySmall)
-                    Text((if (hiVoice && enVoice) "✓ " else "⚠ ") + tr("Offline voices: Hindi ", "ऑफ़लाइन आवाज़: हिन्दी ") +
-                        (if (hiVoice) tr("ready", "तैयार") else tr("missing", "नहीं है")) + " · " + tr("English ", "अंग्रेज़ी ") +
-                        (if (enVoice) tr("ready", "तैयार") else tr("missing", "नहीं है")),
-                        style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                    if (!hiVoice || !enVoice) OutlinedButton(onClick = {
+                    Text(tr("AI runs on", "AI कहाँ चले"), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = !cloudMode, onClick = { ArogyaCloud.setCloudFirst(context, false); cloudMode = false },
+                            label = { Text(tr("📱 Phone (offline)", "📱 फ़ोन (ऑफ़लाइन)")) })
+                        FilterChip(selected = cloudMode, onClick = { ArogyaCloud.setCloudFirst(context, true); cloudMode = true },
+                            label = { Text(tr("☁ Cloud (Meta)", "☁ क्लाउड (Meta)")) })
+                    }
+                    Text((if (online) tr("Internet: on", "इंटरनेट: चालू") else tr("Internet: off — cloud steps fall back to the phone", "इंटरनेट: बंद — क्लाउड चरण फ़ोन पर चलेंगे")) +
+                        "  ·  " + tr("Voices: ", "आवाज़: ") + (if (hiVoice) "हिन्दी ✓" else "हिन्दी ✗") + " " + (if (enVoice) "English ✓" else "English ✗"),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!hiVoice || !enVoice) TextButton(onClick = {
                         runCatching { context.startActivity(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)) }
                     }) { Text(tr("Install offline voice", "ऑफ़लाइन आवाज़ इंस्टॉल करें")) }
-                    Text(tr("Voice note: the owner's recording when bundled, else the typed note (labelled, speech-to-text skipped). Photos are picked by hand.",
-                        "वॉइस नोट: मालिक की रिकॉर्डिंग हो तो वही, नहीं तो लिखा नोट (लिखा होगा, बोल→लिख छूटेगा)। फ़ोटो हाथ से चुनी जाती हैं।"),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(tr("You move with Back / Replay / Next — no timer.", "आप Back / Replay / Next से चलेंगे — कोई टाइमर नहीं।"),
-                        style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
-                    if (resumeAt in 1 until n) Button(onClick = { scene = resumeAt; started = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(tr("Resume from scene ${resumeAt + 1} of $n", "सीन ${resumeAt + 1} / $n से आगे बढ़ें"))
+                    Button(onClick = { scene = 0; started = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                        Text(if (resumeAt in 1 until n) tr("Start over", "शुरू से") else tr("Start the demo", "डेमो शुरू करें"),
+                            style = MaterialTheme.typography.titleSmall)
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(onClick = onClose) { Text(tr("Close", "बंद")) }
-                        Spacer(Modifier.weight(1f))
-                        Button(onClick = { scene = 0; started = true }) { Text(if (resumeAt in 1 until n) tr("Start over", "शुरू से") else tr("Start", "शुरू करें")) }
+                    if (resumeAt in 1 until n) OutlinedButton(onClick = { scene = resumeAt; started = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(tr("Resume at screen ${resumeAt + 1}", "स्क्रीन ${resumeAt + 1} से आगे"), maxLines = 1)
                     }
+                    TextButton(onClick = onClose, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(tr("Close", "बंद")) }
                 }
                 return@Surface
             }
             if (!ready) {
                 Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("▶ " + tr("ArogyaDoot · guided demo", "ArogyaDoot · गाइडेड डेमो"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(tr("Getting the demo ready", "डेमो तैयार हो रहा है"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     if (status.isNotBlank()) Text(status)
                     Spacer(Modifier.weight(1f))
@@ -567,10 +590,10 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
             if (ArogyaDemoNav.isEnd(scene, n)) {
                 val phoneTicks = ticks.filter { !it.cloud }; val cloudTicks = ticks.filter { it.cloud }
                 Column(Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
-                        Text(tr("DEMO · sample village (fictional people)", "डेमो · नमूना गाँव (काल्पनिक लोग)"), Modifier.padding(12.dp), fontWeight = FontWeight.Bold)
-                    }
-                    Text("✓ " + tr("Demo complete — thank you", "डेमो पूरा — धन्यवाद"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                    Text("✓ " + tr("Demo complete", "डेमो पूरा"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary)
+                    Text(tr("Thank you", "धन्यवाद"), style = MaterialTheme.typography.titleMedium)
                     Text(tr("${ticks.size} AI steps ran live: ${phoneTicks.size} on this phone, ${cloudTicks.size} on Meta's cloud.",
                         "${ticks.size} AI चरण लाइव चले: ${phoneTicks.size} इसी फ़ोन पर, ${cloudTicks.size} Meta के क्लाउड पर।"))
                     Text(tr("Built with Muse Code.", "Muse Code से बनाया गया।"), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -586,17 +609,17 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
             Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
                 // Top bar: one compact row (chip · Scene N/M · EN|हिं · 🔊 · ⋮) + progress. Stays ≤ 72 dp.
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.small) {
-                        Text(tr("DEMO · sample (fictional)", "डेमो · नमूना (काल्पनिक)"),
-                            Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+                    val sc = scenes[scene]
+                    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.small, modifier = Modifier.weight(1f, fill = false)) {
+                        Text(if (demoHindi) sc.screenHi else sc.screen,
+                            Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
-                    Text(ArogyaDemoNav.label(scene, n, demoHindi), style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
-                    FilterChip(selected = !demoHindi, onClick = { speech.stop(); demoHindi = false },
-                        label = { Text("EN", style = MaterialTheme.typography.labelSmall) })
-                    FilterChip(selected = demoHindi, onClick = { speech.stop(); demoHindi = true },
-                        label = { Text("हिं", style = MaterialTheme.typography.labelSmall) })
+                    Text("${scene + 1}/$n", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f), maxLines = 1)
+                    FilterChip(selected = true, onClick = { speech.stop(); demoHindi = !demoHindi },
+                        label = { Text(if (demoHindi) "हिं" else "EN", style = MaterialTheme.typography.labelSmall) })
                     FilterChip(selected = narrate, onClick = { speech.stop(); narrate = !narrate },
                         label = { Text("🔊", style = MaterialTheme.typography.labelSmall) })
                     Box {
@@ -610,15 +633,26 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     }
                 }
                 LinearProgressIndicator(progress = (scene + 1) / n.toFloat(), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
-                Text(if (demoHindi) scenes[scene].hi else scenes[scene].title, style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(if (demoHindi) scenes[scene].hi else scenes[scene].title, style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                if (scenes[scene].id in aiScenes) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(tr("AI on:", "AI:"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FilterChip(selected = !cloudMode, onClick = {
+                        if (cloudMode) { ArogyaCloud.setCloudFirst(context, false); cloudMode = false; replay() }
+                    }, label = { Text(tr("📱 Phone", "📱 फ़ोन"), style = MaterialTheme.typography.labelMedium) })
+                    FilterChip(selected = cloudMode, onClick = {
+                        if (!cloudMode) { ArogyaCloud.setCloudFirst(context, true); cloudMode = true; replay() }
+                    }, label = { Text(tr("☁ Cloud", "☁ क्लाउड"), style = MaterialTheme.typography.labelMedium) })
+                    if (cloudMode && !online) Text(tr("offline → phone", "ऑफ़लाइन → फ़ोन"), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error)
+                }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 4.dp))
                 if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 val b = hero; val sp = spec
                 if (b == null || sp == null) { Text(tr("Preparing…", "तैयारी…")) }
                 else {
                     // Short scenes grow the narration (up to 22 sp) instead of leaving dead space.
-                    val narrSize = if (lines().size <= 4) 21.sp else 18.sp
+                    val narrSize = 16.sp
                     val narrStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = narrSize, lineHeight = narrSize * 1.4)
                     val sceneTicks = ticks.drop(tickMark)
                     val ruleScene = ArogyaDemoScript.scenes.getOrNull(scene)?.id in setOf("due", "form", "danger")
@@ -629,7 +663,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                             color = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.fillMaxWidth().background(
                                 if (on) MaterialTheme.colorScheme.primaryContainer
-                                else MaterialTheme.colorScheme.surfaceContainerLow))
+                                else androidx.compose.ui.graphics.Color.Transparent).padding(vertical = 2.dp))
                     }
                     // Slim one-line AI chip row, expandable; nothing at all when the scene has no AI step.
                     @Composable fun aiChips() {
@@ -686,7 +720,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                             val known = medMatched.isNotBlank()
                             store.update { reg ->
                                 val items = if (known) reg.stockItems else reg.stockItems + StockItem(item, "units", 0)
-                                reg.copy(stockItems = items, stock = reg.stock + StockTxn(item = item,
+                                reg.copy(stockItems = items, stock = reg.stock + StockTxn(id = "demo-scan-${System.currentTimeMillis()}", item = item,
                                     qty = s.qty.coerceAtLeast(0), note = "Demo scan", kind = "receive",
                                     batch = s.batch, expiry = ArogyaMedScan.normExpiry(s.expiry), source = tr("Demo", "डेमो")))
                             }
@@ -723,7 +757,9 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         },
                         savedSummary = savedSummary, cardDoc = cardDoc, onViewCard = {
                             val cur = store.state.value.beneficiaries.firstOrNull { it.id == b.id } ?: return@DemoSceneBody
-                            cardDoc = store.mcpDoc(cur, store.state.value.beneficiaries, LocalDate.now())
+                            val d = store.mcpDoc(cur, store.state.value.beneficiaries, LocalDate.now())
+                            val (html, changed) = ArogyaDocRender.demoMark(cardBeforeHtml, d.html, demoHindi)
+                            cardDoc = d.copy(html = html); cardChanged = changed
                         }, cardShareBusy = cardShareBusy,
                         onShareCard = {
                             cardShareBusy = true
@@ -746,7 +782,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                                 } finally { cardShareBusy = false }
                             }
                         },
-                        onCloseCard = { cardDoc = null })
+                        onCloseCard = { cardDoc = null }, cardChanged = cardChanged, remembered = rememberedTimes)
                     }
                     val listState = rememberLazyListState()
                     LaunchedEffect(caption, scene) { if (caption in lines().indices) listState.animateScrollToItem(caption) }
@@ -805,9 +841,13 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                 // Bottom bar: fixed, Next widest. Exit lives in the top-bar ⋮ menu.
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = { go(scene - 1) }, enabled = scene > 0, modifier = Modifier.weight(1f)) { Text(tr("◀ Back", "◀ पीछे")) }
-                    OutlinedButton(onClick = { replay() }, modifier = Modifier.weight(1f)) { Text(tr("⟳ Replay", "⟳ दोबारा")) }
-                    Button(onClick = { go(scene + 1) }, modifier = Modifier.weight(2f)) { Text(tr("Next ▶", "आगे ▶")) }
+                    val pad = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
+                    OutlinedButton(onClick = { go(scene - 1) }, enabled = scene > 0, modifier = Modifier.weight(1f), contentPadding = pad) {
+                        Text(tr("◀ Back", "◀ पीछे"), maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge) }
+                    OutlinedButton(onClick = { replay() }, modifier = Modifier.weight(1f), contentPadding = pad) {
+                        Text(tr("⟳ Replay", "⟳ दोबारा"), maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge) }
+                    Button(onClick = { go(scene + 1) }, modifier = Modifier.weight(1.4f), contentPadding = pad) {
+                        Text(tr("Next ▶", "आगे ▶"), maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge) }
                 }
             }
             if (exitAsk) AlertDialog(onDismissRequest = { exitAsk = false },
@@ -858,7 +898,8 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
     personPreview: Beneficiary?, personMsg: String, personAgreed: Boolean, onAgreePerson: (Boolean) -> Unit,
     personSaved: Boolean, personDue: String, onSavePerson: () -> Unit,
     savedSummary: String, cardDoc: ArogyaDocRender.FilledDoc?, onViewCard: () -> Unit, cardShareBusy: Boolean,
-    onShareCard: () -> Unit, onPrintCard: () -> Unit, onCloseCard: () -> Unit) {
+    onShareCard: () -> Unit, onPrintCard: () -> Unit, onCloseCard: () -> Unit,
+    cardChanged: Int = -1, remembered: Map<String, Pair<Long, Long>> = emptyMap()) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when (ArogyaDemoScript.scenes.getOrNull(scene)?.id) {
             "meet" -> DemoCard(tr("The problem", "समस्या")) {
@@ -870,7 +911,7 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                         tr("$nd official guides (~$pages pages) — hard to know which applies", "$nd आधिकारिक गाइड (~$pages पेज) — कौन सी लागू है, जानना मुश्किल") }
                 })
                 Text("• " + tr("Patchy network in the village", "गाँव में कमज़ोर नेटवर्क"))
-                Text(tr("Sample village: ${data.beneficiaries.size} fictional people (counted live)", "नमूना गाँव: ${data.beneficiaries.size} काल्पनिक लोग (लाइव गिने)"),
+                Text(tr("Rampur · ${data.beneficiaries.size} people in the register", "रामपुर · रजिस्टर में ${data.beneficiaries.size} लोग"),
                     style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             }
             "due" -> DemoCard(tr("Due this week (official schedules — rules, not AI)", "इस हफ़्ते बाकी (सरकारी शेड्यूल — नियम, AI नहीं)")) {
@@ -929,13 +970,17 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                     Text(tr("Rules printed on the form — not AI.", "फ़ॉर्म पर छपे नियम — AI नहीं।"), style = MaterialTheme.typography.labelSmall)
                 }
                 DemoCard(tr("Tell ANM + PHC", "ANM-PHC सूचना")) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { onDemoMsg(tr("Demo: not sent — in real use this calls 108.", "डेमो: भेजा नहीं — असल में 108 पर कॉल होगा।")) }) { Text("📞 108") }
-                        OutlinedButton(onClick = { onDemoMsg(tr("Demo: not sent — in real use this calls the ANM.", "डेमो: भेजा नहीं — असल में ANM को कॉल होगा।")) }) { Text("📞 ANM") }
-                        OutlinedButton(onClick = { onDemoMsg(tr("Demo: not sent — in real use this opens WhatsApp.", "डेमो: भेजा नहीं — असल में WhatsApp खुलेगा।")) }) { Text("💬 WhatsApp") }
+                    val bp = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(onClick = { onDemoMsg(tr("Not sent in demo — real use calls 108.", "डेमो में नहीं भेजा — असल में 108 पर कॉल।")) },
+                            modifier = Modifier.weight(1f), contentPadding = bp) { Text("📞 108", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge) }
+                        OutlinedButton(onClick = { onDemoMsg(tr("Not sent in demo — real use calls the ANM.", "डेमो में नहीं भेजा — असल में ANM को कॉल।")) },
+                            modifier = Modifier.weight(1f), contentPadding = bp) { Text("📞 ANM", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge) }
+                        OutlinedButton(onClick = { onDemoMsg(tr("Not sent in demo — real use opens WhatsApp.", "डेमो में नहीं भेजा — असल में WhatsApp खुलेगा।")) },
+                            modifier = Modifier.weight(1.2f), contentPadding = bp) { Text("💬 WhatsApp", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge) }
                     }
-                    if (demoMsg.isNotBlank()) Text(demoMsg, fontWeight = FontWeight.Bold)
-                    Text(tr("Referral to PHC will be recorded when the visit is saved. (Demo: nothing is sent.)", "PHC रेफ़रल विज़िट सेव होने पर दर्ज होगा। (डेमो: कुछ भेजा नहीं जाता)"), style = MaterialTheme.typography.labelSmall)
+                    if (demoMsg.isNotBlank()) Text(demoMsg, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                    Text(tr("The PHC referral is recorded when the visit is saved.", "PHC रेफ़रल विज़िट सेव होने पर दर्ज होता है।"), style = MaterialTheme.typography.labelSmall)
                 }
                 if (anm.isNotBlank()) DemoCard(tr("✨ Message to ANM (AI draft, she edits before sending)", "✨ ANM को संदेश (AI ड्राफ़्ट)") + if (anmModel.isNotBlank()) " · $anmModel" else "") { Text(anm, style = MaterialTheme.typography.bodySmall) }
             }
@@ -969,23 +1014,22 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                 }
             }
             "sops" -> {
-                DemoCard("❓ " + (if (hindi) ArogyaDemoScript.QUESTION_HI else ArogyaDemoScript.QUESTION_EN)) {}
-                sop?.let { DemoSopAnswer(it, hindi, tr, onOpenSource, secs) }
-                DemoCard("❓ " + tr("Follow-up (the app remembers the first question)", "दोबारा सवाल (ऐप पहला सवाल याद रखता है)") + ": " +
-                    (if (hindi) ArogyaDemoScript.FOLLOWUP_HI else ArogyaDemoScript.FOLLOWUP_EN)) {}
-                sopFollow?.let { DemoSopAnswer(it, hindi, tr, onOpenSource, secs) }
-                sopOnline?.let { o ->
-                    DemoCard("☁ " + tr("Checked online — both answers kept", "ऑनलाइन जाँचा — दोनों उत्तर रखे")) {
+                // Demo UI pass: the same chat layout as Ask the ASHA guide.
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SopUserBubble(if (hindi) ArogyaDemoScript.QUESTION_HI else ArogyaDemoScript.QUESTION_EN)
+                    if (sop == null) Text(tr("Searching the guides…", "गाइड में खोज…"), style = MaterialTheme.typography.bodySmall)
+                    sop?.let { DemoSopAnswer(it, hindi, tr, onOpenSource, secs) }
+                    if (sop != null) SopUserBubble(if (hindi) ArogyaDemoScript.FOLLOWUP_HI else ArogyaDemoScript.FOLLOWUP_EN)
+                    sopFollow?.let { DemoSopAnswer(it, hindi, tr, onOpenSource, secs) }
+                    sopOnline?.let { o ->
                         val base = sop?.text.orEmpty()
                         val added = if (base.isNotBlank()) ArogyaOfficialAnswer.newSentences(base, o.text).size else 0
-                        Text(tr("$added sentence(s) add to the offline answer (highlighted in the app's Online tab).",
-                            "$added वाक्य ऑफ़लाइन उत्तर से ज़्यादा (ऐप के Online टैब में रँगे)।"),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        Text("☁ " + tr("Checked online — $added sentence(s) added to the phone answer", "ऑनलाइन जाँचा — फ़ोन के उत्तर से $added वाक्य ज़्यादा"),
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        DemoSopAnswer(o, hindi, tr, onOpenSource, secs)
                     }
-                    DemoSopAnswer(o, hindi, tr, onOpenSource, secs)
-                }
-                if (sopOnlineSkip) DemoCard("☁ " + tr("Online check", "ऑनलाइन जाँच")) {
-                    Text(tr("Online only — skipped offline.", "सिर्फ़ ऑनलाइन — ऑफ़लाइन छोड़ा।"), style = MaterialTheme.typography.bodySmall)
+                    if (sopOnlineSkip) Text("☁ " + tr("Online check needs internet — skipped.", "ऑनलाइन जाँच को इंटरनेट चाहिए — छोड़ा।"),
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             "card" -> {
@@ -1012,15 +1056,21 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                 } }
             }
             "mcpcard" -> {
-                Text(tr("Neha's official card, filled from the visit. Every section sits where the printed card puts it.",
-                    "नेहा का आधिकारिक कार्ड, विज़िट से भरा। हर हिस्सा छपे कार्ड वाली जगह पर है।"),
-                    style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = onViewCard) { Text(tr("View official card", "आधिकारिक कार्ड देखें")) }
+                if (cardChanged >= 0) Text(
+                    if (cardChanged == 0) tr("No field changed yet — run the voice note and save scenes first.", "अभी कोई खाना नहीं बदला — पहले वॉइस नोट और सेव वाले सीन चलाएँ।")
+                    else tr("$cardChanged fields changed today — highlighted in yellow.", "आज $cardChanged खाने बदले — पीले रंग में।"),
+                    fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+                Text(tr("NA = not applicable at this stage · Not recorded = still to be filled", "लागू नहीं = इस चरण पर नहीं · दर्ज नहीं = अभी भरना बाकी"),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = onViewCard) { Text(tr("Open Neha's MCP card", "नेहा का MCP कार्ड खोलें"), maxLines = 1) }
                 cardDoc?.let { d -> ArogyaDocPdf.Viewer(d, tr("MCP card — ", "MCP कार्ड — ") + b.name,
                     cardShareBusy, hindi, onCloseCard, onShareCard, onPrintCard) }
             }
             "medscan" -> {
-                DemoCard("🔍 " + tr("Medicine scan (offline)", "दवा स्कैन (ऑफ़लाइन)")) {
+                DemoCard("🔍 " + tr("Medicine scan · works offline", "दवा स्कैन · ऑफ़लाइन चलता है")) {
+                    Text(tr("On-phone text reading + rules; the AI model only fills what the rules miss.",
+                        "फ़ोन पर अक्षर पढ़ना + नियम; जो नियम छोड़ें वही AI मॉडल भरता है।"),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { onTakePhoto("med") }) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
                         OutlinedButton(onClick = { onChoosePhoto("med") }) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
@@ -1039,7 +1089,10 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                         else Text("✓ " + tr("In the stock register", "स्टॉक रजिस्टर में"), fontWeight = FontWeight.Bold)
                     }
                 }
-                DemoCard("🔢 " + tr("Drug-kit count (SAM 3.1, online)", "दवा किट गिनती (SAM 3.1, ऑनलाइन)")) {
+                DemoCard("☁ " + tr("Drug-kit count · Meta SAM 3.1 (online only)", "दवा किट गिनती · Meta SAM 3.1 (सिर्फ़ ऑनलाइन)")) {
+                    Text(tr("Offline, the kit is counted by hand — the app never guesses a count.",
+                        "ऑफ़लाइन किट हाथ से गिनी जाती है — ऐप गिनती का अंदाज़ा नहीं लगाता।"),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { onTakePhoto("sam") }) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
                         OutlinedButton(onClick = { onChoosePhoto("sam") }) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
@@ -1086,28 +1139,96 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                 }
             }
             "aitable" -> {
-                DemoCard(tr("What AI did in this visit", "इस विज़िट में AI ने क्या किया")) {
-                    val rows = ArogyaDemoTicks.rows(ticks, dangersRan, hindi)
-                    if (rows.isEmpty()) Text(tr("Run the earlier scenes first — skipped steps stay out of this table.", "पहले पिछले सीन चलाएँ — छूटे चरण इस तालिका में नहीं आते।"))
-                    rows.forEach { r ->
-                        Text((if (r.cloud) "☁ " else "📱 ") + r.step, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
-                        Text("   " + r.benefit, style = MaterialTheme.typography.bodySmall)
-                        Text("   " + r.model + " · " + (if (r.ms > 0) secs(r.ms) else "—"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // Item 11: every AI feature with its offline (phone) and online (cloud) tool; Meta tools marked;
+                // ✓ = it ran in this demo (with where and how long). Tools are named as wired in code.
+                val rows = remember(ticks.size, dangersRan) { ArogyaDemoTicks.toolRows(ticks, dangersRan) }
+                val ranCount = rows.count { it.ran && !it.tool.rule }
+                val (mOff, mOn) = remember { ArogyaDemoTicks.metaCounts() }
+                Text(tr("Meta tools power $mOff features on the phone and $mOn in the cloud · $ranCount ran in this demo",
+                    "Meta के टूल फ़ोन पर $mOff और क्लाउड में $mOn सुविधाएँ चलाते हैं · इस डेमो में $ranCount चलीं"),
+                    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                val head = MaterialTheme.typography.labelSmall
+                val cellStyle = MaterialTheme.typography.labelSmall
+                val meta = MaterialTheme.colorScheme.primary
+                @Composable fun toolText(text: String, isMeta: Boolean, m: Modifier) =
+                    Text(text, style = cellStyle, modifier = m, color = if (isMeta) meta else MaterialTheme.colorScheme.onSurface,
+                        fontWeight = if (isMeta) FontWeight.SemiBold else null)
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(tr("Feature", "सुविधा"), style = head, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.1f))
+                            Text(tr("📱 Offline tool", "📱 ऑफ़लाइन टूल"), style = head, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.2f))
+                            Text(tr("☁ Online tool", "☁ ऑनलाइन टूल"), style = head, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.1f))
+                            Text(tr("Today", "आज"), style = head, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
+                        }
+                        HorizontalDivider()
+                        rows.forEach { r ->
+                            val t = r.tool
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+                                Text(if (hindi) t.featureHi else t.feature, style = cellStyle, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1.1f))
+                                toolText(if (hindi) t.offlineHi else t.offline, t.metaOffline, Modifier.weight(1.2f))
+                                toolText(if (hindi) t.onlineHi else t.online, t.metaOnline, Modifier.weight(1.1f))
+                                Text(when {
+                                    !r.ran -> "—"
+                                    t.rule -> "✓ ⚙"
+                                    else -> "✓ " + (if (r.ranCloud == true) "☁" else "📱") + (if (r.ranMs > 0) " " + secs(r.ranMs) else "")
+                                }, style = cellStyle, modifier = Modifier.weight(0.6f),
+                                    color = if (r.ran) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                     }
                 }
-                Text(tr("Built with Muse Code.", "Muse Code से बनाया गया।"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tr("Blue = Meta tool · ⚙ = fixed government rule, not AI · names never leave the phone for card and register reading.",
+                    "नीला = Meta टूल · ⚙ = तय सरकारी नियम, AI नहीं · कार्ड और रजिस्टर पढ़ते समय नाम फ़ोन से बाहर नहीं जाते।"),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tr("App built and optimised with Muse Code.", "ऐप Muse Code से बनाया और बेहतर किया गया।"),
+                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
             }
             else -> {
-                val rows = ArogyaDemoTicks.beforeAfter(ticks, hindi)
-                DemoCard(tr("Sunita's day, before and after", "सुनीता का दिन, पहले और अब")) {
-                    if (rows.isEmpty()) Text(tr("Nothing measured yet — run the earlier scenes first.", "अभी कुछ नापा नहीं — पहले पिछले सीन चलाएँ।"))
-                    rows.forEach { r ->
-                        Text(r.task, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
-                        Text(tr("Before: ", "पहले: ") + r.before, style = MaterialTheme.typography.bodySmall)
-                        Text(tr("After: ", "अब: ") + secs(r.afterMs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                // Item 11, last slide: what AI did on this visit, the by-hand estimate, today's measured
+                // time and the usual online / offline time (last measured on this phone, either mode).
+                val rows = remember(ticks.size, remembered) { ArogyaDemoTicks.impact(ticks, remembered) }
+                if (rows.isEmpty()) Text(tr("Run the earlier screens first — only measured steps appear here.",
+                    "पहले पिछली स्क्रीन चलाएँ — यहाँ सिर्फ़ नापे गए चरण आते हैं।"))
+                else {
+                    val hand = ArogyaDemoTicks.handTotal(rows)
+                    val aiToday = rows.sumOf { it.todayMs }
+                    Text(tr("On every visit AI saved Sunita about $hand minutes of paperwork.", "हर विज़िट में AI ने सुनीता का लगभग $hand मिनट का काग़ज़ी काम बचाया।"),
+                        style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                    val st = MaterialTheme.typography.labelSmall
+                    fun t(ms: Long) = if (ms > 0) secs(ms) else "—"
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(tr("AI did", "AI ने किया"), style = st, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.5f))
+                                Text(tr("By hand*", "हाथ से*"), style = st, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
+                                Text(tr("Today", "आज"), style = st, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
+                                Text("☁ " + tr("Online", "ऑनलाइन"), style = st, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
+                                Text("📱 " + tr("Offline", "ऑफ़लाइन"), style = st, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
+                            }
+                            HorizontalDivider()
+                            rows.forEach { r ->
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(if (hindi) r.task.taskHi else r.task.task, style = st, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1.5f))
+                                    Text("~${r.task.handMin} " + tr("min", "मिनट"), style = st, modifier = Modifier.weight(0.7f))
+                                    Text(t(r.todayMs), style = st, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(0.7f))
+                                    Text(t(r.onlineMs), style = st, modifier = Modifier.weight(0.7f))
+                                    Text(t(r.offlineMs), style = st, modifier = Modifier.weight(0.7f))
+                                }
+                            }
+                            HorizontalDivider()
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(tr("Total", "कुल"), style = st, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.5f))
+                                Text("~$hand " + tr("min", "मिनट"), style = st, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
+                                Text(t(aiToday), style = st, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(0.7f))
+                                Spacer(Modifier.weight(1.4f))
+                            }
+                        }
                     }
+                    Text(tr("* By-hand times are rough estimates, not measured. AI times are measured on this phone; online/offline show the last run in each mode (flip Phone | Cloud on a screen to fill both).",
+                        "* हाथ वाले समय मोटे अनुमान हैं, नापे नहीं गए। AI के समय इसी फ़ोन पर नापे गए; ऑनलाइन/ऑफ़लाइन हर मोड का पिछला रन दिखाते हैं (दोनों भरने के लिए स्क्रीन पर फ़ोन | क्लाउड बदलें)।"),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(tr("No invented percentages — only measured times.", "मनगढ़ंत प्रतिशत नहीं — सिर्फ़ नपे समय।"), style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -1117,26 +1238,40 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
 private fun DemoSopAnswer(r: ArogyaAiResult, hindi: Boolean, tr: (String, String) -> String, onOpenSource: (ArogyaSource) -> Unit, secs: (Long) -> String) {
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
-    if (r.sources.isNotEmpty()) DemoCard(tr("Top passages", "मुख्य हिस्से")) {
-        r.sources.take(3).forEach { s ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("📄 ${s.title} · ${s.locator}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { onOpenSource(s) }) { Text(tr("Open", "खोलें")) }
-            }
-            // Item 8: the same "Open official document" the answer card offers (jumps to the page online).
-            if (s.url.startsWith("http")) TextButton(onClick = {
-                runCatching { uriHandler.openUri(ArogyaGuideLibrary.pageUrl(s.url, s.locator)) }
-                    .onFailure { Toast.makeText(context, tr("No browser available.", "ब्राउज़र नहीं है।"), Toast.LENGTH_LONG).show() }
-            }) { Text(tr("Open official document", "आधिकारिक दस्तावेज़ खोलें"), style = MaterialTheme.typography.bodySmall) }
-            if (s.excerpt.isNotBlank()) ArogyaPassageText(s.copy(excerpt = s.excerpt.take(600) + if (s.excerpt.length > 600) "…" else ""))
-        }
-    }
-    DemoCard(tr("Answer from the official guides · ${r.provider} · ${secs(r.elapsedMs)}", "आधिकारिक गाइड से उत्तर · ${r.provider} · ${secs(r.elapsedMs)}")) {
-        // Item 8: the live answer layout — sections with [n] citation markers (tap = the passage).
+    var passagesOpen by remember(r) { mutableStateOf(false) }
+    // Demo UI pass: chat answer layout (guide avatar, answer with tappable citations, one-tap PDF).
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        SopAssistantHeader(hindi)
+        Text((if (r.online) "☁ " else "📱 ") + r.provider + " · " + secs(r.elapsedMs),
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         SopAnswerText(r.text, r.segments, emptySet()) { id -> r.sources.firstOrNull { it.id == id }?.let(onOpenSource) }
-        if (r.quote.isNotBlank() && !ArogyaAnswerFormat.isDuplicate(r.text, r.quote))
-            Text("“${r.quote}” — ${r.quoteSource}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-        r.sources.firstOrNull()?.let { s -> Text(tr("Source: ", "स्रोत: ") + "${s.title}, ${s.locator}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall) }
+        r.sources.firstOrNull()?.let { s0 ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { passagesOpen = !passagesOpen }, modifier = Modifier.weight(1f)) {
+                    Text(tr("📚 From the guide: ", "📚 गाइड से: ") + "${s0.title}, ${s0.locator}" +
+                        (if (r.sources.size > 1) tr(" +${r.sources.size - 1} more", " +${r.sources.size - 1} और") else "") +
+                        (if (passagesOpen) " ▴" else " ▾"), style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                }
+                val link = r.sources.firstOrNull { it.url.startsWith("http") }
+                if (link != null) FilledTonalButton(onClick = {
+                    runCatching { uriHandler.openUri(ArogyaGuideLibrary.pageUrl(link.url, link.locator)) }
+                        .onFailure { Toast.makeText(context, tr("No browser available.", "ब्राउज़र नहीं है।"), Toast.LENGTH_LONG).show() }
+                }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
+                    Text(tr("📄 Open PDF", "📄 PDF खोलें"), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                }
+            }
+        }
+        if (passagesOpen) r.sources.take(3).forEach { s ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("📄 ${s.title} · ${s.locator}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { onOpenSource(s) }) { Text(tr("Read", "पढ़ें")) }
+                    }
+                    if (s.excerpt.isNotBlank()) ArogyaPassageText(s.copy(excerpt = s.excerpt.take(600) + if (s.excerpt.length > 600) "…" else ""))
+                }
+            }
+        }
     }
 }
 

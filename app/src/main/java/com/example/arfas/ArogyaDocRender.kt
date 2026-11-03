@@ -163,6 +163,44 @@ object ArogyaDocRender {
     }
 
     /**
+     * Demo UI pass: the MCP card as the demo shows it after the visit. Handwritten cells whose value
+     * differs from [beforeHtml] (the card at the start of the demo) are highlighted; "×" (not
+     * applicable at this column) reads "NA"; empty cells read "Not recorded" (grey). Nothing is
+     * guessed: no Yes/No is written for a value that was never recorded. The real printout is
+     * unchanged; this is applied only to the demo view. Returns the html and the changed count.
+     */
+    fun demoMark(beforeHtml: String, afterHtml: String, hindi: Boolean = false): Pair<String, Int> {
+        val cell = Regex("<td class=\"hand\">(.*?)</td>", RegexOption.DOT_MATCHES_ALL)
+        val before = cell.findAll(beforeHtml).map { it.groupValues[1].trim() }.toList()
+        val afterCount = cell.findAll(afterHtml).count()
+        val compare = before.size == afterCount
+        val na = if (hindi) "लागू नहीं" else "NA"
+        val notRec = if (hindi) "दर्ज नहीं" else "Not recorded"
+        var i = 0
+        var changed = 0
+        var html = cell.replace(afterHtml) { m ->
+            val v = m.groupValues[1].trim()
+            val was = if (compare) before[i] else v
+            i++
+            when {
+                v == "×" -> "<td class=\"hand na\">$na</td>"
+                v.isEmpty() -> "<td class=\"hand nr\">$notRec</td>"
+                v != was -> { changed++; "<td class=\"hand chg\">$v</td>" }
+                else -> m.value
+            }
+        }
+        val style = "<style>.chg{background:#fff1a8;outline:2px solid #e0a800;font-weight:bold}" +
+            ".na{color:#8a8a8a}.nr{color:#b0b0b0;font-style:italic;font-size:85%}" +
+            ".demolegend{font:13px sans-serif;margin:6px 0 10px;padding:6px 8px;border:1px solid #e0a800;background:#fffbe6}</style>"
+        val legend = "<div class=\"demolegend\">" + (if (hindi)
+            "<b>पीला</b> = आज बदला ($changed) · <b>लागू नहीं</b> = इस चरण पर लागू नहीं · <b>दर्ज नहीं</b> = अभी भरना बाकी"
+            else "<b>Yellow</b> = changed today ($changed) · <b>NA</b> = not applicable at this stage · <b>Not recorded</b> = still to be filled") + "</div>"
+        html = if (html.contains("</head>")) html.replaceFirst("</head>", "$style</head>") else style + html
+        html = Regex("<body[^>]*>").find(html)?.let { b -> html.replaceRange(b.range.last + 1, b.range.last + 1, legend) } ?: (legend + html)
+        return html to changed
+    }
+
+    /**
      * Mother and Child Protection Card in the printed card's page order: p.3 Identification,
      * p.4 Checkup, p.5 ANC, p.6 Danger signs/Delivery prep, p.7 PNC, p.8 Newborn + HBYC,
      * p.27 IFA, pp.28–31 Growth chart, pp.36–37 Immunization. Pastel headers (pink ANC,

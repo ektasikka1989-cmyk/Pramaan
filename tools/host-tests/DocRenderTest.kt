@@ -88,6 +88,19 @@ fun main() {
     check("ans-link", "https://pib.gov.in/x" in da.html)
     val df = ArogyaDocRender.answerDoc("Q?", emptyList(), "Plain answer here.", emptyList(), h, "02/11/2026", ansT, css)
     check("ans-fallback", "Plain answer here." in df.html && "Sources" !in df.html)
+    // Demo UI pass: changed cells highlighted, × → NA, blank → Not recorded; nothing guessed.
+    val before = "<html><head></head><body><table><tr><td class=\"hand\">2400</td><td class=\"hand\"></td><td class=\"hand\">×</td><td class=\"hand\">12/10/2026</td></tr></table></body></html>"
+    val after = "<html><head></head><body><table><tr><td class=\"hand\">2650</td><td class=\"hand\"></td><td class=\"hand\">×</td><td class=\"hand\">12/10/2026</td></tr></table></body></html>"
+    val (marked, changed) = ArogyaDocRender.demoMark(before, after)
+    check("mark-changed", changed == 1 && "<td class=\"hand chg\">2650</td>" in marked, marked)
+    check("mark-na", "<td class=\"hand na\">NA</td>" in marked)
+    check("mark-not-recorded", "<td class=\"hand nr\">Not recorded</td>" in marked)
+    check("mark-same-kept", "<td class=\"hand\">12/10/2026</td>" in marked)
+    check("mark-no-yes-no", !marked.contains(">Yes<") && !marked.contains(">No<"))
+    check("mark-legend", "changed today (1)" in marked && "</style></head>" in marked)
+    val (_, c2) = ArogyaDocRender.demoMark("<td class=\"hand\">1</td>", after)
+    check("mark-shape-differs-no-false-highlight", c2 == 0)
+    check("mark-hindi", "दर्ज नहीं" in ArogyaDocRender.demoMark(before, after, hindi = true).first)
     println("DocRenderTest: $n passed, $fails failed")
     if (fails > 0) kotlin.system.exitProcess(1)
 }
