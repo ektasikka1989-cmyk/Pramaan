@@ -21,8 +21,11 @@ fun main() {
     d(ArogyaDemoScript.scenes.all { it.narration.size in 3..6 && it.narrationHi.size in 3..6 }, "3-6 sentences per language")
     d(ArogyaDemoScript.scenes.flatMap { it.narration + it.narrationHi }.all { it.isNotBlank() }, "no blank sentences")
     val ids = ArogyaDemoScript.scenes.map { it.id }
-    d(ids.containsAll(listOf("meet", "due", "form", "voice", "danger", "guides", "sops", "card", "medscan", "saved", "practice", "setting", "aitable", "beforeafter")),
-        "all 14 B5 scenes in order: ${ids.joinToString(",")}")
+    d(ids == listOf("meet", "due", "addperson", "form", "voice", "danger", "explain", "guides", "sops", "card", "medscan", "saved", "practice", "setting", "aitable", "beforeafter"),
+        "all 16 scenes in order: ${ids.joinToString(",")}")
+    d(ArogyaDemoScript.scenes.all { it.narration.size == it.narrationHi.size }, "EN and HI sentence counts match")
+    d(ArogyaDemoScript.QUESTION_EN.contains("cord stump") && ArogyaDemoScript.QUESTION_HI.contains("नाल"),
+        "Ask SOP scene uses the slide example")
     // 3. AI table is built only from recorded ticks.
     val ticks = listOf(
         ArogyaAiTick("speech-to-text", "बोल → लिख", "Whisper (on this phone, offline)", 9000, false),
@@ -36,6 +39,13 @@ fun main() {
     d(ArogyaDemoTicks.rows(emptyList(), dangerRan = false, hindi = true).isEmpty(), "skipped steps stay out of the table")
     d(ArogyaDemoTicks.rows(listOf(ArogyaAiTick("mystery", "रहस्य", "X", 1, false)), false, true)[0].benefit.isNotBlank(), "unknown feature still gets a benefit line")
     d(ArogyaDemoTicks.rows(ticks, true, true)[0].step == "बोल → लिख", "Hindi step names")
+    val nt = listOf(ArogyaAiTick("family explanation", "परिवार को समझाना", "M", 1000, false),
+        ArogyaAiTick("add person from photo", "फ़ोटो से नया व्यक्ति", "M", 2000, false))
+    val nr = ArogyaDemoTicks.rows(nt, false, false)
+    d(nr.size == 2 && nr[0].benefit == "The family understands in Hindi" && nr[1].benefit == "A photo registers the newcomer",
+        "new scenes have their own benefit lines")
+    val nba = ArogyaDemoTicks.beforeAfter(nt, false)
+    d(nba.size == 2 && nba[0].afterMs == 1000L && nba[1].afterMs == 2000L, "new scenes measured in before/after")
     // 4. Before/after uses measured times only.
     d(ArogyaDemoTicks.beforeAfter(emptyList(), false).isEmpty(), "nothing measured -> no rows, never invented")
     val ba = ArogyaDemoTicks.beforeAfter(

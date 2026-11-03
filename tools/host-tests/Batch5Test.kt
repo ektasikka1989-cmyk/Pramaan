@@ -35,15 +35,15 @@ fun synthWav(rate: Int, channels: Int, float32: Boolean, frames: Int, withFact: 
 }
 
 fun main() {
-    // Script shape (Part B): 14 scenes, 3-6 sentences per language, unique ids, one hero.
-    check("s-count", ArogyaDemoScript.scenes.size == 14)
-    check("s-ids", ArogyaDemoScript.scenes.map { it.id }.toSet().size == 14)
+    // Script shape (Part B): 16 scenes, 3-6 sentences per language, unique ids, one hero.
+    check("s-count", ArogyaDemoScript.scenes.size == 16)
+    check("s-ids", ArogyaDemoScript.scenes.map { it.id }.toSet().size == 16)
     check("s-titles-en", ArogyaDemoScript.scenes.all { it.title.isNotBlank() })
     check("s-titles-hi", ArogyaDemoScript.scenes.all { it.hi.isNotBlank() })
     check("s-nar-en", ArogyaDemoScript.scenes.all { it.narration.size in 3..6 && it.narration.all { s -> s.endsWith('.') } })
     check("s-nar-hi", ArogyaDemoScript.scenes.all { it.narrationHi.size in 3..6 && it.narrationHi.all { s -> s.endsWith('।') } })
-    check("s-q-en", ArogyaDemoScript.QUESTION_EN == "What are the danger signs in a newborn that need immediate referral?")
-    check("s-q-hi", ArogyaDemoScript.QUESTION_HI == "नवजात शिशु में खतरे के लक्षण क्या हैं?")
+    check("s-q-en", ArogyaDemoScript.QUESTION_EN == "What should be applied on the baby's cord stump?")
+    check("s-q-hi", ArogyaDemoScript.QUESTION_HI == "बच्चे की नाल पर क्या लगाना चाहिए?")
     check("s-follow", ArogyaDemoScript.FOLLOWUP_EN.isNotBlank() && ArogyaDemoScript.FOLLOWUP_HI.isNotBlank())
     check("s-note-nums", listOf("2650", "38.4").all { ArogyaDemoScript.NOTE_EN.contains(it) && ArogyaDemoScript.NOTE_HI.contains(it) })
     check("s-assets", ArogyaDemoScript.VOICE_EN.isNotBlank() && ArogyaDemoScript.VOICE_HI.isNotBlank())

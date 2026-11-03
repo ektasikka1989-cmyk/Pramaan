@@ -5,7 +5,7 @@ package com.example.arfas
  * helpers the host tests check — navigation bounds, the AI-steps table and the
  * before/after table. No Android or Compose imports.
  *
- * 14 scenes, each with 3-6 short sentences in English and Hindi. One hero
+ * 16 scenes, each with 3-6 short sentences in English and Hindi. One hero
  * everywhere: Baby of Neha (नेहा का बच्चा).
  */
 object ArogyaDemoScript {
@@ -21,13 +21,12 @@ object ArogyaDemoScript {
     const val NOTE_HI = "नेहा के बच्चे की 7 दिन की विज़िट। बच्चे का वज़न 2650 ग्राम। बच्चे का तापमान 38.4 डिग्री। सुबह से बच्चा कम दूध पी रहा है और रोना कमज़ोर है। " +
         "नाल पर मवाद नहीं, आँखें साफ़ हैं। बच्चा माँ के पास गर्म रखा है। माँ ने 4 बार पूरा खाना खाया, आज 3 पैड बदले, माँ का तापमान 37 डिग्री।"
 
-    /** M1 Q7 (owner-confirmed pages int_b p18, asha_fac p58-61): fits the story, answered in both modes. */
-    const val QUESTION_EN = "What are the danger signs in a newborn that need immediate referral?"
-    /** M1 Q14, the same question in Hindi (cross-lingual, owner-confirmed pages). */
-    const val QUESTION_HI = "नवजात शिशु में खतरे के लक्षण क्या हैं?"
+    /** The slide example (Integrated ASHA Training Module Part B, p.18): answered in both modes. */
+    const val QUESTION_EN = "What should be applied on the baby's cord stump?"
+    const val QUESTION_HI = "बच्चे की नाल पर क्या लगाना चाहिए?"
     /** The one follow-up on the Ask SOP scene; the runtime session remembers the first question. */
-    const val FOLLOWUP_EN = "What is the first thing she should do for this baby?"
-    const val FOLLOWUP_HI = "इस बच्चे के लिए उसे सबसे पहले क्या करना चाहिए?"
+    const val FOLLOWUP_EN = "How often should the cord be checked?"
+    const val FOLLOWUP_HI = "नाल की जाँच कितनी बार करनी चाहिए?"
 
     data class Scene(val id: String, val title: String, val hi: String, val narration: List<String>, val narrationHi: List<String>)
     val scenes = listOf(
@@ -53,6 +52,17 @@ object ArogyaDemoScript {
                 "ये तारीख़ें सरकार के तय शेड्यूल से आती हैं। ये नियम हैं, AI नहीं।",
                 "नेहा के बच्चे की 7वें दिन की विज़िट बाकी है, तो वे नाम दबाकर शुरू करती हैं।",
                 "न डायरी पलटनी है, न तारीख़ गिननी है।")),
+        Scene("addperson", "Add a new person from a photo", "फ़ोटो से नया व्यक्ति जोड़िए",
+            listOf(
+                "A new family has come to the village, and Sunita photographs their register page.",
+                "The phone reads the photo and copies the names into a review card.",
+                "She checks every field, then saves. The new person joins the due list at once.",
+                "No retyping, and the family agrees before anything is saved."),
+            listOf(
+                "गाँव में एक नया परिवार आया है, और सुनीता उनके रजिस्टर पेज की फ़ोटो लेती हैं।",
+                "फ़ोन फ़ोटो पढ़ता है और नाम जाँच कार्ड में उतारता है।",
+                "वे हर जानकारी देखती हैं, फिर सेव करती हैं। नया व्यक्ति तुरंत बाकी सूची में जुड़ जाता है।",
+                "दोबारा लिखना नहीं पड़ता, और सेव से पहले परिवार की हामी होती है।")),
         Scene("form", "Baby of Neha, Day 7: the right form, right column", "नेहा का बच्चा, 7वाँ दिन: सही फ़ॉर्म, सही कॉलम",
             listOf(
                 "For a 7-day-old baby born at home, the app opens the official Home Visit Form at the Day 7 column.",
@@ -86,6 +96,17 @@ object ArogyaDemoScript {
                 "ये तय सरकारी नियम हैं, AI नहीं। ये अंदाज़ा नहीं लगा सकते।",
                 "ऐप सुनीता को बच्चे को आज ही PHC रेफ़र करने को कहता है।",
                 "AI सिर्फ़ ANM को संदेश लिखता है। सुनीता उसे पढ़ती हैं और भेजने का फ़ैसला करती हैं।")),
+        Scene("explain", "Explain to the family in Hindi", "परिवार को हिंदी में समझाइए",
+            listOf(
+                "The family is worried, so Sunita explains the danger signs in simple Hindi.",
+                "AI turns the guide's answer into short spoken lines. Every line comes from the guide.",
+                "The phone reads it aloud in Hindi, even with no signal.",
+                "The family understands, and Sunita decides what happens next."),
+            listOf(
+                "परिवार चिंतित है, तो सुनीता खतरे के लक्षण आसान हिंदी में समझाती हैं।",
+                "AI गाइड के उत्तर को छोटी बोली जाने वाली पंक्तियों में बदलता है। हर पंक्ति गाइड से आती है।",
+                "फ़ोन इसे हिंदी में पढ़कर सुनाता है, बिना सिग्नल भी।",
+                "परिवार समझ जाता है, और सुनीता तय करती हैं कि आगे क्या होगा।")),
         Scene("guides", "Where answers come from", "उत्तर कहाँ से आते हैं",
             listOf(
                 "Every answer in this app comes only from official Government of India documents.",
@@ -99,13 +120,14 @@ object ArogyaDemoScript {
                 "लाइब्रेरी खोलने के लिए लिंक दबाएँ और दस्तावेज़ खुद पढ़ें।")),
         Scene("sops", "Ask SOP, then ask again", "SOP से पूछिए, फिर दोबारा पूछिए",
             listOf(
-                "Sunita asks when a newborn must be referred at once.",
+                "Sunita asks what should be applied on the baby's cord stump.",
                 "The app searches the official guides, shows the top passages with document and page, then writes the answer from them.",
                 "Every sentence carries its citation, and she opens the official document with one tap.",
+                "She taps the source to read the printed passage itself.",
                 "Then she asks a follow-up, and the app remembers the first question.",
                 "When the phone is online, she also taps Check online and compares both answers."),
             listOf(
-                "सुनीता पूछती हैं कि नवजात को तुरंत कब रेफ़र करना चाहिए।",
+                "सुनीता पूछती हैं कि बच्चे की नाल पर क्या लगाना चाहिए।",
                 "ऐप आधिकारिक गाइड खोजता है, दस्तावेज़ और पेज के साथ मुख्य हिस्से दिखाता है, फिर उन्हीं से उत्तर लिखता है।",
                 "स्रोत दबाकर वे छपी हुई असली पंक्तियाँ पढ़ती हैं।",
                 "हर वाक्य के साथ उसका हवाला है, और एक दबाने पर आधिकारिक दस्तावेज़ खुलता है।",
@@ -219,6 +241,8 @@ object ArogyaDemoTicks {
         "medicine scan" -> if (hindi) "पत्ता फ़ोटो से स्टॉक में" else "A strip photo becomes stock"
         "SAM 3.1 count" -> if (hindi) "शेल्फ़ गिनने में मदद" else "Counting help for the shelf"
         "ANM message" -> if (hindi) "संदेश लिखने में मदद" else "The message writes itself"
+        "family explanation" -> if (hindi) "परिवार हिंदी में समझा" else "The family understands in Hindi"
+        "add person from photo" -> if (hindi) "फ़ोटो से नाम जुड़ा" else "A photo registers the newcomer"
         "daily practice" -> if (hindi) "रोज़ अभ्यास, स्रोत के साथ" else "Daily practice, with sources"
         "reading aloud" -> if (hindi) "पढ़ना न आए तब भी चले" else "Works even when reading is hard"
         else -> if (hindi) "सुनीता की मदद" else "Helps Sunita"
@@ -247,6 +271,8 @@ object ArogyaDemoTicks {
             Triple(if (hindi) "SOP का जवाब ढूँढना" else "Find the SOP answer", paper, msOf("guide search + grounded answer")),
             Triple(if (hindi) "MCP कार्ड नकल करना" else "Copy the MCP card", paper, msOf("card text reading + extraction")),
             Triple(if (hindi) "ANM संदेश लिखना" else "Write the ANM message", paper, msOf("ANM message")),
+            Triple(if (hindi) "परिवार को हिंदी में समझाना" else "Explain to the family in Hindi", paper, msOf("family explanation")),
+            Triple(if (hindi) "नया व्यक्ति दर्ज करना" else "Register a new person", paper, msOf("add person from photo")),
             Triple(if (hindi) "अभ्यास के सवाल बनाना" else "Make practice questions", paper, msOf("daily practice"))
         ).filter { it.third > 0 }.map { BeforeAfter(it.first, it.second, it.third) }
     }
