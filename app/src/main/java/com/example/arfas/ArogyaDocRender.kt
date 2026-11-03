@@ -167,7 +167,8 @@ object ArogyaDocRender {
      * differs from [beforeHtml] (the card at the start of the demo) are highlighted; "×" (not
      * applicable at this column) reads "NA"; empty cells read "Not recorded" (grey). Nothing is
      * guessed: no Yes/No is written for a value that was never recorded. The real printout is
-     * unchanged; this is applied only to the demo view. Returns the html and the changed count.
+     * unchanged; this is applied only to the demo view. Returns the html and the changed count
+     * (-1 when the cells can't be paired with [beforeHtml], so no change is claimed).
      */
     fun demoMark(beforeHtml: String, afterHtml: String, hindi: Boolean = false): Pair<String, Int> {
         val cell = Regex("<td class=\"hand\">(.*?)</td>", RegexOption.DOT_MATCHES_ALL)
@@ -192,12 +193,14 @@ object ArogyaDocRender {
         val style = "<style>.chg{background:#fff1a8;outline:2px solid #e0a800;font-weight:bold}" +
             ".na{color:#8a8a8a}.nr{color:#b0b0b0;font-style:italic;font-size:85%}" +
             ".demolegend{font:13px sans-serif;margin:6px 0 10px;padding:6px 8px;border:1px solid #e0a800;background:#fffbe6}</style>"
-        val legend = "<div class=\"demolegend\">" + (if (hindi)
-            "<b>पीला</b> = आज बदला ($changed) · <b>लागू नहीं</b> = इस चरण पर लागू नहीं · <b>दर्ज नहीं</b> = अभी भरना बाकी"
-            else "<b>Yellow</b> = changed today ($changed) · <b>NA</b> = not applicable at this stage · <b>Not recorded</b> = still to be filled") + "</div>"
+        // When the card's shape changed, cells can't be paired, so nothing is claimed as changed (-1).
+        val yellow = if (!compare) "" else if (hindi) "<b>पीला</b> = आज बदला ($changed) · " else "<b>Yellow</b> = changed today ($changed) · "
+        val legend = "<div class=\"demolegend\">" + yellow + (if (hindi)
+            "<b>लागू नहीं</b> = इस चरण पर लागू नहीं · <b>दर्ज नहीं</b> = अभी भरना बाकी"
+            else "<b>NA</b> = not applicable at this stage · <b>Not recorded</b> = still to be filled") + "</div>"
         html = if (html.contains("</head>")) html.replaceFirst("</head>", "$style</head>") else style + html
         html = Regex("<body[^>]*>").find(html)?.let { b -> html.replaceRange(b.range.last + 1, b.range.last + 1, legend) } ?: (legend + html)
-        return html to changed
+        return html to (if (compare) changed else -1)
     }
 
     /**

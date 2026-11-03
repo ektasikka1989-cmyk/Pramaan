@@ -373,3 +373,10 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Copied to the phone (user asked) with adb push to /sdcard/Pictures/Demo_samples/ and registered with the media scanner, so the in-app photo picker shows them. Images are not in the repo (only the generator).
 - Verified on host: all six images rendered and visually checked for legibility.
 - To be checked manually: each photo through its demo step (person, card, medicine, kit count online). Dates on the card match the hero only on 4 Nov; on another day, regenerate with that date.
+
+### DUI4. Review of DUI2 (not yet compiled) + two fixes
+- Reviewed the DUI2 Compose code against the code it calls (SopUserBubble, SopAssistantHeader, SopAnswerText, ArogyaCloud.setCloudFirst, Scene.screen/screenHi, ToolRow/Impact, StockTxn.id, FilledDoc.copy, FilledTonalButton/HorizontalDivider/TextOverflow imports). Every name exists, is public and has matching parameters. No compile errors found by reading, but Compose still needs a real Gradle build.
+- Fixed: Home's Offline | Online switch stayed stale after the demo flipped Phone | Cloud (it caches the setting until `modeTick` changes). Closing the demo (or a deep link out of it) now bumps `modeTick`. File: ArogyaVisitScreen.kt.
+- Fixed: when the MCP card's cells could not be paired with the card at Start, `demoMark` returned 0, so the scene said "No field changed yet — run the voice note…", which was untrue. It now returns -1: the scene shows no change line, and the legend leaves out the "Yellow = changed today" part. File: ArogyaDocRender.kt; DocRenderTest updated.
+- Tests (Linux host, kotlinc 2.0.21): all 47 suites pass except GoldMatchTest, which needs `app/src/main/assets/verified_answers.json`. That file is gitignored, so it is not in this checkout. It is not a code failure, but a clean clone will build without the gold answers.
+- Still to do on Windows: `_claude_work\run\build_install.bat` (the DUI2 + DUI4 Compose code is not compiled yet), then the manual checks listed under DUI2.

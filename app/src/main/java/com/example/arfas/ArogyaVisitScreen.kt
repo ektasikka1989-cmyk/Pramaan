@@ -1263,8 +1263,8 @@ fun ArogyaVisitScreen(
     if(welcome) ArogyaWelcome(hindi) { ArogyaLang.setWelcomed(context); welcome=false }
     if(setupOpen) ArogyaSetupWizard(hindi,ai,knowledgeReady,reg.beneficiaries.any {it.demo},
         onImportKnowledge={ onImportKnowledge(it) },onLoadSample={ loadSample() },onRefreshKnowledge={ onRefreshKnowledge() },onDone={ setupOpen=false })
-    if(demoOpen) ArogyaDemoTour(ai,queue,visits,hindi,tts=if(ttsReady) tts else null,onLoadSample={ loadSample() },onClose={ demoOpen=false; tts.stop() },
-        onDeepLink={ target -> demoOpen=false; tts.stop(); if(target.startsWith("guided:")) guidedFor=reg.beneficiaries.firstOrNull { it.id==target.removePrefix("guided:") } else hubOpen=target })
+    if(demoOpen) ArogyaDemoTour(ai,queue,visits,hindi,tts=if(ttsReady) tts else null,onLoadSample={ loadSample() },onClose={ demoOpen=false; tts.stop(); modeTick++ },
+        onDeepLink={ target -> demoOpen=false; tts.stop(); modeTick++; if(target.startsWith("guided:")) guidedFor=reg.beneficiaries.firstOrNull { it.id==target.removePrefix("guided:") } else hubOpen=target })
     if(profileOpen) {
         var n by remember { mutableStateOf(ashaName) }; var v by remember { mutableStateOf(ashaVillage) }
         var st by remember { mutableStateOf(profilePrefs.getString("state","").orEmpty()) }
