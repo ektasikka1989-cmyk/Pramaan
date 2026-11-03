@@ -374,17 +374,17 @@ fun SopAnswerCard(
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(onClick = { onSpeak(tabText) }) { Text(tr("🔊 Read aloud", "🔊 सुनें")) }
             TextButton(onClick = onStopSpeak) { Text(tr("Stop", "रोकें")) }
-            if (ai != null && !result.sourceOnly) {
+            if (ai != null && !result.sourceOnly && !result.storedCopy) {
                 Button(onClick = { onFamily(true) }, enabled = !familyBusy && !busy) { Text(if (familyBusy) tr("Writing…", "लिखा जा रहा है…") else tr("👪 Explain to family (हिंदी)", "👪 परिवार को समझाएँ")) }
                 TextButton(onClick = { onFamily(false) }, enabled = !familyBusy && !busy) { Text(tr("English", "English")) }
                 AiBadge("Explain to family")
             }
             if (!hasOnline && !result.online && !ArogyaOnlinePolicy.localOnly(question)) Button(onClick = onCheckOnline, enabled = !busy && pending == 0 && asked.isNotBlank()) { Text(tr("☁ Check online", "☁ ऑनलाइन जाँचें")) }
-            if (!result.sourceOnly) OutlinedButton(onClick = onMoreDetail, enabled = !busy && pending == 0 && asked.isNotBlank()) { Text(tr("More detail", "और विस्तार")) }
+            if (!result.sourceOnly && !result.storedCopy) OutlinedButton(onClick = onMoreDetail, enabled = !busy && pending == 0 && asked.isNotBlank()) { Text(tr("More detail", "और विस्तार")) }
             OutlinedButton(onClick = { shareOpen = true }) { Text(tr("Share answer", "उत्तर भेजें")) }
         }
         if (warning != null && inVisit) Button(onClick = { onEscalate(question) }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), modifier = Modifier.fillMaxWidth()) { Text(tr("Escalate to ANM", "ANM को सूचित करें")) }
-        if (showFamily && ai != null && !result.sourceOnly && familyText.isNotBlank()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+        if (showFamily && ai != null && !result.sourceOnly && !result.storedCopy && familyText.isNotBlank()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(tr("For the family", "परिवार के लिए"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 if (familyModel.isNotBlank()) AiResultChip(familyModel, !familyModel.startsWith("On-phone"), familyMs, hindi)

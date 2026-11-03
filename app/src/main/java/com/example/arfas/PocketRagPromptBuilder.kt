@@ -133,6 +133,10 @@ object PocketRagPromptBuilder {
                 appendLine("The sources give different values (${packet.valueConflict.take(300)}). Give each value with its " +
                     "source ID and say which case or document it applies to; do not pick one or combine them.")
             }
+            if (packet.goldReference.isNotBlank()) {
+                appendLine(packet.goldReference.take(2_000))
+                appendLine()
+            }
             appendLine(KbReplyText.scriptInstruction(packet.query))
             append("Current question: ").append(packet.query)
             // Last line the model reads (a 3B model follows the latest instruction best): a complete

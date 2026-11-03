@@ -82,7 +82,8 @@ class PocketRagEvidenceAssembler(
         val bestRelevance = eligible.firstNotNullOfOrNull { it.attributes["kb_best_relevance"]?.toFloatOrNull() }
         val valueConflict = eligible.firstNotNullOfOrNull { it.attributes["kb_value_conflict"]?.trim()?.takeIf { v -> v.isNotBlank() } }.orEmpty()
         val terms = eligible.firstNotNullOfOrNull { it.attributes["kb_terms"]?.trim()?.takeIf { v -> v.isNotBlank() } }.orEmpty()
-        return PocketRagPacket(selected, query.trim(), chosen, sources, complete, clauseCoverage, followUpOf, bestRelevance, valueConflict, terms)
+        val goldReference = eligible.firstNotNullOfOrNull { it.attributes["kb_gold_reference"]?.trim()?.takeIf { v -> v.isNotBlank() } }.orEmpty()
+        return PocketRagPacket(selected, query.trim(), chosen, sources, complete, clauseCoverage, followUpOf, bestRelevance, valueConflict, terms, goldReference)
     }
 
     private fun queryPlanClauseCount(query: String): Int =

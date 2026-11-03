@@ -31,7 +31,9 @@ object ArogyaVerifiedAnswers {
 
     data class VerifiedItem(
         val id: String, val qEn: String, val qHi: String,
-        val keywords: List<String>, val aEn: String, val sources: List<VerifiedSource>
+        val keywords: List<String>, val aEn: String, val sources: List<VerifiedSource>,
+        /** Part C3: Hindi answer for the stored-copy fallback ("" when the asset lacks it). */
+        val aHi: String = ""
     )
 
     data class Scored(val item: VerifiedItem, val score: Double, val strong: Boolean, val medium: Boolean)
@@ -103,7 +105,7 @@ object ArogyaVerifiedAnswers {
             }
             out += VerifiedItem(
                 o.optString("id"), q?.optString("en").orEmpty(), q?.optString("hi").orEmpty(),
-                kws, a?.optString("en").orEmpty(), srcs
+                kws, a?.optString("en").orEmpty(), srcs, a?.optString("hi").orEmpty()
             )
         }
         return out

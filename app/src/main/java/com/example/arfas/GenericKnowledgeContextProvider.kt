@@ -529,6 +529,37 @@ class GenericKnowledgeContextProvider(
         val sourceRefs = mutableListOf<String>()
         val blocks = mutableListOf<String>()
         var used = 0
+        // Part C2: gold pinning. A strong/medium verified-answer match pins its guide
+        // passages at the top of the packet; a strong match also adds reference notes
+        // (kb_gold_reference). Trailing normal blocks are dropped so the prompt stays
+        // within today's size. The answer is still generated live from guide passages.
+        val goldScored = if (ArogyaVerifiedAnswers.count() == 0) null else runCatching {
+            val vec = repository.embedForGold(ArogyaVerifiedAnswers.QUERY_PREFIX + query)
+            ArogyaVerifiedAnswers.match(query, queryVec = vec)
+        }.getOrNull()
+        val goldPin = if (goldScored != null && (goldScored.strong || goldScored.medium))
+            runCatching { repository.goldPassages(goldScored.item.sources) }.getOrDefault(emptyList())
+        else emptyList()
+        val goldRef = if (goldScored != null && goldScored.strong && goldPin.isNotEmpty())
+            ArogyaGoldPin.referenceBlock(goldScored.item.aEn) else ""
+        val pinnedChunkIds = goldPin.map { it.chunkId }.toSet()
+        goldPin.forEach { g ->
+            val sourceId = "S${packed.size + 1}"
+            val ref = ArogyaGoldPin.sourceRef(sourceId, g.title, g.locator)
+            val body = "\u2022 ${g.text}"
+            packed += GenericKnowledgePackRepository.Hit(
+                chunkId = g.chunkId, originalChunkId = null, docId = g.docId,
+                sourceName = null, pageNumber = null, locator = g.locator,
+                headingContext = null, unitKind = null, content = body,
+                similarity = 1f, rankScore = 1f, smallFragment = false, sourceTitle = g.title
+            )
+            sourceRefs += ref
+            val block = "Source ID: $sourceId\nSource: $ref\n$body"
+            blocks += block
+            used += block.length + 2
+        }
+        // Normal-block chars before gold trimming (key-facts branch sets the exact figure).
+        var goldNormalBefore = 0
         // Key facts: the sentences of the top passages that answer the question (cross-encoder
         // scored). A small answer model reads ~1,300 characters of exactly relevant text instead of
         // several full pages. Falls back to whole passages when no fact could be selected.
@@ -556,14 +587,20 @@ class GenericKnowledgeContextProvider(
             // Passages in the order of their best fact; the calculation goes with the first fact that states a percentage.
             val passageOrder = windows?.map { it.first } ?: keyFacts.map { it.passage }.distinct()
             val windowText = windows?.toMap().orEmpty()
-            // Documents that state different values of the same kind: the answer must give each with
-            // its source instead of copying the first one.
-            valueConflict = GenericKbKeyFacts.conflict(keyFacts, { p -> result.hits[p].sourceName ?: result.hits[p].docId })
-                ?.let { c -> c.statements.joinToString("; ") { (p, v) -> "S${passageOrder.indexOf(p) + 1}: $v" } }.orEmpty()
             val calcPassage = keyFacts.firstOrNull { KbCalculator.percentages(it.text).isNotEmpty() }?.passage ?: passageOrder.first()
+            // Part C2: normal blocks pack into a temp list first; pinned duplicates are
+            // skipped (they already sit at the top) and trailing blocks drop to fit.
+            val normalBlocks = ArrayList<String>()
+            val normalRefs = ArrayList<String>()
+            val normalHits = ArrayList<GenericKnowledgePackRepository.Hit>()
+            val passageByNormal = ArrayList<Int>()
+            val sidByPassage = HashMap<Int, String>()
             passageOrder.forEach { p ->
                 val hit = result.hits[p]
-                val sourceId = "S${packed.size + 1}"
+                if (hit.chunkId in pinnedChunkIds) return@forEach
+                val sourceId = "S${packed.size + normalBlocks.size + 1}"
+                sidByPassage[p] = sourceId
+                passageByNormal += p
                 val label = sourceLabel(hit).trim().ifBlank { hit.sourceName.orEmpty().ifBlank { hit.docId } }
                 val sourceRef = buildString {
                     append(sourceId).append(" :: ").append(label.replace('\n', ' ').take(500))
@@ -576,11 +613,33 @@ class GenericKnowledgeContextProvider(
                     if (calculation != null && p == calcPassage) appendLine(calculation.describe())
                 }.trim()
                 val block = "Source ID: $sourceId\nSource: $sourceRef\n$body"
-                packed += hit.copy(content = body)
-                sourceRefs += sourceRef
-                blocks += block
-                used += block.length + 2
+                normalHits += hit.copy(content = body)
+                normalRefs += sourceRef
+                normalBlocks += block
             }
+            goldNormalBefore = normalBlocks.sumOf { it.length + 2 }
+            val keptNormals = ArogyaGoldPin.trimNormal(used, normalBlocks, goldNormalBefore)
+            repeat(keptNormals.size) { i ->
+                packed += normalHits[i]
+                sourceRefs += normalRefs[i]
+                blocks += normalBlocks[i]
+                used += normalBlocks[i].length + 2
+            }
+            // Documents that state different values of the same kind: the answer must give each with
+            // its source instead of copying the first one. S-ids follow the pinned layout
+            // (a skipped duplicate already sits at the top under its pinned id); statements
+            // from trimmed passages are dropped so every cited S-id has its block.
+            val keptPassages = passageByNormal.take(keptNormals.size).toSet()
+            val sidForConflict: (Int) -> String = { p ->
+                sidByPassage[p] ?: run {
+                    val gi = goldPin.indexOfFirst { it.chunkId == result.hits[p].chunkId }
+                    if (gi >= 0) "S${gi + 1}" else "S?"
+                }
+            }
+            valueConflict = GenericKbKeyFacts.conflict(keyFacts, { p -> result.hits[p].sourceName ?: result.hits[p].docId })
+                ?.let { c -> c.statements
+                    .filter { (p, _) -> p in keptPassages || result.hits[p].chunkId in pinnedChunkIds }
+                    .joinToString("; ") { (p, v) -> "${sidForConflict(p)}: $v" } }.orEmpty()
             if (ArogyaFlags.r10WideCloud && windows != null) {
                 runCatching {
                     val narrowSet = windows.map { it.first }.toSet()
@@ -588,12 +647,12 @@ class GenericKnowledgeContextProvider(
                         result.hits.take((ONLINE_PASSAGES + 2).coerceAtMost(result.hits.size)).map { it.content },
                         keyFacts, count = ONLINE_PASSAGES, maxChars = ONLINE_WINDOW_CHARS
                     )
-                    val extra = wideWindows.filter { it.first !in narrowSet }
+                    val extra = wideWindows.filter { it.first !in narrowSet && result.hits[it.first].chunkId !in pinnedChunkIds }
                     if (extra.isNotEmpty()) {
                         val refs = mutableListOf<String>()
                         val blks = extra.mapIndexed { i, (p, text) ->
                             val hit = result.hits[p]
-                            val sid = "S${passageOrder.size + i + 1}"
+                            val sid = "S${packed.size + i + 1}"
                             val label = sourceLabel(hit).trim().ifBlank { hit.sourceName.orEmpty().ifBlank { hit.docId } }
                             val ref = buildString {
                                 append(sid).append(" :: ").append(label.replace('\n', ' ').take(500))
@@ -612,6 +671,7 @@ class GenericKnowledgeContextProvider(
                 "chars=${blocks.sumOf { it.length }} " +
                 "calc=${calculation?.describe()?.take(160) ?: "-"} best=${keyFacts.firstOrNull()?.score?.let { "%.2f".format(Locale.US, it) } ?: "-"}")
         } else result.hits.forEachIndexed { index, hit ->
+            if (hit.chunkId in pinnedChunkIds) return@forEachIndexed
             val sourceId = "S${packed.size + 1}"
             val label = sourceLabel(hit).trim().ifBlank { hit.sourceName.orEmpty().ifBlank { hit.docId } }
             val sourceRef = buildString {
@@ -662,6 +722,13 @@ class GenericKnowledgeContextProvider(
                 "chars=${packetText.length} budget=$evidenceCharBudget coverage=${clauseCoverage.joinToString(",") { "${it.clauseId}:${it.state}" }} " +
                 "sources=${packed.joinToString(",") { it.chunkId.take(10) }} elapsed=${System.currentTimeMillis() - started}ms"
         )
+        if (goldPin.isNotEmpty()) {
+            val normalChars = blocks.drop(goldPin.size).sumOf { it.length + 2 }
+            val before = if (goldNormalBefore > 0) goldNormalBefore else normalChars
+            Log.i(TAG, "AROGYA_GOLD pin id=${goldScored?.item?.id} strong=${goldScored?.strong} " +
+                "pinned=${goldPin.size} tokens_before=${ArogyaGoldPin.estimateTokens(before)} " +
+                "tokens_after=${ArogyaGoldPin.estimateTokens(packetText.length + goldRef.length)}")
+        }
         return BaselineContextAttachment(
             sourceId = "knowledge_pack:${result.packId}",
             text = packetText,
@@ -682,6 +749,7 @@ class GenericKnowledgeContextProvider(
                 "kb_source_refs" to sourceRefs.joinToString("\n"),
                 "kb_wide_extra" to wideExtraText,
                 "kb_wide_extra_refs" to wideExtraRefs,
+                "kb_gold_reference" to goldRef,
                 "kb_primary_source_ref" to sourceRefs.firstOrNull().orEmpty().take(700),
                 "kb_record_ids" to packed.joinToString(",") { it.chunkId }.take(1_500),
                 "kb_current_record_ids" to packed.joinToString(",") { it.chunkId }.take(1_500),

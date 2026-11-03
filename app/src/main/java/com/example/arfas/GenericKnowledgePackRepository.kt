@@ -1,6 +1,7 @@
 package com.example.arfas
 
 import android.content.Context
+import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -171,6 +172,100 @@ class GenericKnowledgePackRepository(
     fun meaningfulLiteralSlots(query: String): Set<String> = corpusStatistics.meaningfulLiteralSlots(query)
     fun currentPackId(): String = status.packId
     fun currentDisplayName(): String = status.displayName
+
+    /** Part C2: one query embedding for gold matching (the same call the KB uses). */
+    suspend fun embedForGold(text: String): FloatArray? =
+        runCatching { semanticEngine.embed(text) }.getOrNull()
+
+    /**
+     * Part C2: resolve verified-answer sources to passages from the installed pack.
+     * chunk_id first; on an older DB, source_name + page_number + a quote substring.
+     * Missing ids are skipped (logged) so pinning never invents evidence.
+     */
+    fun goldPassages(sources: List<ArogyaVerifiedAnswers.VerifiedSource>): List<ArogyaGoldPin.GoldPassage> {
+        val database = db ?: return emptyList()
+        val table = status.tableName
+        if (table.isBlank() || !table.all { it.isLetterOrDigit() || it == '_' }) return emptyList()
+        val out = ArrayList<ArogyaGoldPin.GoldPassage>()
+        runCatching {
+            val columns = columnsFor(database, table)
+            if ("content" !in columns) return@runCatching
+            val catalog = runCatching { loadSourceCatalog(database) }.getOrDefault(emptyMap())
+            for (s in sources.take(4)) {
+                val row = goldRowById(database, table, columns, s.chunkId)
+                    ?: goldRowBySourcePage(database, table, columns, s)
+                if (row == null) {
+                    Log.i(TAG, "AROGYA_GOLD skip chunk=${s.chunkId} src=${s.sourceName} p=${s.page}")
+                    continue
+                }
+                val title = catalog[row.sourceName]?.title?.takeIf { it.isNotBlank() }
+                    ?: s.title.takeIf { it.isNotBlank() }
+                    ?: row.sourceName ?: row.docId
+                val locator = row.locator?.takeIf { it.isNotBlank() }
+                    ?: row.page?.let { "p.$it" } ?: "p.${s.page}"
+                out += ArogyaGoldPin.GoldPassage(
+                    chunkId = row.chunkId.ifBlank { "gold-${s.chunkId}" },
+                    docId = row.docId.ifBlank { row.sourceName.orEmpty() },
+                    title = title, locator = locator, text = row.content.trim()
+                )
+            }
+        }.onFailure { Log.w(TAG, "AROGYA_GOLD resolve failed ${it.message}") }
+        return out.filter { it.text.isNotBlank() }
+    }
+
+    private data class GoldRow(
+        val chunkId: String, val docId: String, val sourceName: String?,
+        val page: Int?, val locator: String?, val content: String
+    )
+
+    private fun goldRowCols(columns: Set<String>): String {
+        fun sel(c: String, fb: String): String = if (c in columns) c else "$fb AS $c"
+        return listOf(
+            sel("chunk_id", "''"), sel("doc_id", "''"), sel("source_name", "NULL"),
+            sel("page_number", "NULL"), sel("locator", "NULL"), sel("content", "''")
+        ).joinToString(",")
+    }
+
+    private fun goldRowFromCursor(c: Cursor): GoldRow = GoldRow(
+        chunkId = c.getString(0).orEmpty(), docId = c.getString(1).orEmpty(),
+        sourceName = if (c.isNull(2)) null else c.getString(2),
+        page = if (c.isNull(3)) null else c.getInt(3),
+        locator = if (c.isNull(4)) null else c.getString(4),
+        content = c.getString(5).orEmpty()
+    )
+
+    private fun goldRowById(database: SQLiteDatabase, table: String, columns: Set<String>, chunkId: Int): GoldRow? {
+        if ("chunk_id" in columns) database.rawQuery(
+            "SELECT ${goldRowCols(columns)} FROM $table WHERE chunk_id = ? LIMIT 1",
+            arrayOf(chunkId.toString())
+        ).use { c -> if (c.moveToNext()) return goldRowFromCursor(c) }
+        // Older packs key rows by id (verified chunk_id = procurement_chunks.id).
+        if ("id" in columns) database.rawQuery(
+            "SELECT ${goldRowCols(columns)} FROM $table WHERE id = ? LIMIT 1",
+            arrayOf(chunkId.toString())
+        ).use { c -> if (c.moveToNext()) return goldRowFromCursor(c) }
+        return null
+    }
+
+    private fun goldRowBySourcePage(
+        database: SQLiteDatabase, table: String, columns: Set<String>,
+        s: ArogyaVerifiedAnswers.VerifiedSource
+    ): GoldRow? {
+        if ("source_name" !in columns || "page_number" !in columns) return null
+        if (s.sourceName.isBlank()) return null
+        val needle = s.quote.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT).take(80)
+        if (needle.length < 24) return null
+        database.rawQuery(
+            "SELECT ${goldRowCols(columns)} FROM $table WHERE source_name = ? AND page_number = ? LIMIT 12",
+            arrayOf(s.sourceName, s.page.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                val row = goldRowFromCursor(c)
+                if (row.content.replace(Regex("\\s+"), " ").lowercase(Locale.ROOT).contains(needle)) return row
+            }
+        }
+        return null
+    }
 
     suspend fun inspectInstalled(): Status = withContext(Dispatchers.IO) {
         inspectFile(dbFile).also { inspected ->

@@ -46,6 +46,8 @@ data class PocketRagPacket(
     val valueConflict: String = "",
     /** Abbreviations in the question with the pack's own long forms ("AON = acceptance of necessity"); empty when none. */
     val terms: String = "",
+    /** Part C2: reference notes from a strongly matched verified answer (guidance only, never evidence). */
+    val goldReference: String = "",
     /** Item 4 "More detail": replaces the type length line (ArogyaQuestionType.detailLine); empty = normal line. */
     val lengthLineOverride: String = "",
     /** Item 4 "More detail": the output budget is the full per-part ceiling, not the evidence estimate. */

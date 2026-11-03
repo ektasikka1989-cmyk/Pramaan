@@ -46,7 +46,9 @@ data class ArogyaAiResult(val text:String,val provider:String,val elapsedMs:Long
     /** Item 5a: the ☁ Check online answer kept beside the offline one (Offline | Online tabs). */
     val onlineText:String="",val onlineSources:List<ArogyaSource> = emptyList(),
     val onlineSegments:List<ArogyaOfficialAnswer.CitedSegment> = emptyList(),val onlineMs:Long=0L,val onlineTier:Int=0,
-    val onlineProvider:String="")
+    val onlineProvider:String="",
+    /** Part C3: labeled stored copy shown only when the model failed/timed out (strong match). */
+    val storedCopy:Boolean=false)
 
 class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val features:Phase1FeatureBundle,private val onlineKey:()->String = {""},
     /** Pramaan's own attachment manager: photo/PDF text is read on the phone (ML Kit OCR, PDF text). */
@@ -258,6 +260,22 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
                 // so the next answer never appends to rejected text; the card shows "checking…".
                 onLocalAbort = { synchronized(draft) { draft.setLength(0) }; request.onProgress?.invoke(ArogyaProgress("checking")) })
         }
+        // Part C3: when the model fails or times out and a verified answer matches
+        // strongly, show its stored copy with the "AI unavailable" label instead of
+        // an error. Anything else (cancel, setup checks) still throws as before.
+        fun storedFallback(reason: String): ArogyaAiResult? {
+            val elapsed = System.currentTimeMillis() - t0
+            // Same query C2 matched seconds ago: match() reuses its cached vector.
+            val scored = runCatching { ArogyaVerifiedAnswers.match(question) }.getOrNull() ?: return null
+            val hindiQ = KbReplyText.dominantScript(question) == KbReplyText.Script.DEVANAGARI
+            val built = ArogyaGoldPin.storedCopyIfStrong(scored, hindiQ) ?: return null
+            Log.i(TAG, "AROGYA_GOLD fallback id=${scored.item.id} score=${"%.3f".format(java.util.Locale.US, scored.score)} reason=$reason")
+            val first = scored.item.sources.firstOrNull()
+            return ArogyaAiResult(built.first, "ArogyaDoot • stored copy", elapsed, sources = built.second,
+                quote = first?.quote.orEmpty(),
+                quoteSource = if (first == null) "" else "${first.title}, page ${first.page}",
+                timingsMs = mapOf("pramaan_turn" to elapsed), tier = 1, storedCopy = true)
+        }
         val turn = try {
             try {
                 doChat()
@@ -265,7 +283,10 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
                 // A real cancel (back button, Stop) must never trigger a retry — but a cancel
                 // caused by the network dying mid-call falls back to the phone instead.
                 if (e is CancellationException && e !is TimeoutCancellationException && !ArogyaNetWatch.justLost()) throw e
-                if (runtime.answerPolicy() != AnswerPolicy.CLOUD_FIRST && !ArogyaNetWatch.justLost()) throw e
+                if (runtime.answerPolicy() != AnswerPolicy.CLOUD_FIRST && !ArogyaNetWatch.justLost()) {
+                    storedFallback("model_failed")?.let { return it }
+                    throw e
+                }
                 Log.w(TAG, "AROGYA_ASK_FALLBACK cloud failed (${e.message?.take(100)}), retrying on the phone")
                 // In-memory override only: the saved setting is never touched, so a
                 // crash mid-retry cannot leave it changed.
@@ -273,8 +294,14 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
                 try { doChat() } finally { runtime.policyOverride = null }
             }.also { answered = true }
         } catch (e: TimeoutCancellationException) {
+            storedFallback("timeout")?.let { return it }
             Log.w(TAG, "AROGYA_ASK_TIMEOUT after ${ASK_TIMEOUT_MS / 1000}s")
             error("The answer is taking too long. Try again, or ask a shorter question — your visit is saved.")
+        } catch (e: Exception) {
+            // Retry-path failure (not a cancel, not a setup check — those are outside this try).
+            if (e is CancellationException) throw e
+            storedFallback("model_failed")?.let { return it }
+            throw e
         } finally {
             // Used attachments are released; on failure they stay attached for a retry.
             attachments?.releaseTurnAttachments(turnFiles.map { it.id }, consumed = answered)
