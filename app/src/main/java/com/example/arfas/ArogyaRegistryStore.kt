@@ -185,7 +185,7 @@ class ArogyaRegistryStore private constructor(private val context: Context, priv
         val growthNote = if (growthSvg.isNotBlank()) ArogyaGrowth.weightNote(b.mcp.weights).orEmpty() else ""
         val ancTrend = if (b.category == BenCategory.PREGNANT) ArogyaGrowth.ancTrend(b.mcp.ancDetails) else ""
         return ArogyaDocRender.mcpDoc(b, all, today, ArogyaDocPdf.header(context), ArogyaDocPdf.todayStr(),
-            t["mcp"].orEmpty(), t["css"].orEmpty(), growthSvg, growthNote, ancTrend)
+            t["mcp"].orEmpty(), t["css"].orEmpty(), growthSvg, growthNote, ancTrend, state.value.forms)
     }
 
     /** MCP card shared as a PDF. */

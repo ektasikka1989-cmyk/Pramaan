@@ -60,3 +60,28 @@ manually".
   guided override resolves spec + first empty column.
 - To be checked manually: Record buttons → guided flow → save for each
   new section; FP timing table on an FP visit; × cells in the form viewer.
+
+### A3. MCP card document page by page
+- Audit: `mcp.html` was a single flow (band + boxes + ANC + schedule-based
+  immunization + weights + growth); `mcpDoc` read only `Beneficiary.mcp`;
+  all phone callers go through `ArogyaRegistryStore.mcpDoc`; fixed footer
+  cannot vary per page, so per-page provenance goes in section lines.
+- Changed (`Final A.3`): template laid out page by page with breaks —
+  p.3 Identification, p.4 Checkup, p.5 ANC, p.6 Danger signs/Delivery prep
+  (exact card wording), p.7 PNC, p.8 Newborn + HBYC, p.27 IFA, pp.28–31
+  Growth chart, pp.36–37 Immunization. Pastel headers (pink ANC, yellow
+  PNC, purple immunization); per-page `As per MCP Card (MoHFW/MoWCD) p.N`
+  lines; title `Mother and Child Protection Card (digital record)`; no
+  logos. Section tables built from form entries with card-tick fallbacks
+  (`mcpDoc` takes `forms`, store passes them); immunization merges entry
+  dates with the card's given-dates. Growth SVG restyled: dark green /
+  yellow / orange bands, pink border for girls, blue for boys.
+- Files: `doc_templates/mcp.html`, `doc_templates/doc.css`,
+  `ArogyaDocRender.kt`, `ArogyaRegistryStore.kt`, `ArogyaGrowth.kt`,
+  `DocRenderTest.kt`, `GrowthTest.kt`.
+- Tests: full host gate 41 suites green (DocRenderTest 38, GrowthTest 28);
+  BUILD SUCCESSFUL.
+- Verified on host: page order, pastel classes, source lines, fallbacks
+  (ANC ticks, BCG date), no unreplaced placeholders, portrait.
+- To be checked manually: MCP PDF on phone for Neha + baby (all pages,
+  page breaks, pastel print colors, growth chart, SAMPLE watermark).

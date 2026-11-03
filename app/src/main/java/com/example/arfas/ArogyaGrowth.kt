@@ -137,8 +137,9 @@ object ArogyaGrowth {
 
     /**
      * Inline SVG of the growth chart for the MCP card PDF (WebView renders it
-     * for preview and print). Zone bands (green/yellow/red) + reference curves
-     * + the child's dots joined by a line. "" when unplottable.
+     * for preview and print). Zone bands (dark green/yellow/orange) + reference
+     * curves + the child's dots joined by a line; pink border for girls, blue
+     * for boys. "" when unplottable.
      */
     fun svg(sex: String, dob: String, weights: List<WeightEntry>, table: Table,
         width: Int = 520, height: Int = 300): String {
@@ -157,9 +158,11 @@ object ArogyaGrowth {
         }
         val sb = StringBuilder()
         sb.append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"$width\" height=\"$height\" viewBox=\"0 0 $width $height\">")
+        val border = if (sex.equals("M", true) || sex.equals("Male", true)) "#1e88e5" else "#ec407a"
+        sb.append("<rect x=\"0\" y=\"0\" width=\"$width\" height=\"$height\" fill=\"#ffffff\" stroke=\"$border\" stroke-width=\"3\"/>")
         sb.append("<rect x=\"$ml\" y=\"$mt\" width=\"$pw\" height=\"$ph\" fill=\"#e6f4ea\"/>")
         sb.append("<polygon points=\"${band(l.m2)}\" fill=\"#fef7e0\"/>")
-        sb.append("<polygon points=\"${band(l.m3)}\" fill=\"#fce8e6\"/>")
+        sb.append("<polygon points=\"${band(l.m3)}\" fill=\"#fde8d8\"/>")
         // Y gridlines: 0, quarters, max.
         for (i in 0..4) {
             val v = l.yMax * i / 4.0
@@ -176,14 +179,14 @@ object ArogyaGrowth {
                 "text-anchor=\"middle\">${m}m</text>")
         }
         sb.append("<text x=\"${ml + pw}\" y=\"${height - 8}\" font-size=\"9\" text-anchor=\"end\">WHO weight-for-age</text>")
-        sb.append("<polyline points=\"${pts(l.median)}\" fill=\"none\" stroke=\"#188038\" stroke-width=\"1.5\"/>")
-        sb.append("<polyline points=\"${pts(l.m2)}\" fill=\"none\" stroke=\"#e37400\" stroke-width=\"1\" stroke-dasharray=\"4,2\"/>")
-        sb.append("<polyline points=\"${pts(l.m3)}\" fill=\"none\" stroke=\"#d93025\" stroke-width=\"1\" stroke-dasharray=\"4,2\"/>")
+        sb.append("<polyline points=\"${pts(l.median)}\" fill=\"none\" stroke=\"#137333\" stroke-width=\"1.5\"/>")
+        sb.append("<polyline points=\"${pts(l.m2)}\" fill=\"none\" stroke=\"#f9ab00\" stroke-width=\"1\" stroke-dasharray=\"4,2\"/>")
+        sb.append("<polyline points=\"${pts(l.m3)}\" fill=\"none\" stroke=\"#e8710a\" stroke-width=\"1\" stroke-dasharray=\"4,2\"/>")
         if (l.dots.size > 1) sb.append("<polyline points=\"${l.dots.joinToString(" ") {
             "${"%.1f".format(X(it.x))},${"%.1f".format(Y(it.y))}" }}\" " +
             "fill=\"none\" stroke=\"#1a73e8\" stroke-width=\"1.5\"/>")
         l.dots.forEach { d ->
-            val c = when (d.zone) { Zone.GREEN -> "#188038"; Zone.YELLOW -> "#e37400"; Zone.RED -> "#d93025" }
+            val c = when (d.zone) { Zone.GREEN -> "#137333"; Zone.YELLOW -> "#f9ab00"; Zone.RED -> "#e8710a" }
             sb.append("<circle cx=\"${"%.1f".format(X(d.x))}\" cy=\"${"%.1f".format(Y(d.y))}\" r=\"4\" " +
                 "fill=\"$c\" stroke=\"#fff\" stroke-width=\"1\"><title>${d.date}: ${d.kg} kg</title></circle>")
         }

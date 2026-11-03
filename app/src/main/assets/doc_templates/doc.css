@@ -30,6 +30,18 @@ table.grid td.hlcol { background: #fff3c4; }
 /* MCP card */
 .mcpband { background: #f8c8dc; border: 2px solid #a02060; text-align: center; font-weight: bold;
   font-size: 15px; padding: 6px; margin-bottom: 6px; }
+.mcppage { break-before: page; }
+.mcppage.first { break-before: auto; }
+.pagetitle { font-size: 14px; font-weight: bold; text-align: center; margin: 0; }
+.pagesrc { font-size: 9px; text-align: center; color: #444; margin: 0 0 6px 0; }
+table.grid.ph-anc th { background: #f8c8dc; }
+table.grid.ph-pnc th { background: #fff3b0; }
+table.grid.ph-imm th { background: #d9c8f0; }
+table.grid.ph-id th { background: #d3e3fd; }
+table.grid.ph-check th { background: #c8f0d4; }
+.dangerbox { border: 1px solid #555; padding: 5px 7px; margin-bottom: 6px; font-size: 10px; }
+.dangerbox h4 { margin: 0 0 3px 0; font-size: 11px; }
+.dangerbox ol { margin: 2px 0; padding-left: 18px; }
 .mcpband small { display: block; font-size: 10px; font-weight: normal; }
 table.boxes { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
 table.boxes td.box { border: 2px solid #2030a0; vertical-align: top; width: 50%; padding: 5px 7px; }

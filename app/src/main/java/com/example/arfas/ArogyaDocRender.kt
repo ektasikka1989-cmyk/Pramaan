@@ -163,33 +163,137 @@ object ArogyaDocRender {
     }
 
     /**
-     * Mother and Child Protection Card in the printed card's shape: pink header band,
-     * boxed mother/child details, ANC table, immunization table, weight record.
-     * Filled values render blue (handwriting-style); blanks stay ruled-empty.
+     * Mother and Child Protection Card in the printed card's page order: p.3 Identification,
+     * p.4 Checkup, p.5 ANC, p.6 Danger signs/Delivery prep, p.7 PNC, p.8 Newborn + HBYC,
+     * p.27 IFA, pp.28–31 Growth chart, pp.36–37 Immunization. Pastel headers (pink ANC,
+     * yellow PNC, purple immunization). Filled values render blue (handwriting-style);
+     * blanks stay ruled-empty. Section tables come from the matching form entries,
+     * falling back to the card's own ticks/totals.
      */
     fun mcpDoc(
         b: Beneficiary, all: List<Beneficiary>, today: LocalDate,
         header: DocHeader, dateVal: String, template: String, css: String,
-        growthSvg: String = "", growthNote: String = "", ancTrend: String = ""
+        growthSvg: String = "", growthNote: String = "", ancTrend: String = "",
+        forms: List<FormEntry> = emptyList()
     ): FilledDoc {
         val mother = if (b.category == BenCategory.CHILD)
             all.firstOrNull { it.household == b.household && it.household.isNotBlank() && it.category != BenCategory.CHILD } else b
-        val ancRows = if (b.category == BenCategory.PREGNANT) (1..5).map { n ->
-            val d = b.mcp.ancDetails[n]
-            mapOf("n" to "ANC $n", "date" to (b.mcp.anc[n]?.let(::dd) ?: ""),
-                "weight" to (d?.weightKg.orEmpty()), "bp" to (d?.bp.orEmpty()), "hb" to (d?.hb.orEmpty()),
-                "td" to (b.mcp.tdDates.getOrNull(n - 1)?.let(::dd) ?: ""),
-                "ifa" to (if (n == 1 && b.mcp.ifaTablets > 0) "${b.mcp.ifaTablets}" else ""))
-        } else emptyList()
-        val dob = runCatching { LocalDate.parse(b.dob) }.getOrNull()
-        val vaccines = ArogyaSchedule.VACCINE_CONTACTS.zip(ArogyaSchedule.VACCINE_AGES).flatMap { (c, age) ->
-            c.codes.map { code ->
-                mapOf("name" to (ArogyaSchedule.VACCINE_NAMES[code] ?: code), "age" to age,
-                    "due" to (dob?.let { dd(c.due(it).toString()) } ?: ""),
-                    "given" to (b.mcp.vaccines[code]?.let(::dd) ?: ""))
+        val child = if (b.category == BenCategory.CHILD) b
+            else all.firstOrNull { it.category == BenCategory.CHILD && it.household == b.household && b.household.isNotBlank() }
+        fun entriesOf(personId: String, formId: String) = forms.filter { it.beneficiaryId == personId && it.formId == formId }
+        fun latest(personId: String, formId: String) = entriesOf(personId, formId).maxByOrNull { it.date }?.values.orEmpty()
+        fun cellVal(personId: String, formId: String, col: Int, id: String, fallback: String = ""): String {
+            if (id == "date") return entriesOf(personId, formId).filter { it.column == col }.maxByOrNull { it.date }
+                ?.date?.let(::dd).orEmpty().ifBlank { fallback }
+            val raw = entriesOf(personId, formId).filter { it.column == col }.maxByOrNull { it.date }
+                ?.values?.get(id).orEmpty().ifBlank { fallback }
+            if (raw.isBlank()) return ""
+            return runCatching { dd(LocalDate.parse(raw).toString()) }.getOrDefault(raw)
+        }
+        fun gridHtml(spec: FormSpec, personId: String, fieldIds: List<Pair<String, String>>, cls: String,
+            fallbacks: Map<Pair<Int, String>, String> = emptyMap()): String = buildString {
+            append("<table class=\"grid $cls\"><thead><tr><th></th>")
+            spec.columns.forEach { append("<th>${esc(it)}</th>") }
+            append("</tr></thead><tbody>")
+            fieldIds.forEach { (id, label) ->
+                append("<tr><td>${esc(label)}</td>")
+                spec.columns.indices.forEach { c ->
+                    val f = spec.fields.firstOrNull { it.id == id }
+                    val v = if (f != null && !ArogyaOfficialForms.appliesAt(f, c)) "×"
+                        else cellVal(personId, spec.id, c, id, fallbacks[c to id].orEmpty())
+                    append("<td class=\"hand\">${esc(v)}</td>")
+                }
+                append("</tr>")
+            }
+            append("</tbody></table>")
+        }
+        fun boxHtml(pairs: List<Pair<String, String>>): String {
+            if (pairs.isEmpty()) return ""
+            return buildString {
+                append("<table class=\"grid\"><tbody>")
+                pairs.forEach { (k, v) -> append("<tr><td>${esc(k)}</td><td class=\"hand\">${esc(v)}</td></tr>") }
+                append("</tbody></table>")
             }
         }
-        val weights = b.mcp.weights.sortedBy { it.date }.map { mapOf("date" to dd(it.date), "kg" to "${it.kg} kg") }
+        // ANC visit grid (card p.5 rows) with card-tick fallbacks.
+        val ancSpec = ArogyaOfficialForms.MCP_ANC
+        val ancFb = mutableMapOf<Pair<Int, String>, String>()
+        (0..4).forEach { c ->
+            val n = c + 1
+            ancFb[c to "date"] = b.mcp.anc[n]?.let(::dd).orEmpty()
+            val d = b.mcp.ancDetails[n]
+            ancFb[c to "weight"] = d?.weightKg.orEmpty(); ancFb[c to "bp"] = d?.bp.orEmpty()
+            ancFb[c to "hb"] = d?.hb.orEmpty()
+            ancFb[c to "td"] = b.mcp.tdDates.getOrNull(n - 1)?.let(::dd).orEmpty()
+            ancFb[c to "ifa"] = if (n == 1 && b.mcp.ifaTablets > 0) "${b.mcp.ifaTablets}" else ""
+        }
+        val ancGrid = gridHtml(ancSpec, b.id, listOf("date" to "Date", "pog" to "POG (Weeks)", "weight" to "Weight (Kg)",
+            "pulse" to "Pulse Rate", "bp" to "Blood Pressure", "pallor" to "Pallor", "oedema" to "Oedema",
+            "jaundice" to "Jaundice", "complaints" to "Any Complaints", "hb" to "Hemoglobin",
+            "td" to "Td (TT on older cards)", "ifa" to "IFA tablets count"), "ph-anc", ancFb)
+        val ancLatest = latest(b.id, "mcp_anc")
+        fun once(ids: List<String>): List<Pair<String, String>> = ids.mapNotNull { id ->
+            val v = ancLatest[id].orEmpty()
+            if (v.isBlank()) null else (ancSpec.fields.firstOrNull { it.id == id }?.label ?: id) to v
+        }
+        val ancOnce = boxHtml(once(listOf("gravida", "prev_live_births", "last_delivery_at", "delivery_institution", "preg_outcome",
+            "oc_aph", "oc_eclampsia", "oc_pih", "oc_anaemia", "oc_obstructed", "oc_pph", "oc_lscs", "oc_anomaly", "oc_abortion", "oc_other",
+            "ph_tb", "ph_hyp", "ph_heart", "ph_diabetes", "ph_asthma", "ph_other", "height", "heart", "lungs", "breasts",
+            "urine_albumin", "urine_sugar", "hiv", "syphilis", "usg", "gdm", "blood_group", "bg_date",
+            "tsh", "hbsag", "blood_sugar", "opt_other", "calcium", "albendazole")))
+        // Checkup (card p.4): latest ANC values, else card totals.
+        val checkupPairs = listOf(
+            "Td" to (ancLatest["td"].orEmpty().ifBlank { b.mcp.tdDates.joinToString(", ") { dd(it) } }),
+            "IFA tablets (total)" to (ancLatest["ifa"].orEmpty().ifBlank { if (b.mcp.ifaTablets > 0) "${b.mcp.ifaTablets}" else "" }),
+            "Calcium tablets" to ancLatest["calcium"].orEmpty(),
+            "Albendazole" to ancLatest["albendazole"].orEmpty()).filter { it.second.isNotBlank() }
+        val checkupBox = boxHtml(checkupPairs)
+        // Delivery preparation (card p.6): recorded values.
+        val prepBox = boxHtml(listOf(
+            "Identified delivery institution" to ancLatest["delivery_institution"].orEmpty(),
+            "Hospital identified, transport arranged" to ancLatest["bp_facility"].orEmpty(),
+            "Registered under JSY" to ancLatest["jsy"].orEmpty()).filter { it.second.isNotBlank() })
+        // PNC + baby (card p.7): the mother's PNC entries, the child's baby entries.
+        val mid = mother?.id ?: b.id
+        val pncSpec = ArogyaOfficialForms.MCP_PNC
+        val pncLatest = latest(mid, "mcp_pnc")
+        fun pncOnce(ids: List<String>): List<Pair<String, String>> = ids.mapNotNull { id ->
+            val v = pncLatest[id].orEmpty()
+            if (v.isBlank()) null else (pncSpec.fields.firstOrNull { it.id == id }?.label ?: id) to v
+        }
+        val pncOnce = boxHtml(pncOnce(listOf("del_place_detail", "pnc_outcome", "term", "stay_days", "del_complications", "cried", "bf_1hr", "vitk")))
+        val pncGrid = gridHtml(pncSpec, mid, listOf("date" to "Date", "complaints" to "Any complaints", "pallor" to "Pallor", "pulse" to "Pulse Rate",
+            "bp" to "Blood Pressure", "temp" to "Temperature", "breasts" to "Breasts (Soft/Engorged)",
+            "nipples" to "Nipples (Cracked/Normal)", "uterus" to "Uterus Tenderness (Present/Absent)",
+            "bleeding" to "Bleeding P/V (Excessive/Normal)", "lochia" to "Lochia (Healthy/Foul Smelling)",
+            "episiotomy" to "Episiotomy/Tear (Healthy/Infected)", "fp_counsel" to "Family Planning Counselling (Y/N)",
+            "complications_ref" to "Any other Complications and Referral Requirements (Y/N)"), "ph-pnc")
+        val cid = child?.id ?: ""
+        val babySpec = ArogyaOfficialForms.MCP_BABY
+        val babyGrid = gridHtml(babySpec, cid, listOf("date" to "Date") + babySpec.fields.map { it.id to it.label }, "ph-pnc")
+        // HBYC (card p.8), IFA (card p.27).
+        val hbycSpec = ArogyaOfficialForms.MCP_HBYC
+        val hbycGrid = gridHtml(hbycSpec, cid, listOf("date" to "Date") + hbycSpec.fields.map { it.id to it.label }, "")
+        val ifaSpec = ArogyaOfficialForms.MCP_IFA
+        val ifaGrid = gridHtml(ifaSpec, cid, listOf("date" to "Date") + ifaSpec.fields.map { it.id to it.label }, "")
+        // Immunization (card pp.36–37): entry dates, else the card's own given-dates.
+        val immSpec = ArogyaOfficialForms.MCP_IMM
+        val immCode = mapOf("bcg" to "BCG", "opv0" to "OPV0", "hepb0" to "HEPB0", "opv1" to "OPV1", "penta1" to "PENTA1",
+            "rota1" to "RVV1", "pcv1" to "PCV1", "ipv1" to "FIPV1", "opv2" to "OPV2", "penta2" to "PENTA2", "rota2" to "RVV2",
+            "opv3" to "OPV3", "penta3" to "PENTA3", "rota3" to "RVV3", "pcv2" to "PCV2", "ipv2" to "FIPV2",
+            "mr1" to "MR1", "vita1" to "VITA1", "pcvb" to "PCVB", "mr2" to "MR2", "dptb1" to "DPTB1", "opvb" to "OPVB", "dptb2" to "DPTB2")
+        val immAgeRows = immSpec.fields.filter { it.onlyColumns.isNotEmpty() }.map { it.id to it.label } +
+            listOf("next_vac_date" to "Next Vaccination Date")
+        val immGrid = gridHtml(immSpec, cid, immAgeRows, "ph-imm",
+            immSpec.fields.flatMap { f -> f.onlyColumns.map { c -> (c to f.id) to
+                ((child ?: b).mcp.vaccines[immCode[f.id]]?.let(::dd).orEmpty()) } }.toMap())
+        val immLatest = latest(cid, "mcp_imm")
+        val immOnce = boxHtml(listOf("vita3", "vita4", "vita5", "vita6", "vita7", "vita8", "vita9",
+            "sia_vaccine", "sia_date", "miss_name", "miss_date", "miss_reason", "miss_next", "miss_anm").mapNotNull { id ->
+            val v = immLatest[id].orEmpty()
+            if (v.isBlank()) null else (immSpec.fields.firstOrNull { it.id == id }?.label ?: id) to v
+        })
+        val weights = (child ?: b).mcp.weights.sortedBy { it.date }.map { mapOf("date" to dd(it.date), "kg" to "${it.kg} kg") }
         val html = fill(
             template,
             headerValues(header) + mapOf(
@@ -198,21 +302,28 @@ object ArogyaDocRender {
                 "dateVal" to dateVal,
                 "motherName" to (mother?.name ?: b.relativeName), "motherRelative" to (mother?.relativeName.orEmpty()),
                 "motherAge" to (mother?.age.orEmpty()), "motherPhone" to (mother?.phone ?: b.phone),
-                "address" to "${b.household}, ${b.village}".trim(',', ' '), "rchId" to b.rchId,
-                "lmp" to (if (b.lmp.isNotBlank()) dd(b.lmp) else ""),
-                "edd" to (ArogyaRegistryLogic.edd(b)?.toString()?.let(::dd) ?: ""),
-                "childName" to (if (b.category == BenCategory.CHILD) b.name else ""),
-                "childSex" to (if (b.category == BenCategory.CHILD) b.sex else ""),
-                "childDob" to (if (b.category == BenCategory.CHILD && b.dob.isNotBlank()) dd(b.dob) else ""),
-                "birthWeight" to (b.birthWeightKg?.let { "$it kg" } ?: ""),
-                "deliveryPlace" to (if (b.deliveryPlace == "HOME") "Home" else if (b.deliveryPlace.isBlank()) "" else "Institution"),
-                "termPreterm" to (if (b.category == BenCategory.CHILD) (if (b.preterm) "Preterm" else "Term") else ""),
-                "childRch" to (if (b.category == BenCategory.CHILD) b.rchId else ""),
-                "hasAnc" to if (b.category == BenCategory.PREGNANT) "1" else "", "ancRows" to ancRows,
-                "vaccines" to vaccines,
+                "address" to "${b.household}, ${b.village}".trim(',', ' '), "rchId" to (mother?.rchId ?: b.rchId),
+                "lmp" to ((mother?.lmp ?: b.lmp).takeIf { it.isNotBlank() }?.let(::dd) ?: ""),
+                "edd" to ((mother ?: b).let { ArogyaRegistryLogic.edd(it) }?.toString()?.let(::dd) ?: ""),
+                "childName" to (child?.name ?: ""), "childSex" to (child?.sex ?: ""),
+                "childDob" to (child?.dob?.takeIf { it.isNotBlank() }?.let(::dd) ?: ""),
+                "birthWeight" to ((child?.birthWeightKg ?: b.birthWeightKg)?.let { "$it kg" } ?: ""),
+                "deliveryPlace" to ((child?.deliveryPlace ?: b.deliveryPlace).let { if (it == "HOME") "Home" else if (it.isBlank()) "" else "Institution" }),
+                "termPreterm" to (child?.let { if (it.preterm) "Preterm" else "Term" } ?: ""),
+                "childRch" to (child?.rchId ?: ""),
+                "hasCheckup" to if (b.category == BenCategory.PREGNANT || checkupPairs.isNotEmpty()) "1" else "",
+                "checkupBox" to checkupBox,
+                "hasAnc" to if (b.category == BenCategory.PREGNANT) "1" else "",
+                "ancTable" to ancGrid, "ancOnce" to ancOnce,
+                "prepBox" to prepBox,
+                "hasPnc" to if (b.category == BenCategory.MOTHER || b.category == BenCategory.CHILD) "1" else "",
+                "pncOnce" to pncOnce, "pncTable" to pncGrid, "babyTable" to babyGrid,
+                "hasHbyc" to if (child != null) "1" else "", "hbycTable" to hbycGrid,
+                "hasIfa" to if (child != null) "1" else "", "ifaTable" to ifaGrid,
                 "hasWeights" to if (weights.isNotEmpty()) "1" else "", "weights" to weights,
                 "hasGrowth" to if (growthSvg.isNotBlank()) "1" else "", "growthSvg" to growthSvg,
                 "growthNote" to growthNote, "ancTrend" to ancTrend,
+                "immTable" to immGrid, "immOnce" to immOnce,
                 "wmText" to if (watermarkFor(listOf(b.id), b.demo)) "SAMPLE" else ""
             )
         )

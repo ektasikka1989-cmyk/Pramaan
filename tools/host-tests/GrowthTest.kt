@@ -53,7 +53,7 @@ fun main() {
     check("trend-single", ArogyaGrowth.ancTrend(mapOf(1 to AncDetail("45", "", ""))) == "")
     // SVG for the MCP card PDF.
     val svg = ArogyaGrowth.svg("F", "2026-10-26", nb, t)
-    check("svg", "<svg" in svg && "circle" in svg && "#d93025" in svg && "</svg>" in svg)
+    check("svg", "<svg" in svg && "circle" in svg && "#e8710a" in svg && "#ec407a" in svg && "</svg>" in svg)
     check("svg-empty", ArogyaGrowth.svg("F", "2026-10-26", emptyList(), t) == "")
     // MCP card doc renders the chart section with no placeholders left.
     val mcpT = File("../../app/src/main/assets/doc_templates/mcp.html").readText(Charsets.UTF_8)
@@ -64,7 +64,7 @@ fun main() {
         deliveryPlace = "INSTITUTION", demo = true, mcp = McpCard(weights = nb))
     val dg = ArogyaDocRender.mcpDoc(baby, listOf(baby), LocalDate.parse("2026-11-02"), h, "02/11/2026",
         mcpT, css, svg, ArogyaGrowth.weightNote(nb).orEmpty(), "")
-    check("mcp-growth", "{{" !in dg.html && "<svg" in dg.html && "Growth chart" in dg.html)
+    check("mcp-growth", "{{" !in dg.html && "<svg" in dg.html && "Growth Chart" in dg.html)
     val pw = Beneficiary(id = "demo-pw", name = "Meena Devi", village = "Rampur", sex = "F",
         category = BenCategory.PREGNANT, lmp = "2026-04-01", demo = true,
         mcp = McpCard(anc = mapOf(1 to "2026-06-01", 2 to "2026-09-01"), ancDetails = det))

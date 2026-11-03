@@ -69,6 +69,11 @@ fun main() {
     val dp = ArogyaDocRender.mcpDoc(pw, listOf(pw), LocalDate.parse("2026-11-02"), h, "02/11/2026", mcpT, css)
     check("mcp-anc", "Antenatal visits" in dp.html && "110/70" in dp.html && "Antenatal visits" !in dm.html)
     check("mcp-edd", "17/05/27" in dp.html && "EDD" in dp.html)
+    check("mcp-pages", "digital record" in dm.html && "As per MCP Card (MoHFW/MoWCD) p.5" in dp.html &&
+        "pp.36–37" in dm.html && "Danger Signs and Delivery Preparation" in dm.html)
+    check("mcp-pastel", "ph-anc" in dp.html && "ph-pnc" in dm.html && "ph-imm" in dm.html)
+    check("mcp-pnc-page", "Post-natal Care (Mother)" in dm.html && "Care of Baby" in dm.html &&
+        "Home Based Child Care after 6 Weeks" in dm.html && "IFA Syrup and Deworming" in dm.html)
     // Answer doc: cited segments + numbered sources.
     val segs = listOf(ArogyaOfficialAnswer.CitedSegment("Keep the cord clean.", listOf("1")),
         ArogyaOfficialAnswer.CitedSegment("The scheme started in 2025.", listOf("W1")))
