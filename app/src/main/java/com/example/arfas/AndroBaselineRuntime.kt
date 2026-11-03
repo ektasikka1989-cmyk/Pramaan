@@ -1023,7 +1023,8 @@ class AndroBaselineRuntime(
         val passages = blocks.map { it.sourceId to it.text }
         val proof = runCatching {
             withTimeoutOrNull(PROOF_TIMEOUT_MS) {
-                AnswerProof.check(result.text, passages, genericKnowledgeProvider?.proofScorer(), packet.sources.map { it.display })
+                AnswerProof.check(result.text, passages, genericKnowledgeProvider?.proofScorer(), packet.sources.map { it.display },
+                    pairScorer = genericKnowledgeProvider?.proofPairScorer())
             }
         }.onFailure { if (it is CancellationException) throw it }.getOrNull() ?: return result
         if (proof.total == 0) return result

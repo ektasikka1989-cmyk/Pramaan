@@ -163,6 +163,30 @@ class GenericKbReranker(
         return if (fresh != null) out else null
     }
 
+    /**
+     * UI2 speed pass: (question, passage) pairs with DIFFERENT questions, read in one batched run
+     * (the answer-proof check: one statement per pair). Same scores and cache as [score]; one
+     * call instead of one per statement (~1.1 s each on the phone).
+     */
+    suspend fun scorePairs(pairs: List<Pair<String, String>>): FloatArray? {
+        if (!ready()) return null
+        if (pairs.isEmpty()) return FloatArray(0)
+        val started = System.currentTimeMillis()
+        val keys = pairs.map { pairKey(it.first, it.second) }
+        val out = FloatArray(pairs.size)
+        val missing = ArrayList<Int>()
+        synchronized(scoreCache) { keys.forEachIndexed { i, k -> scoreCache[k]?.let { out[i] = it } ?: missing.add(i) } }
+        val fresh = if (missing.isEmpty()) FloatArray(0) else withContext(Dispatchers.IO) {
+            val rows = missing.map { i -> pairIds(pairs[i].first, pairs[i].second) ?: return@withContext null }
+            scoreRows(rows)
+        }
+        if (fresh != null) {
+            synchronized(scoreCache) { missing.forEachIndexed { j, i -> out[i] = fresh[j]; scoreCache[keys[i]] = fresh[j] } }
+        }
+        Log.i(TAG, "RERANK_TIMING pairs=${pairs.size} cached=${pairs.size - missing.size} ok=${fresh != null} mixed=true elapsed=${System.currentTimeMillis() - started}ms")
+        return if (fresh != null) out else null
+    }
+
     private fun pairKey(question: String, passage: String): String = "${question.length}:${question.hashCode()}:${passage.length}:${passage.hashCode()}:${question.take(40)}"
 
     /** Recent (question, passage) scores, least recently used dropped first. */
@@ -188,8 +212,14 @@ class GenericKbReranker(
 
     private suspend fun scoreUnchecked(question: String, passages: List<String>): FloatArray? = withContext(Dispatchers.IO) {
         if (passages.isEmpty()) return@withContext FloatArray(0)
-        val sess = ensureSession() ?: return@withContext null
         val rows = passages.map { p -> pairIds(question, p) ?: return@withContext null }
+        scoreRows(rows)
+    }
+
+    /** Logits for ready-made pair rows (same order). */
+    private suspend fun scoreRows(rows: List<LongArray>): FloatArray? = withContext(Dispatchers.IO) {
+        if (rows.isEmpty()) return@withContext FloatArray(0)
+        val sess = ensureSession() ?: return@withContext null
         // Small batches of similar length: each batch is padded only to its own longest pair and
         // memory stays bounded. One batch of all pairs padded to the longest measured ~1.2 s per
         // pair on the phone (94 pairs, 110 s); questions with ~20 pairs had measured ~0.5 s per pair.

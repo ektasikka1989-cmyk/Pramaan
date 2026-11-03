@@ -75,7 +75,13 @@ object AnswerProof {
         passages: List<Pair<String, String>>,
         scorer: (suspend (String, List<String>) -> FloatArray?)?,
         /** Source labels ("Manual … 2025 — page 69"): numbers the answer takes from them are not claims. */
-        sourceLabels: List<String> = emptyList()
+        sourceLabels: List<String> = emptyList(),
+        /**
+         * UI2 speed pass: scores every (statement, passage) pair in one batched run. Same pairs and
+         * the same scores as [scorer] called once per statement; falls back to [scorer] when null or
+         * when the batch fails.
+         */
+        pairScorer: (suspend (List<Pair<String, String>>) -> FloatArray?)? = null
     ): Result {
         val labelNumbers = sourceLabels.flatMap { numbers(it) }.toSet()
         val list = statements(answer)
@@ -84,17 +90,33 @@ object AnswerProof {
         val passageNumbers = texts.map { numbers(it) }
         val passageWords = texts.map { words(it) }
         val out = ArrayList<Statement>(list.size)
-        for (s in list) {
+        // Which passages each statement is read with (see the comment in the loop).
+        fun keepFor(s: String): Set<Int> {
+            val sw = words(s)
+            val sNums = numbers(s)
+            return if (texts.size <= PROOF_CANDIDATES) texts.indices.toSet()
+                else (texts.indices.sortedByDescending { i -> (sw intersect passageWords[i]).size }.take(PROOF_CANDIDATES) +
+                    (if (sNums.isEmpty()) emptyList() else texts.indices.filter { passageNumbers[it].containsAll(sNums) })).toSet()
+        }
+        // All statements' pairs in one batched run, when available.
+        val batched: List<FloatArray?>? = if (scorer == null || pairScorer == null) null else run {
+            val idxs = list.map { s -> texts.indices.filter { it in keepFor(s) } }
+            val flat = list.indices.flatMap { k -> idxs[k].map { list[k] to texts[it] } }
+            val all = runCatching { pairScorer(flat) }.getOrNull()?.takeIf { it.size == flat.size } ?: return@run null
+            var pos = 0
+            list.indices.map { k ->
+                val part = FloatArray(idxs[k].size) { all[pos + it] }
+                pos += idxs[k].size
+                FloatArray(texts.size) { i -> idxs[k].indexOf(i).let { j -> if (j >= 0) part[j] else UNSCORED } }
+            }
+        }
+        for ((sIndex, s) in list.withIndex()) {
             // The re-ranker reads each statement with its PROOF_CANDIDATES best passages by shared
             // words (the others keep a score that never wins): half the pairs, several seconds less on
             // the phone after every answer, and the passage a statement came from shares its words.
-            val sw = words(s)
-            val sNums = numbers(s)
-            // Passages holding every number the statement states are always read too.
-            val keep = if (texts.size <= PROOF_CANDIDATES) texts.indices.toSet()
-                else (texts.indices.sortedByDescending { i -> (sw intersect passageWords[i]).size }.take(PROOF_CANDIDATES) +
-                    (if (sNums.isEmpty()) emptyList() else texts.indices.filter { passageNumbers[it].containsAll(sNums) })).toSet()
-            val scores = scorer?.let { sc ->
+            // Passages holding every number the statement states are always read too (keepFor).
+            val keep = keepFor(s)
+            val scores = batched?.get(sIndex) ?: scorer?.let { sc ->
                 val idx = texts.indices.filter { it in keep }
                 runCatching { sc(s, idx.map { texts[it] }) }.getOrNull()?.takeIf { it.size == idx.size }?.let { part ->
                     FloatArray(texts.size) { i -> idx.indexOf(i).let { j -> if (j >= 0) part[j] else UNSCORED } }

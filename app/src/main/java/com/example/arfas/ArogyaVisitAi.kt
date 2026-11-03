@@ -276,6 +276,9 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
                 quoteSource = if (first == null) "" else "${first.title}, page ${first.page}",
                 timingsMs = mapOf("pramaan_turn" to elapsed), tier = 1, storedCopy = true)
         }
+        // UI2 speed pass: an offline (phone-model) turn reads at most 4,000 chars of evidence.
+        // Cloud turns (online, or the Cloud-first setting) keep the full budget.
+        GenericKnowledgeContextProvider.phoneEvidenceCap = !online && runtime.answerPolicy() != AnswerPolicy.CLOUD_FIRST
         val turn = try {
             try {
                 doChat()
@@ -291,6 +294,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
                 // In-memory override only: the saved setting is never touched, so a
                 // crash mid-retry cannot leave it changed.
                 runtime.policyOverride = AnswerPolicy.LOCAL_FIRST
+                GenericKnowledgeContextProvider.phoneEvidenceCap = true
                 try { doChat() } finally { runtime.policyOverride = null }
             }.also { answered = true }
         } catch (e: TimeoutCancellationException) {
@@ -303,6 +307,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             storedFallback("model_failed")?.let { return it }
             throw e
         } finally {
+            GenericKnowledgeContextProvider.phoneEvidenceCap = false
             // Used attachments are released; on failure they stay attached for a retry.
             attachments?.releaseTurnAttachments(turnFiles.map { it.id }, consumed = answered)
         }

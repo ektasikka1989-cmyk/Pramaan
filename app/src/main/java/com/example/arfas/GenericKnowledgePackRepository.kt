@@ -1418,6 +1418,10 @@ class GenericKnowledgePackRepository(
     fun keyFactScorer(): (suspend (String, List<String>) -> FloatArray?)? =
         if (semanticEngine.isReady && reranker.ready()) { q, units -> reranker.score(q, units) } else null
 
+    /** UI2: mixed-question pair scorer (one batched run); null when the re-ranker is not ready. */
+    fun pairScorer(): (suspend (List<Pair<String, String>>) -> FloatArray?)? =
+        if (semanticEngine.isReady && reranker.ready()) { pairs -> reranker.scorePairs(pairs) } else null
+
     /** Long forms of the abbreviations in [question], from the active pack's own text. */
     fun aliasExpansions(question: String): List<String> = phase14Profile?.expansions(question).orEmpty()
     fun unknownWords(question: String): List<String> = phase14Profile?.unknownWords(question).orEmpty()

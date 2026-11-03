@@ -62,6 +62,13 @@ class GenericKnowledgeContextProvider(
         const val CHECK_PASSAGES = 16
         /** Evidence budget (characters) from which the model reads whole passages instead of key sentences. */
         const val PASSAGE_MODE_MIN_CHARS = 3_000
+        /**
+         * Speed pass (UI2): offline phone answers read at most this much evidence. Measured on the
+         * phone: ~6,000 chars made a 2,135-token prompt and 29 s before the first word.
+         */
+        const val PHONE_EVIDENCE_CAP_CHARS = 4_000
+        /** Set per turn by the Ask path: true only while an offline (phone-model) turn runs. */
+        @Volatile @JvmStatic var phoneEvidenceCap: Boolean = false
     }
 
     data class LookupState(
@@ -175,6 +182,9 @@ class GenericKnowledgeContextProvider(
 
     /** The re-ranker as a statement-vs-passages scorer for [AnswerProof]; null until it is ready. */
     fun proofScorer(): (suspend (String, List<String>) -> FloatArray?)? = repository.keyFactScorer()
+
+    /** UI2: the same re-ranker reading every statement's pairs in one batched run. */
+    fun proofPairScorer(): (suspend (List<Pair<String, String>>) -> FloatArray?)? = repository.pairScorer()
 
     data class OtherPackMatch(val packId: String, val displayName: String, val relevance: Float, val source: String)
 
@@ -344,11 +354,16 @@ class GenericKnowledgeContextProvider(
             "GENERIC_KB_RETRIEVAL_QUERY literal=${query.take(100)} resolved=${resolvedRetrievalQuery.take(180)} " +
                 "clauses=${queryPlan.clauses.size} literalSlots=${literalSlots.size} history=${acceptedHistory.size}"
         )
-        val evidenceCharBudget = GenericKbTokenBudget.evidenceCharBudget(
+        val modelEvidenceBudget = GenericKbTokenBudget.evidenceCharBudget(
             contextTokens = activeContextWindowTokens,
             query = resolvedRetrievalQuery,
             clauses = queryPlan.clauses.size
         )
+        // Offline phone turns only; "Check online" (widePassages) and cloud turns keep the full budget.
+        val evidenceCharBudget = if (phoneEvidenceCap && !widePassages)
+            minOf(modelEvidenceBudget, PHONE_EVIDENCE_CAP_CHARS) else modelEvidenceBudget
+        if (evidenceCharBudget != modelEvidenceBudget)
+            Log.i(TAG, "AROGYA_PHONE_EVIDENCE_CAP budget=$evidenceCharBudget model=$modelEvidenceBudget")
         val candidateWork = GenericKbTokenBudget.retrievalCandidatePool(
             evidenceCharBudget = evidenceCharBudget,
             clauses = queryPlan.clauses.size

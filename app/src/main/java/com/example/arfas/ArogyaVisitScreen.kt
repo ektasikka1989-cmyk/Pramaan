@@ -752,19 +752,18 @@ fun ArogyaVisitScreen(
     })
     val gv=if(aiVisitId==SOP_VISIT_ID) sopVisit else visit
     if(aiOpen && gv!=null && gv.id==aiVisitId) Dialog(onDismissRequest={ if(!aiBusy) aiOpen=false },properties=DialogProperties(usePlatformDefaultWidth=false)) {
-        Surface(Modifier.fillMaxWidth().fillMaxHeight(0.94f).statusBarsPadding().padding(12.dp),shape=MaterialTheme.shapes.large) {
-            Column(Modifier.padding(16.dp).imePadding(),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(6.dp),shape=MaterialTheme.shapes.large) {
+            Column(Modifier.padding(horizontal=12.dp,vertical=8.dp).imePadding(),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     Text(when(aiTask) { ArogyaAiTask.EXPLAIN->tr("Ask the ASHA guide","ASHA गाइड से पूछें");ArogyaAiTask.ORGANISE_NOTES->tr("Your AI visit draft","AI का विज़िट ड्राफ़्ट");ArogyaAiTask.HANDOVER->tr("Prepare ANM handover","ANM के लिए विवरण") },style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
                     AiBadge(if(aiTask==ArogyaAiTask.EXPLAIN) "Ask SOP" else "Organise notes")
                     if(aiTask==ArogyaAiTask.EXPLAIN) TextButton(onClick={
                         sopThreads=sopThreads-gv.id;aiResult=null;aiQuestion="";aiError="";familyText="";sopSuggestions=emptyList();sopSuggestTitle="";scope.launch { ai?.newConversation() }
                     },enabled=!aiBusy) {Text(tr("↺ New","↺ नई"))}
-                }
-                if(aiTask==ArogyaAiTask.EXPLAIN) {
-                    LaunchedEffect(aiOpen,aiVisitId) { if(aiOpen && sopGuideCount<0) sopGuideCount=ai?.guideLibrary()?.size ?: 0 }
-                    if(sopGuideCount>0) TextButton(onClick={guideFromSop=true;guideOpen=true}) {
-                        Text(tr("📖 Guides used ($sopGuideCount)","📖 इस्तेमाल गाइड ($sopGuideCount)"),style=MaterialTheme.typography.bodySmall)
+                    if(aiTask==ArogyaAiTask.EXPLAIN) {
+                        LaunchedEffect(aiOpen,aiVisitId) { if(aiOpen && sopGuideCount<0) sopGuideCount=ai?.guideLibrary()?.size ?: 0 }
+                        if(sopGuideCount>0) TextButton(onClick={guideFromSop=true;guideOpen=true}) { Text("📖 $sopGuideCount") }
+                        TextButton(onClick={aiOpen=false},enabled=!aiBusy) { Text("✕",style=MaterialTheme.typography.titleMedium) }
                     }
                 }
                 // Warning appears after "Ask", not while typing (it used to push the text out of view).
@@ -916,12 +915,21 @@ fun ArogyaVisitScreen(
                     LaunchedEffect(aiOpen,aiVisitId) {
                         if(aiResult==null) thread.lastOrNull()?.result?.let { aiResult=it;aiCopy=it.text;aiCapture=it.captureItems }
                     }
+                    // UI2: the user dragging the list pauses following; reaching the bottom again resumes it.
+                    var userScrolledUp by remember { mutableStateOf(false) }
+                    LaunchedEffect(chatState) {
+                        chatState.interactionSource.interactions.collect { if(it is androidx.compose.foundation.interaction.DragInteraction.Start) userScrolledUp=true }
+                    }
+                    LaunchedEffect(chatState) {
+                        snapshotFlow { chatState.canScrollForward }.collect { if(!it) userScrolledUp=false }
+                    }
+                    LaunchedEffect(aiStartedAt) { userScrolledUp=false }
                     LaunchedEffect(thread.size,aiBusy,aiDraft.length,aiError) {
                         runCatching {
-                            val info=chatState.layoutInfo
-                            val lastVisible=info.visibleItemsInfo.lastOrNull()?.index
-                            // Part B8: auto-scroll pauses while the user has scrolled up to read.
-                            if(info.totalItemsCount>0 && (lastVisible==null || lastVisible>=info.totalItemsCount-1)) chatState.animateScrollToItem(info.totalItemsCount-1)
+                            val total=chatState.layoutInfo.totalItemsCount
+                            // Part B8 + UI2: jump to the END of the last item (the newest streamed line),
+                            // without animation, and only while the user has not scrolled up to read.
+                            if(total>0 && !userScrolledUp) chatState.scrollToItem(total-1,100_000)
                         }
                     }
                     if(savedReady>0) Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)) {
@@ -976,7 +984,15 @@ fun ArogyaVisitScreen(
                             }
                         }
                     }
-                    ArogyaField(tr("Your question","आपका सवाल"),aiQuestion,!aiBusy,2) {aiQuestion=it.take(700)}
+                    if(!aiBusy) {
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        OutlinedTextField(value=aiQuestion,onValueChange={aiQuestion=it.take(700)},label={Text(tr("Your question","आपका सवाल"))},
+                            modifier=Modifier.weight(1f),minLines=1,maxLines=3)
+                        Button(onClick={askedQuestionForWarning=aiQuestion;runVisitAi(false,afterSafety=ArogyaUrgentTriage.assess(aiQuestion,gv)!=null)},
+                            enabled=!qFileBusy && pending==0 && (aiQuestion.isNotBlank() || qFiles.isNotEmpty())) {
+                            Text(tr("Ask","पूछें"))
+                        }
+                    }
                     Row(horizontalArrangement=Arrangement.spacedBy(4.dp),modifier=Modifier.horizontalScroll(rememberScrollState())) {
                         TextButton(onClick={questionDictation=true;if(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED) voice=true else mic.launch(Manifest.permission.RECORD_AUDIO)},enabled=!aiBusy) {Text(tr("🎤 Speak","🎤 बोलें"))}
                         TextButton(onClick={startPhoto("question")},enabled=!aiBusy && !qFileBusy && ai!=null && qFiles.size<3) {Text(tr("📷 Photo","📷 फ़ोटो"))}
@@ -989,7 +1005,7 @@ fun ArogyaVisitScreen(
                         TextButton(onClick={ai?.clearAttachments();qFiles=emptyList()},enabled=!aiBusy) {Text(tr("Remove","हटाएँ"))}
                     }
                     if(qFiles.isNotEmpty()) Text(tr("A photo is added to your question. A PDF is answered from that PDF itself.","फ़ोटो सवाल के साथ गाइड में खोजी जाती है। PDF का उत्तर उसी PDF से आता है।"),style=MaterialTheme.typography.bodySmall)
-                    if(sopSuggestions.isNotEmpty()) {
+                    if(sopSuggestions.isNotEmpty() && thread.isEmpty()) {
                         Text(tr("Ask about ", "पूछें ") + sopSuggestTitle.take(60) + ":",style=MaterialTheme.typography.bodySmall,fontWeight=FontWeight.Bold)
                         Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.horizontalScroll(rememberScrollState())) {
                             sopSuggestions.take(8).forEach { topic ->
@@ -997,10 +1013,7 @@ fun ArogyaVisitScreen(
                             }
                         }
                     }
-                    Button(onClick={askedQuestionForWarning=aiQuestion;runVisitAi(false,afterSafety=ArogyaUrgentTriage.assess(aiQuestion,gv)!=null)},enabled=!aiBusy && !qFileBusy && pending==0 && (aiQuestion.isNotBlank() || qFiles.isNotEmpty()),modifier=Modifier.fillMaxWidth()) {
-                        Text(if(aiBusy) tr("Working on your phone…","फ़ोन पर काम हो रहा है…") else tr("Ask the guide","गाइड से पूछें"))
                     }
-                    TextButton(onClick={aiOpen=false},enabled=!aiBusy) {Text(if(aiVisitId==SOP_VISIT_ID) tr("Close","बंद करें") else tr("Back to visit","विज़िट पर वापस"))}
                 } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 Button(onClick={askedQuestionForWarning=aiQuestion;runVisitAi(false,afterSafety=ArogyaUrgentTriage.assess(aiQuestion,gv)!=null)},enabled=!aiBusy && !qFileBusy && pending==0,modifier=Modifier.fillMaxWidth()) {
                     Text(if(aiBusy) tr("Working on your phone…","फ़ोन पर काम हो रहा है…") else tr("Create my visit draft","मेरा विज़िट ड्राफ़्ट बनाएँ"))
