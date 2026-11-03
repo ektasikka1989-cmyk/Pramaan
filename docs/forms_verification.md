@@ -120,13 +120,59 @@ Source line now: "Handbook for ASHA on HBYC, §5.4, pp. 63–66".
 ## 4. FP — Family planning entry
 
 No single national form; kept as an entry aid titled "Family planning entry — based on the MCP card FP page; state formats vary".
-Rows (method, counsel, condoms, ocp, napkins, ecp, ptk) are the app's entry format, not official rows — stated in the title/note rather than per-row tags. Not verifiable row-for-row until the MCP card PDF arrives.
+Rows (method, counsel, condoms, ocp, napkins, ecp, ptk) are the app's entry format, not official rows — stated in the title/note rather than per-row tags. The official "timing of initiation" table (Guidebook p.60) is now a read-only reference on FP visits; FP entry rows remain app format by design.
 
-## 5. MCP_ANC + MCP card document — BLOCKED
+## 5. MCP sections — verified against MCP Card Guidebook (MoHFW/MoWCD 2020)
 
-`_claude_work/sources/` is missing, so MCP_Card_2018.pdf is unavailable and the MCP card is not in the guide DB.
-Stopped without guessing: MCP-ANC row rebuild, immunization section, growth-chart section, MCP PDF relayout.
-Current rows stay as-is. Revisit when the PDF is placed.
+Source PDFs: `_claude_work/sources/MCP_Card_Guidebook_MoHFW_MoWCD_2020.pdf` (= `MCP_Card_2018.pdf`);
+field transcription in `docs/forms/MCP_CARD_SPEC.md`. Page numbers below are MCP card pages;
+Guidebook printed pages in brackets.
+
+### 5a. MCP_ANC (MCP p.5 [Guidebook p.12])
+Sections in card order: Pregnancy record · Obstetric complication in previous pregnancy (A–J) ·
+Past history (A–F) · Examination (Height, Heart, Lungs, Breasts) · Antenatal visits
+(Date, POG (Weeks), Weight (Kg), Pulse Rate, Blood Pressure, Pallor, Oedema, Jaundice,
+Any Complaints) · Abdominal examination · Essential investigations · Blood Group & Rh ·
+Optional investigations · Checkup (Td, IFA count, calcium, albendazole) · Danger signs
+(p.6 wording) · Birth preparedness. Columns ANC 1–4 + ANC 5 (PMSMA). ANC windows
+corrected to ≤12 / 14–26 / 28–36 / >36 (Integrated ASHA Module Part B p.197).
+HIV records Yes/No only, never a result. Height < 145 cm flags obstetric risk
+(Guidebook p.13). LMP/EDD and visit Date come from the registration record and the
+visit itself, not separate rows. No app-added rows.
+Source line now: "MCP Card p.5 (MoHFW/MoWCD) · Guidebook p.12".
+
+### 5b. MCP_PNC (MCP p.7 [Guidebook p.17])
+Delivery record (place detail, outcome, term, stay, complications, cried, BF within
+1 hr, Vitamin K) + Post partum care rows in card order. Columns 1st/3rd/7th Day,
+6th Week — the ANM's visits; the ASHA's HBNC schedule is unchanged and labelled
+separately. Date of delivery, baby weight/sex come from the linked records.
+Source line now: "MCP Card p.7 (MoHFW/MoWCD) · Guidebook p.17".
+
+### 5c. MCP_BABY (MCP p.7 [Guidebook p.17])
+Care-of-baby rows in card order (Weight, Urine, Stool, Diarrhoea, Vomiting,
+Convulsions, Activity, Sucking, Breathing, Chest Indrawing, Temperature, Jaundice,
+Cord); footnote "Three extra visits if birth weight < 2.5 kg". Danger rules use
+the MCP p.8 newborn wording. Same ANM columns as PNC.
+Source line now: "MCP Card p.7 (MoHFW/MoWCD) · Guidebook p.17".
+
+### 5d. MCP_IMM (MCP pp.36–37 [Guidebook p.65])
+Exact antigens per age column (incl. JE-1/JE-2, PCV series, IPV-1/IPV-2, Td at
+10 y and 16 y) + Vitamin A 1–9 + SIA/Other + missed-dose tracking (name, date,
+reason, next assured date, ANM sign) + Next vaccination date per column. The
+due-date schedule is unchanged; only labels and grouping follow the card.
+Source line now: "MCP Card p.36–37 (MoHFW/MoWCD) · Guidebook p.65".
+
+### 5e. MCP_IFA (MCP p.27 [Guidebook p.58])
+IFA bottle dates + family week ticks + Albendazole Dose-1/Dose-2 (1–2 y and
+older). The 7 reminder lines are the card's note.
+Source line now: "MCP Card p.27 (MoHFW/MoWCD) · Guidebook p.58".
+
+### 5f. MCP card document
+Laid out page by page (p.3, p.4, p.5, p.6, p.7, p.8, p.27, pp.28–31, pp.36–37)
+with pastel headers (pink ANC, yellow PNC, purple immunization), per-page
+`As per MCP Card (MoHFW/MoWCD) p.N` lines, no logos, titled
+"Mother and Child Protection Card (digital record)". Growth chart uses the
+bundled WHO data (pink border girls, blue boys).
 
 ## 6. RI Form 3 — House to House Survey Form (I pp. 56–57)
 
@@ -171,3 +217,4 @@ Source line now: "Handbook for ASHA Facilitators, Annexure 5, p. 53".
 - `FormsTest` RI Form 3 header: "C Father's / husband's name" → "C Father's name" (I p. 57: father's name).
 - `FormSpecsTest` last-row assertion: "Next visit due" → "Next visit due (app addition)" (row is ours, not the printed form's).
 - New `FormsVerifyTest`: official row labels/order/columns/source lines + (app addition) tags for ANNEX9, HBYC, SICK, RI Forms 3/4, Annexure 5.
+- Final A round (MCP card arrived): `FormsVerifyTest` extended with MCP_ANC/PNC/BABY/HBYC/IMM/IFA row labels, order, × cells, source lines + Neha household seeding. `FormSpecsTest`: 8 seeded form types, 22 patients, diary invariant is one line per person-day. `DocRenderTest`: MCP page order/pastels/source lines. `GrowthTest`: orange severe band + pink/blue chart border.

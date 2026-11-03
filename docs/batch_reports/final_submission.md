@@ -103,3 +103,11 @@ manually".
   ORS/IFA balances unchanged; prompt contains the antigen list.
 - To be checked manually: Neha + baby filled forms on phone; MCP card
   photo read of an immunization page.
+
+### A5. Verification doc + FormsVerifyTest
+- Audit: docs/forms_verification.md section 5 listed MCP rows as blocked; FormsVerifyTest had no MCP label/order checks.
+- Changed (Final A.5): section 5 rewritten as verified items 5a-5f against the MCP Card Guidebook (MoHFW/MoWCD 2020) with page numbers; FP timing note corrected.
+- Files: docs/forms_verification.md, tools/host-tests/FormsVerifyTest.
+- Tests: FormsVerifyTest 48/48 PASS; full host gate 41 suites green (gatea5.log); BUILD SUCCESSFUL.
+- Verified on host: official MCP row labels/order asserted; FP table source corrected.
+- To be checked manually: MCP card PDF look vs printed card (phone).

@@ -47,6 +47,59 @@ fun main() {
     val f5 = ArogyaForms.drugKitCard(emptyList())
     v(f5.headers[2] == "Symbol", "annex5 has the symbol column")
     v(f5.source.contains("Annexure 5") && f5.source.contains("p. 53"), "annex5 source line has pages")
+    // MCP sections (Final A): row labels, order, × cells, source lines.
+    val anc = ArogyaOfficialForms.MCP_ANC
+    v(anc.source.contains("MCP Card p.5") && anc.source.contains("Guidebook p.12"), "mcp-anc source line")
+    v(anc.columns == listOf("ANC 1", "ANC 2", "ANC 3", "ANC 4", "ANC 5 (PMSMA)"), "mcp-anc columns incl PMSMA")
+    v(anc.fields.map { it.section }.distinct() == listOf("Pregnancy record", "Obstetric complication in previous pregnancy",
+        "Past history", "Examination", "Antenatal visits", "Abdominal examination", "Essential investigations",
+        "Blood Group & Rh", "Optional investigations", "Checkup", "Danger signs", "Birth preparedness"), "mcp-anc section order")
+    v(anc.fields.map { it.id } == listOf("gravida", "prev_live_births", "last_delivery_at", "delivery_institution", "preg_outcome",
+        "oc_aph", "oc_eclampsia", "oc_pih", "oc_anaemia", "oc_obstructed", "oc_pph", "oc_lscs", "oc_anomaly", "oc_abortion", "oc_other",
+        "ph_tb", "ph_hyp", "ph_heart", "ph_diabetes", "ph_asthma", "ph_other", "height", "heart", "lungs", "breasts",
+        "pog", "weight", "pulse", "bp", "pallor", "oedema", "jaundice", "complaints",
+        "fundal_height", "lie", "fetal_mov", "fhr", "pv",
+        "hb", "urine_albumin", "urine_sugar", "hiv", "syphilis", "usg", "gdm", "blood_group", "bg_date",
+        "tsh", "hbsag", "blood_sugar", "opt_other", "td", "ifa", "calcium", "albendazole",
+        "d_bleed", "d_anaemia", "d_fever", "d_headache", "d_labour", "d_water", "bp_facility", "jsy"), "mcp-anc full row order")
+    v(anc.fields.first { it.id == "td" }.label == "Td (TT on older cards)" &&
+        anc.fields.first { it.id == "td" }.choices == listOf("None", "Td-1", "Td-2", "Booster"), "mcp-anc Td label + choices")
+    v(anc.fields.first { it.id == "hiv" }.type == QType.YESNO &&
+        anc.fields.first { it.id == "fetal_mov" }.choices == listOf("Normal", "Reduced", "Absent"), "mcp-anc HIV Yes/No + fetal choices")
+    val pnc = ArogyaOfficialForms.MCP_PNC
+    v(pnc.source.contains("MCP Card p.7") && pnc.columns == listOf("1st Day", "3rd Day", "7th Day", "6th Week"), "mcp-pnc source + ANM columns")
+    v(pnc.fields.map { it.id }.take(8) == listOf("del_place_detail", "pnc_outcome", "term", "stay_days", "del_complications", "cried", "bf_1hr", "vitk"), "mcp-pnc delivery record")
+    v(pnc.fields.map { it.id }.takeLast(13) == listOf("complaints", "pallor", "pulse", "bp", "temp", "breasts", "nipples", "uterus", "bleeding", "lochia", "episiotomy", "fp_counsel", "complications_ref"), "mcp-pnc PPC rows")
+    val mbb = ArogyaOfficialForms.MCP_BABY
+    v(mbb.columns == listOf("1st Day", "3rd Day", "7th Day", "6th Week") && mbb.note.contains("2.5 kg"), "mcp-baby columns + LBW footnote")
+    v(mbb.fields.map { it.id } == listOf("weight", "urine", "stool", "diarrhoea", "vomiting", "convulsions", "activity", "sucking", "breathing", "chest_indrawing", "temp", "jaundice", "cord"), "mcp-baby row order")
+    val mh = ArogyaOfficialForms.MCP_HBYC
+    v(mh.source.contains("MCP Card p.8"), "mcp-hbyc source line")
+    v(mh.fields.first { it.id == "cf1" }.onlyColumns == setOf(1, 2, 3, 4) &&
+        mh.fields.first { it.id == "measles" }.onlyColumns == setOf(2, 3, 4) &&
+        mh.fields.first { it.id == "vita" }.onlyColumns == setOf(2, 4) &&
+        mh.fields.first { it.id == "c_ebf" }.onlyColumns == setOf(0, 1) &&
+        mh.fields.first { it.id == "ifa_syrup" }.onlyColumns == setOf(1, 2, 3, 4), "mcp-hbyc x cells as printed")
+    val mi = ArogyaOfficialForms.MCP_IMM
+    v(mi.source.contains("p.36–37") && mi.columns.size == 9, "mcp-imm source + 9 age columns")
+    v(mi.fields.filter { it.onlyColumns == setOf(0) }.map { it.id } == listOf("opv0", "hepb0", "bcg") &&
+        mi.fields.filter { it.onlyColumns == setOf(4) }.map { it.id } == listOf("mr1", "je1", "vita1", "pcvb") &&
+        mi.fields.filter { it.onlyColumns == setOf(7) }.map { it.id } == listOf("td10") &&
+        mi.fields.filter { it.onlyColumns == setOf(8) }.map { it.id } == listOf("td16"), "mcp-imm antigens per column")
+    v(listOf("vita3", "vita9", "sia_vaccine", "miss_name", "miss_next", "next_vac_date").all { id -> mi.fields.any { it.id == id } }, "mcp-imm VitA/SIA/missed/next rows")
+    val mfa = ArogyaOfficialForms.MCP_IFA
+    v(mfa.source.contains("MCP Card p.27") && mfa.fields.first { it.id == "alb_dose1" }.onlyColumns == setOf(1, 2, 3, 4), "mcp-ifa source + albendazole ages")
+    v(ArogyaOfficialForms.FP_TIMING.size == 8 && ArogyaOfficialForms.FP_TIMING.all { it.size == 4 } &&
+        ArogyaOfficialForms.FP_TIMING[0][0] == "Female Sterilization", "fp timing table 8x4")
+    // Neha's household shows filled MCP records, all consistent.
+    val sm = ArogyaSampleVillage.build(java.time.LocalDate.of(2026, 11, 2)).registry
+    val nm = sm.beneficiaries.first { it.name == "Neha (mother)" }
+    val nb = sm.beneficiaries.first { it.name == "Baby of Neha" }
+    v(sm.forms.count { it.beneficiaryId == nm.id && it.formId == "mcp_anc" } == 4, "neha ANC x4")
+    v(sm.forms.count { it.beneficiaryId == nm.id && it.formId == "mcp_pnc" } == 2, "neha PNC x2")
+    v(sm.forms.count { it.beneficiaryId == nb.id && it.formId == "mcp_baby" } == 2, "baby BABY x2")
+    v(sm.forms.count { it.beneficiaryId == nb.id && it.formId == "mcp_imm" } == 1, "baby IMM x1")
+    v(setOf("BCG", "OPV0", "HEPB0").all { nb.mcp.vaccines.containsKey(it) }, "baby card carries birth vaccines")
     println(if (vf == 0) "ALL $vp PASS" else "$vf FAILED, $vp passed")
     if (vf > 0) kotlin.system.exitProcess(1)
 }
