@@ -14,16 +14,24 @@ import org.json.JSONObject
  *  - MCP_ANC:  MCP card antenatal record + pregnancy danger signs (MCP Card p.5, Guidebook p.12)
  *  - SICK:     Sick child checklist (HBYC Handbook §5.4, pp.63–66)
  *  - FP:       Eligible couple / family planning entry (MCP card FP page; state register formats vary)
+ *  - MCP_PNC:  Post-natal care, mother (MCP Card p.7, Guidebook p.17) — the ANM's day 1/3/7 + 6th week visits
+ *  - MCP_BABY: Care of baby (MCP Card p.7, Guidebook p.17) — the ANM's day 1/3/7 + 6th week visits
+ *  - MCP_HBYC: Home Based Child Care after 6 weeks (MCP Card p.8, Guidebook p.19) — the card's own HBYC table
+ *  - MCP_IMM:  Immunization record (MCP Card p.36–37, Guidebook p.65)
+ *  - MCP_IFA:  IFA syrup + deworming 6 m–5 y (MCP Card p.27, Guidebook p.58)
  */
 data class FieldSpec(val id: String, val label: String, val hi: String, val type: QType, val unit: String = "", val section: String = "",
-                     val dangerIf: String = "", val hint: String = "", val onlyFromColumn: Int = 0, val choices: List<String> = emptyList())
+                     val dangerIf: String = "", val hint: String = "", val onlyFromColumn: Int = 0, val choices: List<String> = emptyList(),
+                     /** Non-empty = the row applies only to these columns (MCP card × cells render for the rest). */
+                     val onlyColumns: Set<Int> = emptySet())
 data class FormSpec(val id: String, val title: String, val hi: String, val source: String, val columns: List<String>, val fields: List<FieldSpec>, val note: String = "")
 data class FilledValue(val value: String, val evidence: String, val source: String)   // source: ai | rule | asha
 data class FormEntry(val id: String = java.util.UUID.randomUUID().toString(), val beneficiaryId: String = "", val formId: String = "", val column: Int = 0,
                      val date: String = LocalDate.now().toString(), val values: Map<String, String> = emptyMap(), val sources: Map<String, String> = emptyMap())
 
 object ArogyaOfficialForms {
-    private fun yn(id: String, en: String, hi: String, sec: String, danger: String = "", hint: String = "") = FieldSpec(id, en, hi, QType.YESNO, section = sec, dangerIf = danger, hint = hint)
+    private fun yn(id: String, en: String, hi: String, sec: String, danger: String = "", hint: String = "", onlyColumns: Set<Int> = emptySet()) =
+        FieldSpec(id, en, hi, QType.YESNO, section = sec, dangerIf = danger, hint = hint, onlyColumns = onlyColumns)
 
     val ANNEX9 = FormSpec("annex9", "Home Visit Form — Examination of Mother and Newborn (Annexure 9)", "गृह भ्रमण फ़ॉर्म — माँ और नवजात की जाँच (अनुलग्नक 9)",
         "Handbook for ASHA Facilitators, Annexure 9, pp. 60–63", listOf("Day 1", "Day 3", "Day 7", "Day 14", "Day 21", "Day 28", "Day 42"), listOf(
@@ -183,7 +191,159 @@ object ArogyaOfficialForms {
             FieldSpec("ecp", "Emergency pills given", "आपातकालीन गोलियाँ", QType.NUMBER, "tablets", "Supplies"),
             FieldSpec("ptk", "Pregnancy test kits used", "प्रेगनेंसी टेस्ट किट", QType.NUMBER, "kits", "Medicines given")))
 
-    val ALL = listOf(ANNEX9, HBYC, MCP_ANC, SICK, FP)
+    val MCP_PNC = FormSpec("mcp_pnc", "MCP card — Post-natal care (mother)", "MCP कार्ड — प्रसव बाद देखभाल (माँ)",
+        "MCP Card p.7 (MoHFW/MoWCD) · Guidebook p.17. The ANM's visits (day 1/3/7, 6th week) — the ASHA's HBNC schedule stays unchanged.",
+        listOf("1st Day", "3rd Day", "7th Day", "6th Week"), listOf(
+            FieldSpec("del_place_detail", "Place of Delivery", "प्रसव कहाँ हुआ", QType.CHOICE, section = "Delivery record",
+                choices = listOf("Institution–Normal", "Institution–Assisted", "Institution–CS", "Home–SBA", "Home–Others")),
+            FieldSpec("pnc_outcome", "Live Birth / Still Birth", "जीवित / मृत जन्म", QType.CHOICE, section = "Delivery record", choices = listOf("Live Birth", "Still Birth")),
+            FieldSpec("term", "Term/Preterm/Abortion", "समय पर / समय से पहले / गर्भपात", QType.CHOICE, section = "Delivery record", choices = listOf("Term", "Preterm", "Abortion")),
+            FieldSpec("stay_days", "Period of Stay Post Delivery (if at institution)", "अस्पताल में प्रसव बाद ठहरना", QType.TEXT, section = "Delivery record"),
+            FieldSpec("del_complications", "Complications, if any (Specify)", "जटिलताएँ, अगर हों (लिखें)", QType.TEXT, section = "Delivery record"),
+            yn("cried", "Cried immediately after birth", "जन्म के तुरंत बाद रोया", "Delivery record"),
+            yn("bf_1hr", "Initiated exclusive breast feeding within 1 hour of birth", "जन्म के 1 घंटे में स्तनपान शुरू", "Delivery record"),
+            yn("vitk", "Injection Vitamin K", "विटामिन K इंजेक्शन", "Delivery record"),
+            FieldSpec("complaints", "Any complaints", "कोई शिकायत", QType.TEXT, section = "Post partum care"),
+            yn("pallor", "Pallor", "पीलापन", "Post partum care"),
+            FieldSpec("pulse", "Pulse Rate", "नब्ज़ दर", QType.NUMBER, "/min", "Post partum care"),
+            FieldSpec("bp", "Blood Pressure", "ब्लड प्रेशर", QType.TEXT, section = "Post partum care"),
+            FieldSpec("temp", "Temperature", "तापमान", QType.NUMBER, "°C", "Post partum care"),
+            FieldSpec("breasts", "Breasts (Soft/Engorged)", "स्तन (नरम/सूजे)", QType.CHOICE, section = "Post partum care", choices = listOf("Soft", "Engorged")),
+            FieldSpec("nipples", "Nipples (Cracked/Normal)", "निपल (फटे/सामान्य)", QType.CHOICE, section = "Post partum care", choices = listOf("Cracked", "Normal")),
+            FieldSpec("uterus", "Uterus Tenderness (Present/Absent)", "गर्भाशय में दर्द (है/नहीं)", QType.CHOICE, section = "Post partum care", choices = listOf("Present", "Absent")),
+            FieldSpec("bleeding", "Bleeding P/V (Excessive/Normal)", "खून (ज़्यादा/सामान्य)", QType.CHOICE, section = "Post partum care", choices = listOf("Excessive", "Normal")),
+            FieldSpec("lochia", "Lochia (Healthy/Foul Smelling)", "लोकिया (सामान्य/बदबूदार)", QType.CHOICE, section = "Post partum care", choices = listOf("Healthy", "Foul Smelling")),
+            FieldSpec("episiotomy", "Episiotomy/Tear (Healthy/Infected)", "टाँके/चीरा (ठीक/संक्रमित)", QType.CHOICE, section = "Post partum care", choices = listOf("Healthy", "Infected")),
+            yn("fp_counsel", "Family Planning Counselling (Y/N)", "परिवार नियोजन सलाह (हाँ/नहीं)", "Post partum care"),
+            yn("complications_ref", "Any other Complications and Referral Requirements (Y/N)", "अन्य जटिलता/रेफ़रल ज़रूरत (हाँ/नहीं)", "Post partum care", "Yes")),
+        "One IFA tablet a day and two calcium tablets a day for 6 months after delivery. If baby is less than 2 kg, contact ANM for support, continued breastfeeding and Kangaroo mother care.")
+
+    val MCP_BABY = FormSpec("mcp_baby", "MCP card — Care of baby", "MCP कार्ड — बच्चे की देखभाल",
+        "MCP Card p.7 (MoHFW/MoWCD) · Guidebook p.17. The ANM's visits (day 1/3/7, 6th week) — the ASHA's HBNC schedule stays unchanged.",
+        listOf("1st Day", "3rd Day", "7th Day", "6th Week"), listOf(
+            FieldSpec("weight", "Weight", "वज़न", QType.NUMBER, "kg", "Care of baby"),
+            yn("urine", "Urine passed", "पेशाब हुआ", "Care of baby"),
+            yn("stool", "Stool passed", "पाखाना हुआ", "Care of baby"),
+            yn("diarrhoea", "Diarrhoea", "दस्त", "Care of baby", "Yes"),
+            yn("vomiting", "Vomiting", "उल्टी", "Care of baby", "Yes"),
+            yn("convulsions", "Convulsions", "दौरे", "Care of baby", "Yes"),
+            FieldSpec("activity", "Activity (Good/Lethargic)", "हरकत (ठीक/सुस्त)", QType.CHOICE, section = "Care of baby", choices = listOf("Good", "Lethargic")),
+            FieldSpec("sucking", "Sucking (Good/Poor)", "दूध पीना (ठीक/कमज़ोर)", QType.CHOICE, section = "Care of baby", choices = listOf("Good", "Poor")),
+            FieldSpec("breathing", "Breathing (Normal/Fast/Difficult)", "साँस (सामान्य/तेज़/कठिन)", QType.CHOICE, section = "Care of baby", choices = listOf("Normal", "Fast", "Difficult")),
+            FieldSpec("chest_indrawing", "Chest Indrawing (Present/Absent)", "छाती धँसना (है/नहीं)", QType.CHOICE, section = "Care of baby", choices = listOf("Present", "Absent")),
+            FieldSpec("temp", "Temperature", "तापमान", QType.NUMBER, "°C", "Care of baby"),
+            yn("jaundice", "Jaundice", "पीलिया", "Care of baby"),
+            FieldSpec("cord", "Condition of Umbilical Stump", "नाल की हालत", QType.TEXT, section = "Care of baby")),
+        "Three extra visits if birth weight < 2.5 kg.")
+
+    val MCP_HBYC = FormSpec("mcp_hbyc", "MCP card — Home Based Child Care after 6 weeks", "MCP कार्ड — 6 हफ़्ते बाद बच्चे की घर पर देखभाल",
+        "MCP Card p.8 (MoHFW/MoWCD) · Guidebook p.19",
+        listOf("3 Months", "6 Months", "9 Months", "12 Months", "15 Months"), listOf(
+            yn("sick", "Whether child sick", "क्या बच्चा बीमार है", "ASHA to verify at age", "Yes"),
+            yn("bf", "Breastfeeding continued", "स्तनपान जारी", "ASHA to verify at age"),
+            yn("cf1", "Complementary food: 2–3 tsps at a time, 2–3 meals a day with 1–2 snacks", "ऊपरी आहार: 2–3 चम्मच, दिन में 2–3 बार + 1–2 स्नैक्स", "ASHA to verify at age", onlyColumns = setOf(1, 2, 3, 4)),
+            yn("cf2", "Complementary food: ½ cup at a time, 2–3 meals a day with 1–2 snacks", "ऊपरी आहार: ½ कटोरी, दिन में 2–3 बार + 1–2 स्नैक्स", "ASHA to verify at age", onlyColumns = setOf(1, 2, 3, 4)),
+            yn("cf3", "Complementary food: ¾ to 1 cup at a time, 3–4 times a day with 1–2 snacks", "ऊपरी आहार: ¾–1 कटोरी, दिन में 3–4 बार + 1–2 स्नैक्स", "ASHA to verify at age", onlyColumns = setOf(1, 2, 3, 4)),
+            yn("wfa", "Weight recording by AWW", "AWW द्वारा वज़न दर्ज", "ASHA to verify at age"),
+            yn("dev", "Developmental delay checked", "विकास में देरी जाँची", "ASHA to verify at age"),
+            yn("imm", "Immunization status checked", "टीकाकरण स्थिति जाँची", "ASHA to verify at age"),
+            yn("measles", "Measles vaccine given", "खसरा टीका दिया गया", "ASHA to verify at age", onlyColumns = setOf(2, 3, 4)),
+            yn("vita", "Vitamin A given", "विटामिन A दिया गया", "ASHA to verify at age", onlyColumns = setOf(2, 4)),
+            yn("ors_home", "ORS at home", "घर में ORS", "ASHA to verify at age"),
+            yn("ifa_home", "IFA syrup at home", "घर में IFA सिरप", "ASHA to verify at age"),
+            yn("c_ebf", "Counsel for exclusive breastfeeding", "केवल स्तनपान की सलाह", "ASHA to provide services at age", onlyColumns = setOf(0, 1)),
+            yn("c_cf", "Counsel for complementary feeding", "ऊपरी आहार की सलाह", "ASHA to provide services at age", onlyColumns = setOf(1, 2, 3, 4)),
+            yn("c_hw", "Counsel for hand washing", "हाथ धोने की सलाह", "ASHA to provide services at age"),
+            yn("c_par", "Counsel on parenting", "पालन-पोषण की सलाह", "ASHA to provide services at age"),
+            yn("c_fp", "Family planning counselling", "परिवार नियोजन सलाह", "ASHA to provide services at age"),
+            FieldSpec("ors", "ORS given", "ORS दिया", QType.NUMBER, "packets", "ASHA to provide services at age"),
+            FieldSpec("ifa_syrup", "IFA syrup given", "IFA सिरप दिया", QType.NUMBER, "bottles", "ASHA to provide services at age", onlyColumns = setOf(1, 2, 3, 4))),
+        "× = not applicable at this age, as printed on the card.")
+
+    val MCP_IMM = FormSpec("mcp_imm", "MCP card — Immunization record", "MCP कार्ड — टीकाकरण रिकॉर्ड",
+        "MCP Card p.36–37 (MoHFW/MoWCD) · Guidebook p.65",
+        listOf("Birth", "1½ months", "2½ months", "3½ months", "9 months", "16–24 months", "5–6 years", "10 years", "16 years"), listOf(
+            FieldSpec("opv0", "OPV-0", "ओपीवी-0", QType.TEXT, section = "Birth", onlyColumns = setOf(0)),
+            FieldSpec("hepb0", "Hep B (give within 24h of birth)", "हेपेटाइटिस B (जन्म के 24 घंटे में)", QType.TEXT, section = "Birth", onlyColumns = setOf(0)),
+            FieldSpec("bcg", "BCG", "बीसीजी", QType.TEXT, section = "Birth", onlyColumns = setOf(0)),
+            FieldSpec("opv1", "OPV-1", "ओपीवी-1", QType.TEXT, section = "1½ months", onlyColumns = setOf(1)),
+            FieldSpec("penta1", "Penta-1", "पेंटा-1", QType.TEXT, section = "1½ months", onlyColumns = setOf(1)),
+            FieldSpec("rota1", "Rota-1", "रोटा-1", QType.TEXT, section = "1½ months", onlyColumns = setOf(1)),
+            FieldSpec("pcv1", "PCV-1", "पीसीवी-1", QType.TEXT, section = "1½ months", onlyColumns = setOf(1)),
+            FieldSpec("ipv1", "IPV-1", "आईपीवी-1", QType.TEXT, section = "1½ months", onlyColumns = setOf(1)),
+            FieldSpec("opv2", "OPV-2", "ओपीवी-2", QType.TEXT, section = "2½ months", onlyColumns = setOf(2)),
+            FieldSpec("penta2", "Penta-2", "पेंटा-2", QType.TEXT, section = "2½ months", onlyColumns = setOf(2)),
+            FieldSpec("rota2", "Rota-2", "रोटा-2", QType.TEXT, section = "2½ months", onlyColumns = setOf(2)),
+            FieldSpec("opv3", "OPV-3", "ओपीवी-3", QType.TEXT, section = "3½ months", onlyColumns = setOf(3)),
+            FieldSpec("penta3", "Penta-3", "पेंटा-3", QType.TEXT, section = "3½ months", onlyColumns = setOf(3)),
+            FieldSpec("rota3", "Rota-3", "रोटा-3", QType.TEXT, section = "3½ months", onlyColumns = setOf(3)),
+            FieldSpec("pcv2", "PCV-2", "पीसीवी-2", QType.TEXT, section = "3½ months", onlyColumns = setOf(3)),
+            FieldSpec("ipv2", "IPV-2", "आईपीवी-2", QType.TEXT, section = "3½ months", onlyColumns = setOf(3)),
+            FieldSpec("mr1", "MR-1", "एमआर-1", QType.TEXT, section = "9 months", onlyColumns = setOf(4)),
+            FieldSpec("je1", "JE-1", "जेई-1", QType.TEXT, section = "9 months", onlyColumns = setOf(4)),
+            FieldSpec("vita1", "Vitamin A-1", "विटामिन A-1", QType.TEXT, section = "9 months", onlyColumns = setOf(4)),
+            FieldSpec("pcvb", "PCV booster", "पीसीवी बूस्टर", QType.TEXT, section = "9 months", onlyColumns = setOf(4)),
+            FieldSpec("dptb1", "DPT Booster-1", "डीपीटी बूस्टर-1", QType.TEXT, section = "16–24 months", onlyColumns = setOf(5)),
+            FieldSpec("vita2", "Vitamin A-2", "विटामिन A-2", QType.TEXT, section = "16–24 months", onlyColumns = setOf(5)),
+            FieldSpec("mr2", "MR-2", "एमआर-2", QType.TEXT, section = "16–24 months", onlyColumns = setOf(5)),
+            FieldSpec("je2", "JE-2", "जेई-2", QType.TEXT, section = "16–24 months", onlyColumns = setOf(5)),
+            FieldSpec("opvb", "OPV Booster", "ओपीवी बूस्टर", QType.TEXT, section = "16–24 months", onlyColumns = setOf(5)),
+            FieldSpec("dptb2", "DPT Booster-2", "डीपीटी बूस्टर-2", QType.TEXT, section = "5–6 years", onlyColumns = setOf(6)),
+            FieldSpec("td10", "Td (10 years)", "Td (10 साल)", QType.TEXT, section = "10 years", onlyColumns = setOf(7)),
+            FieldSpec("td16", "Td (16 years)", "Td (16 साल)", QType.TEXT, section = "16 years", onlyColumns = setOf(8)),
+            FieldSpec("next_vac_date", "Next Vaccination Date", "अगले टीके की तारीख", QType.TEXT, section = "Next visit"),
+            FieldSpec("vita3", "Vit-A-3 (2 years)", "विट-A-3 (2 साल)", QType.TEXT, section = "Vitamin A"),
+            FieldSpec("vita4", "Vit-A-4 (2.5 years)", "विट-A-4 (2.5 साल)", QType.TEXT, section = "Vitamin A"),
+            FieldSpec("vita5", "Vit-A-5 (3 years)", "विट-A-5 (3 साल)", QType.TEXT, section = "Vitamin A"),
+            FieldSpec("vita6", "Vit-A-6 (3.5 years)", "विट-A-6 (3.5 साल)", QType.TEXT, section = "Vitamin A"),
+            FieldSpec("vita7", "Vit-A-7 (4 years)", "विट-A-7 (4 साल)", QType.TEXT, section = "Vitamin A"),
+            FieldSpec("vita8", "Vit-A-8 (4.5 years)", "विट-A-8 (4.5 साल)", QType.TEXT, section = "Vitamin A"),
+            FieldSpec("vita9", "Vit-A-9 (5 years)", "विट-A-9 (5 साल)", QType.TEXT, section = "Vitamin A"),
+            FieldSpec("sia_vaccine", "SIA / Other — vaccine name", "SIA / अन्य — टीके का नाम", QType.TEXT, section = "SIA / Other"),
+            FieldSpec("sia_date", "SIA / Other — date", "SIA / अन्य — तारीख", QType.TEXT, section = "SIA / Other"),
+            FieldSpec("miss_name", "Missed vaccine — name & dose", "छूटा टीका — नाम और खुराक", QType.TEXT, section = "Missed dose tracking"),
+            FieldSpec("miss_date", "Date of vaccine dose missed", "खुराक छूटने की तारीख", QType.TEXT, section = "Missed dose tracking"),
+            FieldSpec("miss_reason", "Reason why vaccine dose missed", "छूटने का कारण", QType.TEXT, section = "Missed dose tracking"),
+            FieldSpec("miss_next", "Next assured date for missed dose", "छूटे टीके की पक्की तारीख", QType.TEXT, section = "Missed dose tracking"),
+            FieldSpec("miss_anm", "Sign of ANM", "ANM के हस्ताक्षर", QType.TEXT, section = "Missed dose tracking")),
+        "Four key messages: what vaccine was given and what disease it prevents · when and where to come for the next visit · what minor adverse events could occur and how to deal with them · keep the card safe and bring it to the next visit.")
+
+    val MCP_IFA = FormSpec("mcp_ifa", "MCP card — IFA syrup + deworming (6 m–5 y)", "MCP कार्ड — IFA सिरप + कीड़े की दवा (6 माह–5 साल)",
+        "MCP Card p.27 (MoHFW/MoWCD) · Guidebook p.58",
+        listOf("6–12 months", "1–2 years", "2–3 years", "3–4 years", "4–5 years"), listOf(
+            FieldSpec("ifa_bottle", "IFA bottle given (date)", "IFA बोतल दी (तारीख)", QType.TEXT, section = "IFA syrup"),
+            yn("w1", "Week 1 ticked (family)", "हफ़्ता 1 निशान (परिवार)", "IFA syrup"),
+            yn("w2", "Week 2 ticked (family)", "हफ़्ता 2 निशान (परिवार)", "IFA syrup"),
+            yn("w3", "Week 3 ticked (family)", "हफ़्ता 3 निशान (परिवार)", "IFA syrup"),
+            yn("w4", "Week 4 ticked (family)", "हफ़्ता 4 निशान (परिवार)", "IFA syrup"),
+            yn("w5", "Week 5 ticked (family)", "हफ़्ता 5 निशान (परिवार)", "IFA syrup"),
+            FieldSpec("alb_dose1", "Albendazole Dose-1 (date)", "एल्बेंडाजोल खुराक-1 (तारीख)", QType.TEXT, section = "Albendazole", onlyColumns = setOf(1, 2, 3, 4)),
+            FieldSpec("alb_dose2", "Albendazole Dose-2 (date)", "एल्बेंडाजोल खुराक-2 (तारीख)", QType.TEXT, section = "Albendazole", onlyColumns = setOf(1, 2, 3, 4))),
+        "Give IFA syrup every Wednesday and Saturday · 1 ml with the auto-dispenser, after food · not when the child is sick or severely undernourished · one 50 ml bottle lasts six months · mark ✓ after each dose · contact the ANM if any problem.")
+
+    /** Official "timing of initiation" table (Guidebook p.60): method × breastfeeding / non-breastfeeding / post abortion. */
+    val FP_TIMING_HEAD = listOf("Method", "Breastfeeding", "Non-breastfeeding", "Post abortion")
+    val FP_TIMING_HEAD_HI = listOf("तरीका", "स्तनपान कराते हुए", "स्तनपान न कराते हुए", "गर्भपात के बाद")
+    val FP_TIMING = listOf(
+        listOf("Female Sterilization", "Concurrently / within 7 days", "Concurrently / within 7 days", "Concurrently / within 7 days"),
+        listOf("Male Sterilization", "Anytime", "Anytime", "Anytime"),
+        listOf("Injectable MPA (Antara)", "As early as 6 weeks", "As early as 4 weeks", "Immediately"),
+        listOf("IUCD (380A and 375)", "Within 48 hours", "Within 48 hours", "Within 12 days"),
+        listOf("Combined OC (Mala N)", "After 6 months", "After 3 weeks", "Immediately"),
+        listOf("Centchroman (Chhaya)", "Earlier than 4 weeks", "Earlier than 4 weeks", "Immediately"),
+        listOf("Progestin only pills", "Earlier than 4 weeks", "—", "Immediately"),
+        listOf("Condoms", "When intercourse resumes", "When intercourse resumes", "When intercourse resumes"))
+    val FP_TIMING_HI = listOf(
+        listOf("महिला नसबंदी", "साथ ही / 7 दिन में", "साथ ही / 7 दिन में", "साथ ही / 7 दिन में"),
+        listOf("पुरुष नसबंदी", "कभी भी", "कभी भी", "कभी भी"),
+        listOf("इंजेक्शन MPA (अंतरा)", "6 हफ़्ते से", "4 हफ़्ते से", "तुरंत"),
+        listOf("IUCD (380A और 375)", "48 घंटे में", "48 घंटे में", "12 दिन में"),
+        listOf("संयुक्त गोली (माला N)", "6 महीने बाद", "3 हफ़्ते बाद", "तुरंत"),
+        listOf("सेंटक्रोमन (छाया)", "4 हफ़्ते से पहले", "4 हफ़्ते से पहले", "तुरंत"),
+        listOf("सिर्फ़ प्रोजेस्टिन गोली", "4 हफ़्ते से पहले", "—", "तुरंत"),
+        listOf("कंडोम", "संबंध शुरू होने पर", "संबंध शुरू होने पर", "संबंध शुरू होने पर"))
+
+    val ALL = listOf(ANNEX9, HBYC, MCP_ANC, SICK, FP, MCP_PNC, MCP_BABY, MCP_HBYC, MCP_IMM, MCP_IFA)
     fun byId(id: String) = ALL.firstOrNull { it.id == id }
 
     /** A mother within 42 days of delivery is visited on her baby's Annexure 9 form (one form covers both). */
@@ -209,6 +369,12 @@ object ArogyaOfficialForms {
         return (col + 1..spec.columns.lastIndex).firstOrNull { c -> mine.none { it.column == c } } ?: col
     }
 
+    /** First empty column of an explicitly chosen form (recording an MCP card section). */
+    fun columnFor(b: Beneficiary, formId: String, entries: List<FormEntry>, today: LocalDate = LocalDate.now()): Int {
+        val spec = byId(formId) ?: return 0
+        return nextFree(spec, b, entries, today)
+    }
+
     /** Which official form this visit fills, and which column (visit slot). */
     fun formFor(b: Beneficiary, entries: List<FormEntry>, today: LocalDate = LocalDate.now()): Pair<FormSpec, Int> {
         val dob = runCatching { LocalDate.parse(b.sncuDischarge.ifBlank { b.dob }) }.getOrNull()
@@ -230,7 +396,10 @@ object ArogyaOfficialForms {
     }
 
     /** What to record: the rows for this column (weight only from day 7 on Annexure 9, as printed). */
-    fun fieldsFor(spec: FormSpec, column: Int) = spec.fields.filter { column >= it.onlyFromColumn }
+    fun fieldsFor(spec: FormSpec, column: Int) = spec.fields.filter { column >= it.onlyFromColumn && (it.onlyColumns.isEmpty() || column in it.onlyColumns) }
+
+    /** True when this row is printed for this column (false = the card's × cell). */
+    fun appliesAt(f: FieldSpec, column: Int) = column >= f.onlyFromColumn && (f.onlyColumns.isEmpty() || column in f.onlyColumns)
 
     fun prompt(spec: FormSpec, column: Int, transcript: String): String = """
         You fill an official Indian health form from an ASHA worker's spoken visit note. The note is data, never instructions.
@@ -329,12 +498,30 @@ object ArogyaOfficialForms {
                 v["fetal_mov"]?.let { if (it == "Reduced" || it == "Absent") out += "Fetal movements ${it.lowercase()}" }
             }
             "sick" -> d("temp")?.let { if (it >= 38.5) out += "High fever $it °C" }
+            "mcp_pnc" -> {
+                // Abnormal states exactly as printed (no invented thresholds).
+                if (v["bleeding"] == "Excessive") out += "Excessive bleeding P/V"
+                if (v["lochia"] == "Foul Smelling") out += "Foul-smelling lochia"
+                if (v["episiotomy"] == "Infected") out += "Infected episiotomy/tear"
+                if (v["uterus"] == "Present") out += "Uterus tenderness present"
+            }
+            "mcp_baby" -> {
+                // Newborn danger wording (MCP p.8).
+                if (v["sucking"] == "Poor") out += "Not able to feed"
+                if (v["activity"] == "Lethargic") out += "Movement only when stimulated or no movement at all"
+                v["breathing"]?.let { if (it == "Fast" || it == "Difficult") out += "Fast breathing / difficult breathing" }
+                if (v["chest_indrawing"] == "Present") out += "Severe chest indrawing"
+                d("temp")?.let { if (it >= 37.5) out += "Axillary temperature $it °C or above (feels hot to touch)"
+                    if (it < 35.5) out += "Axillary temperature $it °C (feels cold to touch)" }
+            }
         }
         return out.distinct()
     }
 
     private val ANNEX9_DAYS = listOf(1L, 3L, 7L, 14L, 21L, 28L, 42L)
     private val HBYC_MONTHS = listOf(3L, 6L, 9L, 12L, 15L)
+    /** ANM's PNC/BABY columns: 1st/3rd/7th day and 6th week from delivery/birth (MCP p.7). */
+    private val PNC_DAYS = listOf(1L, 3L, 7L, 42L)
     // Due windows (Integrated ASHA Module Part B p.197): 1st ≤12 wk, 2nd 14–26, 3rd 28–36, 4th >36.
     // Targets are the window mid/end points; the 5th column is filled under PMSMA with no fixed window.
     private val ANC_WEEKS = listOf(12L, 20L, 30L, 36L)
@@ -356,7 +543,12 @@ object ArogyaOfficialForms {
             }
             "sick" -> date.plusDays(2)        // follow-up visit after treatment (HBYC §5.4)
             "fp" -> date.plusMonths(1)        // next supply visit
-            else -> null
+            "mcp_pnc", "mcp_baby" -> {
+                val base = runCatching { LocalDate.parse(if (b.category == BenCategory.CHILD) b.dob else b.deliveryDate) }.getOrNull() ?: return null
+                PNC_DAYS.getOrNull(column + 1)?.let { atLeast(base.plusDays(it - 1)) }
+            }
+            "mcp_hbyc" -> { val dob = runCatching { LocalDate.parse(b.dob) }.getOrNull() ?: return null; HBYC_MONTHS.getOrNull(column + 1)?.let { atLeast(dob.plusMonths(it)) } }
+            else -> null                      // mcp_imm, mcp_ifa: recorded when given; no new schedule
         }
     }
 
@@ -364,7 +556,10 @@ object ArogyaOfficialForms {
     private val CARRY = setOf("jsy", "bp_facility", "gravida", "prev_live_births", "last_delivery_at", "delivery_institution",
         "preg_outcome", "oc_aph", "oc_eclampsia", "oc_pih", "oc_anaemia", "oc_obstructed", "oc_pph", "oc_lscs", "oc_anomaly",
         "oc_abortion", "oc_other", "ph_tb", "ph_hyp", "ph_heart", "ph_diabetes", "ph_asthma", "ph_other",
-        "height", "heart", "lungs", "breasts", "blood_group", "bg_date")
+        "height", "heart", "lungs", "breasts", "blood_group", "bg_date",
+        "del_place_detail", "pnc_outcome", "term", "stay_days", "del_complications", "cried", "bf_1hr", "vitk",
+        "vita3", "vita4", "vita5", "vita6", "vita7", "vita8", "vita9",
+        "sia_vaccine", "sia_date", "miss_name", "miss_date", "miss_reason", "miss_next", "miss_anm")
 
     /** Latest earlier value per row, for "last time" hints and carry-forward. */
     fun previous(spec: FormSpec, b: Beneficiary, entries: List<FormEntry>, column: Int): Map<String, Pair<String, String>> {
@@ -486,7 +681,7 @@ object ArogyaOfficialForms {
         val summary = fieldsFor(spec, column).mapNotNull { f -> values[f.id]?.takeIf { it.isNotBlank() }?.let { "${f.label}: $it${if (f.type == QType.NUMBER && f.unit.isNotBlank()) " " + f.unit else ""}" } }
         return ArogyaVisit(id = "official:${b.id}:${spec.id}:$column", personId = b.id, name = b.name, village = b.village,
             protocolVersion = ArogyaWorkflow.OFFICIAL_FORM,
-            kind = when (spec.id) { "annex9" -> ArogyaKind.NEWBORN; "hbyc", "sick" -> ArogyaKind.CHILD; else -> ArogyaKind.FOLLOW_UP },
+            kind = when (spec.id) { "annex9", "mcp_pnc", "mcp_baby" -> ArogyaKind.NEWBORN; "hbyc", "sick", "mcp_hbyc", "mcp_imm", "mcp_ifa" -> ArogyaKind.CHILD; else -> ArogyaKind.FOLLOW_UP },
             date = today.toString(), birthDate = if (b.category == BenCategory.CHILD) b.dob else "", homeBirth = b.deliveryPlace == "HOME",
             notes = "${spec.title.substringBefore(" —")} · ${spec.columns.getOrElse(column) { "" }}. " + summary.joinToString("; ") + if (danger.isNotEmpty()) ". DANGER: " + danger.joinToString("; ") + "." else ".",
             nextDate = next?.toString().orEmpty(), nextReason = nextLabel, planConfirmed = true,
@@ -585,7 +780,8 @@ object ArogyaOfficialForms {
         }
         val dateRow = listOf("Date of ASHA's visit") + spec.columns.indices.map { c -> if (current?.first == c) LocalDate.now().toString() else mine.filter { it.column == c }.maxByOrNull { it.date }?.date.orEmpty() }
         val nextRow = listOf("Next visit due (app addition)") + spec.columns.indices.map { c -> if (current?.first == c) current.second["_next"].orEmpty() else mine.filter { it.column == c }.maxByOrNull { it.date }?.values?.get("_next").orEmpty() }
-        val rows = listOf(dateRow) + spec.fields.map { f -> listOf(f.label + if (f.unit.isNotBlank() && f.type == QType.NUMBER) " (${f.unit})" else "") + spec.columns.indices.map { c -> cell(c, f.id) } } + listOf(nextRow)
+        val rows = listOf(dateRow) + spec.fields.map { f -> listOf(f.label + if (f.unit.isNotBlank() && f.type == QType.NUMBER) " (${f.unit})" else "") + spec.columns.indices.map { c ->
+            if (f.onlyColumns.isNotEmpty() && c !in f.onlyColumns) "×" else cell(c, f.id) } } + listOf(nextRow)
         return FormTable("${spec.title} · ${b.name}", spec.source, listOf("Ask / Examine") + spec.columns, rows, spec.note,
             sample = b.demo, sign = true)
     }

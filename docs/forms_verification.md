@@ -69,6 +69,33 @@ Official header fields (Village/Block/District/Sub-centre/PHC, child, parents, D
 HF-only extras (referral follow-ups after sick/dev-delay, underweight Yellow/Red flags, NRC referral): in the facilitator copy only, not on the card — not added.
 Source line now: "Handbook for ASHA on HBYC, Annexure 1 (HBYC card), p. 90".
 
+## 2b. MCP_HBYC (MCP Card p.8) vs HBYC (HBYC Handbook, Annexure 1, p. 90)
+
+MCP_HBYC is the card's own HBYC table (Guidebook p.19), kept as a separate spec so each keeps its own source. Row-by-row:
+
+| MCP Card p.8 row | HBYC spec (handbook) | Verdict |
+|---|---|---|
+| Whether child sick | sick | match |
+| Breastfeeding continued | bf | match |
+| Complementary food × 3 age-specific rows (× at 3 m) | single cf row (app addition) | differs — card splits by age; MCP_HBYC has cf1/cf2/cf3 with × at 3 m |
+| Weight recording by AWW (one row) | wfa + wfh (two rows) | differs — card has one row; MCP_HBYC has wfa only |
+| Developmental delay checked | dev | match |
+| Immunization status checked | imm | match |
+| Measles vaccine given (× at 3, 6 m) | measles (no × cells) | differs — × cells added in MCP_HBYC |
+| Vitamin A given (× at 3, 6, 12 m) | vita (no × cells) | differs — × cells added in MCP_HBYC |
+| ORS at home | ors_home | match |
+| IFA syrup at home | ifa_home | match |
+| Counsel for exclusive breastfeeding (× at 9, 12, 15 m) | c_ebf (no × cells) | differs — × cells added in MCP_HBYC |
+| Counsel for complementary feeding (× at 3 m) | c_cf (no × cells) | differs — × cells added in MCP_HBYC |
+| Counsel for hand washing | c_hw | match |
+| Counsel on parenting | c_par | match |
+| Family planning counselling | c_fp | match |
+| ORS given | ors | match |
+| IFA syrup given (× at 3 m) | ifa_syrup (no × cells) | differs — × cells added in MCP_HBYC |
+| (not on the card) | weight, albendazole (app additions, tagged) | not carried into MCP_HBYC |
+
+Both specs stay: HBYC follows the handbook (the ASHA's visit form), MCP_HBYC follows the printed card (the ANM's record), each with its own source line.
+
 ## 3. SICK — Sick child checklist (HBYC Handbook §5.4, pp. 63–66)
 
 Kept as a checklist-style form; title fixed to "Sick child checklist (HBYC Handbook §5.4, pp. 63–66)".

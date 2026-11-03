@@ -439,7 +439,8 @@ private fun DateBox(label: String, value: String, modifier: Modifier = Modifier,
 
 /** Full-screen hub: Due list · Patients · Registers · Backup. */
 @Composable
-fun ArogyaRegistryHub(hindi: Boolean, initial: String, visits: List<ArogyaVisit>, queue: ArogyaVisitQueue, onClose: () -> Unit, ai: ArogyaVisitAi? = null, onStartVisit: (Beneficiary) -> Unit) {
+fun ArogyaRegistryHub(hindi: Boolean, initial: String, visits: List<ArogyaVisit>, queue: ArogyaVisitQueue, onClose: () -> Unit, ai: ArogyaVisitAi? = null, onStartVisit: (Beneficiary) -> Unit,
+    onRecordForm: ((Beneficiary, String) -> Unit)? = null) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
     val store = remember { ArogyaRegistryStore.get(context) }
@@ -475,7 +476,8 @@ fun ArogyaRegistryHub(hindi: Boolean, initial: String, visits: List<ArogyaVisit>
     }
     openPatient?.let { id -> data.beneficiaries.firstOrNull { it.id == id }?.let { b ->
         McpCardDialog(hindi, b, data, visits, today, ai, onClose = { openPatient = null }, onEdit = { editPatient = b },
-            onStartVisit = { openPatient = null; onStartVisit(b) }, save = { c -> save(c) })
+            onStartVisit = { openPatient = null; onStartVisit(b) }, save = { c -> save(c) },
+            onRecordForm = if (onRecordForm == null) null else { fid -> openPatient = null; onRecordForm(b, fid) })
     } }
     editPatient?.let { b -> PatientForm(hindi, b, onDismiss = { editPatient = null }) { updated ->
         if (save { r -> if (r.beneficiaries.any { it.id == updated.id }) r.copy(beneficiaries = r.beneficiaries.map { if (it.id == updated.id) updated.copy(updatedAt = System.currentTimeMillis()) else it })
@@ -655,7 +657,8 @@ private fun FilledFormRow(hindi: Boolean, t: FormTable, origins: ((rowLabel: Str
 
 @Composable
 private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, visits: List<ArogyaVisit>, today: LocalDate, ai: ArogyaVisitAi?, onClose: () -> Unit, onEdit: () -> Unit,
-                          onStartVisit: () -> Unit, save: ((RegistryData) -> RegistryData) -> Boolean) {
+                          onStartVisit: () -> Unit, save: ((RegistryData) -> RegistryData) -> Boolean,
+                          onRecordForm: ((String) -> Unit)? = null) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     fun updateBen(f: (Beneficiary) -> Beneficiary) = save { r -> r.copy(beneficiaries = r.beneficiaries.map { if (it.id == b.id) f(it).copy(updatedAt = System.currentTimeMillis()) else it }) }
     var giveOpen by remember { mutableStateOf(false) }
@@ -793,6 +796,23 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
                                 else ArogyaOrigin.formCell(label, "", "visit", entry.date, b.demo, hindi)
                             }
                         }) { viewForm = it }
+                    }
+                    // Record an MCP card section (ANM's entries copied from the paper card) through the guided visit.
+                    if (onRecordForm != null) {
+                        val recs = when (b.category) {
+                            BenCategory.MOTHER -> listOf("mcp_pnc" to tr("＋ Record PNC (ANM)", "＋ PNC दर्ज करें (ANM)"))
+                            BenCategory.CHILD -> listOf("mcp_baby" to tr("＋ Record baby care (ANM)", "＋ बच्चे की देखभाल (ANM)"),
+                                "mcp_imm" to tr("＋ Record immunization", "＋ टीकाकरण दर्ज करें"),
+                                "mcp_hbyc" to tr("＋ Record HBYC (card)", "＋ HBYC दर्ज करें (कार्ड)"),
+                                "mcp_ifa" to tr("＋ Record IFA/deworming", "＋ IFA/कीड़े की दवा"))
+                            else -> emptyList()
+                        }
+                        if (recs.isNotEmpty()) {
+                            Text(tr("MCP card sections (MCP p.7–8, 27, 36–37)", "MCP कार्ड खंड (MCP पृ. 7–8, 27, 36–37)"), fontWeight = FontWeight.Bold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                                recs.forEach { (fid, label) -> OutlinedButton(onClick = { onRecordForm(fid) }) { Text(label, maxLines = 1) } }
+                            }
+                        }
                     }
                     if (filled.none { it.id == "annex9" } && b.category == BenCategory.CHILD && b.dob.isNotBlank()) OutlinedButton(onClick = {
                         scope.launch {

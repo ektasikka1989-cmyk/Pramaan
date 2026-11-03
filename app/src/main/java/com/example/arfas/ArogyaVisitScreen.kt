@@ -174,6 +174,7 @@ fun ArogyaVisitScreen(
     var visitsOpen by rememberSaveable { mutableStateOf(false) }
     var aiPageOpen by rememberSaveable { mutableStateOf(false) }
     var guidedFor by remember { mutableStateOf<Beneficiary?>(null) }
+    var guidedForm by remember { mutableStateOf<String?>(null) }
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
     var demoOpen by rememberSaveable { mutableStateOf(false) }
     var profileOpen by rememberSaveable { mutableStateOf(false) }
@@ -1208,9 +1209,10 @@ fun ArogyaVisitScreen(
         } },confirmButton={TextButton(onClick={ ashaName=n.trim(); ashaVillage=v.trim(); profilePrefs.edit().putString("name",ashaName).putString("village",ashaVillage).putString("state",st.trim()).putString("district",dist.trim()).putString("block",blk.trim()).putString("subcentre",sc.trim()).apply(); profileOpen=false }) {Text(tr("Save","सहेजें"))}},
             dismissButton={TextButton(onClick={profileOpen=false}) {Text(tr("Cancel","रद्द करें"))}})
     }
-    hubOpen?.let { tab -> ArogyaRegistryHub(hindi,tab,visits,queue,onClose={hubOpen=null},ai=ai) { b -> hubOpen=null; guidedFor=b } }
+    hubOpen?.let { tab -> ArogyaRegistryHub(hindi,tab,visits,queue,onClose={hubOpen=null},ai=ai,
+        onStartVisit={ b -> hubOpen=null; guidedFor=b }, onRecordForm={ b, fid -> hubOpen=null; guidedFor=b; guidedForm=fid }) }
     if(pickerOpen) ArogyaPersonPicker(hindi,reg.beneficiaries,dueNow,onPick={ b -> pickerOpen=false; guidedFor=b },onAdd={ pickerOpen=false; hubOpen="patients" },onDismiss={ pickerOpen=false })
-    guidedFor?.let { b -> ArogyaGuidedVisit(b,hindi,visits,queue,ai,onClose={ guidedFor=null },
+    guidedFor?.let { b -> ArogyaGuidedVisit(b,hindi,visits,queue,ai,onClose={ guidedFor=null; guidedForm=null },formId=guidedForm,
         onAskSop={ q -> if(knowledgeReady) { openAi(ArogyaAiTask.EXPLAIN,"",sop=true); aiQuestion=q } else Toast.makeText(context,"Install the ASHA guide first.",Toast.LENGTH_LONG).show() },
         onSpeak={ cb -> guidedSpeak=cb; questionDictation=false; if(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED) voice=true else mic.launch(Manifest.permission.RECORD_AUDIO) },
         speak={ t -> speak(t) },

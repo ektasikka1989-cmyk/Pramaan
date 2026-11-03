@@ -81,6 +81,7 @@ fun OfficialFormGrid(t: FormTable, highlight: Int?, sources: Map<String, String>
  */
 @Composable
 fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVisit>, queue: ArogyaVisitQueue, ai: ArogyaVisitAi?, onClose: () -> Unit,
+    formId: String? = null,
                       onAskSop: (String) -> Unit, onSpeak: ((String) -> Unit) -> Unit, speak: (String) -> Unit = {}) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
@@ -89,7 +90,11 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
     val data by store.state.collectAsState()
     val today = LocalDate.now()
     val b = remember(person) { ArogyaOfficialForms.subjectFor(person, store.state.value.beneficiaries) }
-    val (spec, column) = remember(b) { ArogyaOfficialForms.formFor(b, store.state.value.forms, today) }
+    val (spec, column) = remember(b, formId) {
+        val forced = formId?.let { ArogyaOfficialForms.byId(it) }
+        if (forced != null) forced to ArogyaOfficialForms.columnFor(b, forced.id, store.state.value.forms, today)
+        else ArogyaOfficialForms.formFor(b, store.state.value.forms, today)
+    }
     val rows = remember(spec, column) { ArogyaOfficialForms.fieldsFor(spec, column) }
     val prev = remember(b, data.forms) { ArogyaOfficialForms.previous(spec, b, data.forms, column) }
     val savedToday = remember(b) { store.state.value.forms.firstOrNull { it.beneficiaryId == b.id && it.formId == spec.id && it.column == column } }
@@ -272,6 +277,7 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
                                 Text(tr("📄 This form — $colName column", "📄 यह फ़ॉर्म — $colName कॉलम"))
                                 values["weight"]?.takeIf { it.isNotBlank() && spec.id != "mcp_anc" }?.let { Text(tr("🗂 MCP card growth chart: $it kg", "🗂 MCP कार्ड वज़न: $it kg")) }
                                 if (spec.id == "mcp_anc") Text(tr("🗂 MCP card ANC ${column + 1}: weight, BP, Hb, TT/Td, IFA", "🗂 MCP कार्ड ANC ${column + 1}"))
+                                if (spec.id == "fp") FpTimingReference(hindi)
                                 if (vaccines.isNotEmpty()) Text("🗂 MCP card: " + vaccines.joinToString { ArogyaSchedule.VACCINE_NAMES[it] ?: it })
                                 listOf("ors" to "ORS", "zinc" to "Zinc", "ifa" to "IFA", "ifa_syrup" to "IFA syrup", "condoms" to "Condoms", "ocp" to "Pills", "napkins" to "Napkins",
                                     "calcium" to "Calcium", "albendazole" to "Albendazole", "parac" to "Paracetamol", "ctz" to "Cotrimoxazole", "mal_rdt" to "Malaria RDT", "act" to "ACT", "ecp" to "ECP", "ptk" to "Pregnancy test").forEach { (k, l) ->
@@ -310,4 +316,23 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
         dismissButton = { TextButton(onClick = { scope.launch { store.shareFormPdf(ArogyaOfficialForms.table(spec, b, data.forms)) } }) { Text(tr("Share PDF", "PDF भेजें")) } },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) { OfficialFormGrid(ArogyaOfficialForms.table(spec, b, data.forms, if (saved) null else column to values), column) } })
     if (savedSummary.isNotBlank()) WhatChangedDialog(savedSummary, hindi) { savedSummary = "" }
+}
+
+/** Official FP "timing of initiation" table (Guidebook p.60) as a read-only reference on FP visits. */
+@Composable
+private fun FpTimingReference(hindi: Boolean) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    var open by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        TextButton(onClick = { open = !open }) {
+            Text(tr("📖 When to start each method (official table)", "📖 हर तरीका कब शुरू करें (आधिकारिक तालिका)") + if (open) " ▲" else " ▼")
+        }
+        if (open) Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            val head = if (hindi) ArogyaOfficialForms.FP_TIMING_HEAD_HI else ArogyaOfficialForms.FP_TIMING_HEAD
+            val rows = if (hindi) ArogyaOfficialForms.FP_TIMING_HI else ArogyaOfficialForms.FP_TIMING
+            Row { head.forEach { Text(it, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(120.dp).padding(4.dp)) } }
+            rows.forEach { r -> Row { r.forEach { Text(it, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(120.dp).padding(4.dp)) } } }
+            Text(tr("Source: MCP Card Guidebook p.60", "स्रोत: MCP कार्ड गाइडबुक पृ. 60"), style = MaterialTheme.typography.labelSmall)
+        }
+    }
 }

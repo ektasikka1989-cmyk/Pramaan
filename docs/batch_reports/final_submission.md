@@ -33,3 +33,30 @@ manually".
   expectations hold; seeded village builds through the save path.
 - To be checked manually: ANC visit flow on phone (5 columns, PMSMA),
   height flag, HIV Yes/No UI, ANC tick boxes 1–5.
+
+### A2. Missing official sections (PNC/BABY/HBYC/IMM/IFA/FP)
+- Audit: no MCP_PNC/BABY/HBYC/IMM/IFA specs; `FieldSpec` had only
+  `onlyFromColumn` (no × cells); guided visit always routes via `formFor`;
+  MCP dialog auto-lists any filled form from `ALL`.
+- Changed (`Final A.2`): new specs from the card spec — MCP_PNC (delivery
+  record + post partum care, MCP p.7), MCP_BABY (care of baby + <2.5 kg
+  footnote, MCP p.7), MCP_HBYC (card's own HBYC table with × cells,
+  MCP p.8), MCP_IMM (exact antigens per age column + Vitamin A 1–9 +
+  SIA/Other + missed-dose tracking + next date, MCP p.36–37), MCP_IFA
+  (bottles + week ticks + albendazole, MCP p.27), FP timing table data
+  (Guidebook p.60) with a reference view on FP visits. Engine:
+  `onlyColumns` + × rendering in `table()`, PNC/BABY nextDue from
+  delivery/birth dates, PNC/BABY danger branches (p.8 wording, no invented
+  thresholds), visit kinds, CARRY for one-time rows. Recording: guided
+  visit takes an explicit `formId`, MCP dialog has Record buttons for
+  PNC/BABY/IMM/HBYC/IFA threaded through hub → VisitScreen.
+  Mismatches vs handbook HBYC recorded in `docs/forms_verification.md`
+  §2b. Schedule logic (dues) untouched.
+- Files: `ArogyaFormSpecs.kt`, `ArogyaGuidedUi.kt`,
+  `ArogyaRegistryUi.kt`, `ArogyaVisitScreen.kt`,
+  `docs/forms_verification.md`.
+- Tests: full host gate 41 suites green; BUILD SUCCESSFUL.
+- Verified on host: specs compile; × cells render; nextDue/danger rules;
+  guided override resolves spec + first empty column.
+- To be checked manually: Record buttons → guided flow → save for each
+  new section; FP timing table on an FP visit; × cells in the form viewer.
