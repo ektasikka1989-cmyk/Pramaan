@@ -3,6 +3,7 @@ package com.example.arfas
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -18,7 +19,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -26,10 +31,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.io.ByteArrayOutputStream
@@ -133,6 +141,9 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
     var exitAsk by remember { mutableStateOf(false) }
     var libraryOpen by remember { mutableStateOf(false) }
     var aiWorkOpen by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var liveExpanded by remember { mutableStateOf(false) }
+    var tickMark by remember { mutableStateOf(0) }
     var manualJob by remember { mutableStateOf<Job?>(null) }
     var ran by remember { mutableStateOf(setOf<Int>()) }
     var replayTick by remember { mutableStateOf(0) }
@@ -200,8 +211,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
         else if (demoHindi) scenes[scene].narrationHi else scenes[scene].narration
 
     // Navigation: stop narration and any running work cleanly, then move.
-    fun go(i: Int) { speech.stop(); manualJob?.cancel(); status = ""; scene = i.coerceIn(0, n) }
-    fun replay() { speech.stop(); manualJob?.cancel(); ran = ran - scene; status = ""; replayTick++ }
+    fun go(i: Int) { speech.stop(); manualJob?.cancel(); status = ""; aiWorkOpen = false; liveExpanded = false; tickMark = ticks.size; scene = i.coerceIn(0, n) }
+    fun replay() { speech.stop(); manualJob?.cancel(); ran = ran - scene; status = ""; aiWorkOpen = false; liveExpanded = false; tickMark = ticks.size; replayTick++ }
 
     // Resume: the last scene is saved; the start screen offers it back.
     val demoPrefs = remember { context.getSharedPreferences("arogya_demo", 0) }
@@ -565,46 +576,75 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                 }
                 return@Surface
             }
-            Column(Modifier.fillMaxSize().padding(14.dp)) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
-                    Text(tr("DEMO · sample village (fictional people)", "डेमो · नमूना गाँव (काल्पनिक लोग)"),
-                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(ArogyaDemoNav.label(scene, n, demoHindi), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    FilterChip(selected = !demoHindi, onClick = { speech.stop(); demoHindi = false }, label = { Text("EN") })
-                    FilterChip(selected = demoHindi, onClick = { speech.stop(); demoHindi = true }, label = { Text("हिं") })
-                    FilterChip(selected = narrate, onClick = { speech.stop(); narrate = !narrate }, label = { Text("🔊") })
-                }
-                LinearProgressIndicator(progress = (scene + 1) / n.toFloat(), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
-                Text(if (demoHindi) scenes[scene].hi else scenes[scene].title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                // Captions: large, current sentence highlighted; "Next when ready" after the last.
-                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).weight(0.32f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    lines().forEachIndexed { i, s ->
-                        Text(s, style = MaterialTheme.typography.bodyLarge,
-                            color = if (i == caption && narrate) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth().background(
-                                if (i == caption && narrate) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface))
+            Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                // Top bar: one compact row (chip · Scene N/M · EN|हिं · 🔊 · ⋮) + progress. Stays ≤ 72 dp.
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.small) {
+                        Text(tr("DEMO · sample (fictional)", "डेमो · नमूना (काल्पनिक)"),
+                            Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
                     }
-                    if (narrDone) Text(tr("▶ Next when ready", "▶ तैयार हों तो Next"), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                }
-                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 4.dp))
-                if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(6.dp))
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val b = hero; val sp = spec
-                    if (b == null || sp == null) { Text(tr("Preparing…", "तैयारी…")); return@Column }
-                    if (ticks.isNotEmpty()) Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(Modifier.fillMaxWidth().clickable { aiWorkOpen = !aiWorkOpen }, verticalAlignment = Alignment.CenterVertically) {
-                                Text("✨ " + tr("AI at work", "AI काम पर") + " (${ticks.size})", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                Text(if (aiWorkOpen) "▲" else "▼", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                            }
-                            if (aiWorkOpen) ticks.forEach { t -> Text("• " + (if (demoHindi) t.featureHi else t.feature) + " · ${t.model}" + (if (t.ms > 0) " · ${secs(t.ms)}" else ""),
-                                style = MaterialTheme.typography.bodySmall) }
+                    Text(ArogyaDemoNav.label(scene, n, demoHindi), style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+                    FilterChip(selected = !demoHindi, onClick = { speech.stop(); demoHindi = false },
+                        label = { Text("EN", style = MaterialTheme.typography.labelSmall) })
+                    FilterChip(selected = demoHindi, onClick = { speech.stop(); demoHindi = true },
+                        label = { Text("हिं", style = MaterialTheme.typography.labelSmall) })
+                    FilterChip(selected = narrate, onClick = { speech.stop(); narrate = !narrate },
+                        label = { Text("🔊", style = MaterialTheme.typography.labelSmall) })
+                    Box {
+                        TextButton(onClick = { menuOpen = true }, contentPadding = PaddingValues(4.dp)) {
+                            Text("⋮", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(text = { Text(tr("Exit demo", "डेमो बंद करें")) },
+                                onClick = { menuOpen = false; exitAsk = true })
                         }
                     }
-                    DemoSceneBody(scene, demoHindi, tr = { en, hi -> tr(en, hi) }, data = data, visits = visits, b = b, sp = sp, column = column,
+                }
+                LinearProgressIndicator(progress = (scene + 1) / n.toFloat(), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                Text(if (demoHindi) scenes[scene].hi else scenes[scene].title, style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 4.dp))
+                if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                val b = hero; val sp = spec
+                if (b == null || sp == null) { Text(tr("Preparing…", "तैयारी…")) }
+                else {
+                    // Short scenes grow the narration (up to 22 sp) instead of leaving dead space.
+                    val narrSize = if (lines().size <= 4) 21.sp else 18.sp
+                    val narrStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = narrSize, lineHeight = narrSize * 1.4)
+                    val sceneTicks = ticks.drop(tickMark)
+                    val ruleScene = scene in listOf(1, 3, 5)
+                    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+                    @Composable fun sent(i: Int, s: String) {
+                        val on = i == caption && narrate
+                        Text(s, style = narrStyle, fontWeight = if (on) FontWeight.Bold else null,
+                            color = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.fillMaxWidth().background(
+                                if (on) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.surfaceContainerLow))
+                    }
+                    // Slim one-line AI chip row, expandable; nothing at all when the scene has no AI step.
+                    @Composable fun aiChips() {
+                        if (sceneTicks.isEmpty() && !ruleScene) return
+                        Row(Modifier.fillMaxWidth().clickable { aiWorkOpen = !aiWorkOpen }
+                            .horizontalScroll(rememberScrollState()).padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (ruleScene) Text("⚙ " + tr("Fixed rule", "तय नियम"), style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            sceneTicks.firstOrNull()?.let { first ->
+                                Text("✨ " + (if (demoHindi) first.featureHi else first.feature) +
+                                    " · ${first.model}" + (if (first.ms > 0) " · ${secs(first.ms)}" else "") +
+                                    (if (sceneTicks.size > 1) "  +${sceneTicks.size - 1} ${if (aiWorkOpen) "▲" else "▼"}" else ""),
+                                    style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            }
+                        }
+                        if (aiWorkOpen) sceneTicks.drop(1).forEach { t ->
+                            Text("• " + (if (demoHindi) t.featureHi else t.feature) + " · ${t.model}" +
+                                (if (t.ms > 0) " · ${secs(t.ms)}" else ""), style = MaterialTheme.typography.bodySmall) }
+                    }
+                    val liveBody: @Composable () -> Unit = {
+                        DemoSceneBody(scene, demoHindi, tr = { en, hi -> tr(en, hi) }, data = data, visits = visits, b = b, sp = sp, column = column,
                         filled = filled, formModel = formModel, formMs = formMs, formConfirmed = formConfirmed, onConfirmForm = { formConfirmed = true },
                         transcript = transcript, transcriptEngine = transcriptEngine, transcriptLive = transcriptLive,
                         dangers = dangers, sop = sop, sopFollow = sopFollow, sopOnline = sopOnline, sopOnlineSkip = sopOnlineSkip,
@@ -691,13 +731,68 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                             }
                         },
                         onCloseCard = { cardDoc = null })
+                    }
+                    val listState = rememberLazyListState()
+                    LaunchedEffect(caption, scene) { if (caption in lines().indices) listState.animateScrollToItem(caption) }
+                    if (!landscape) {
+                        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState,
+                            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            itemsIndexed(lines()) { i, s -> sent(i, s) }
+                            if (narrDone) item {
+                                Text(tr("▶ Next when ready", "▶ तैयार हों तो Next"),
+                                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            }
+                            item {
+                                Card(Modifier.fillMaxWidth().clickable { liveExpanded = true }) {
+                                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        aiChips()
+                                        liveBody()
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            LazyColumn(Modifier.weight(1f).fillMaxHeight(), state = listState,
+                                verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                itemsIndexed(lines()) { i, s -> sent(i, s) }
+                                if (narrDone) item {
+                                    Text(tr("▶ Next when ready", "▶ तैयार हों तो Next"),
+                                        fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                                Card(Modifier.fillMaxWidth().clickable { liveExpanded = true }) {
+                                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        aiChips()
+                                        liveBody()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (liveExpanded) Dialog(onDismissRequest = { liveExpanded = false },
+                        properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                        Surface(Modifier.fillMaxSize()) {
+                            Column(Modifier.fillMaxSize().padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(tr("Tap ✕ when done", "हो जाए तो ✕ दबाएँ"),
+                                        style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                                    TextButton(onClick = { liveExpanded = false }) { Text("✕") }
+                                }
+                                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)) { liveBody() }
+                            }
+                        }
+                    }
                 }
-                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                // Bottom bar: fixed, Next widest. Exit lives in the top-bar ⋮ menu.
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
                     Button(onClick = { go(scene - 1) }, enabled = scene > 0, modifier = Modifier.weight(1f)) { Text(tr("◀ Back", "◀ पीछे")) }
                     OutlinedButton(onClick = { replay() }, modifier = Modifier.weight(1f)) { Text(tr("⟳ Replay", "⟳ दोबारा")) }
-                    Button(onClick = { go(scene + 1) }, modifier = Modifier.weight(1f)) { Text(tr("Next ▶", "आगे ▶")) }
+                    Button(onClick = { go(scene + 1) }, modifier = Modifier.weight(2f)) { Text(tr("Next ▶", "आगे ▶")) }
                 }
-                OutlinedButton(onClick = { exitAsk = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("Exit demo", "डेमो बंद करें")) }
             }
             if (exitAsk) AlertDialog(onDismissRequest = { exitAsk = false },
                 title = { Text(tr("Exit the demo?", "डेमो बंद करें?")) },
