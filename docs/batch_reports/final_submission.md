@@ -300,7 +300,7 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 ### UI3. Home: two status lines and the Today's plan card removed (BUILD PENDING)
 - Changed (Final UI3): home no longer shows "Sample data · fictional people" or "Saved on this phone • private by default". Live status ("Saving on this phone…", "Processing locally…") still shows while it applies. "Clear sample data" (that line used to be the only way in) is now a button next to "Reset sample village", with the same confirm dialog. The "Today's plan" card is removed from home; the Today card and "Next visits this week" strip stay unchanged. ArogyaTodayPlan is kept in ArogyaRegistryUi.kt but no longer called.
 - Files: ArogyaVisitScreen.kt.
-- Tests: Compose UI only (not in the host suites). The build is held until the user asks (their instruction), so this has NOT been compiled yet.
+- Tests: Compose UI only (not in the host suites). Built later with UI4: BUILD SUCCESSFUL (1m09s), installed with adb install -r, base.apk MD5 matches.
 - To be checked manually: neither line on home; Today card + Next visits strip present; no Today's plan card; Clear sample data asks for confirmation and keeps real people.
 
 ### UI4. Ask the ASHA guide: chat-style layout (BUILD PENDING)
@@ -312,5 +312,5 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
   - Answer actions in one compact row: 🔊 Listen, ⏹ Stop, 👪 Family (हिंदी), 👪 English, ☁ Check online, ➕ More detail, ↗ Share.
   - Every earlier feature is kept: sources line + passages + Open official document, inline citations, Offline/Online tabs, guide-says quote, family block, Ask ANM / Save to check later (r8), Escalate to ANM (now escalates the asked question, since the box is cleared after sending), saved-questions banner, auto-follow scroll (UI2).
 - Files: ArogyaSopChat.kt (new SopUserBubble, SopAssistantHeader, SopEmptyState, SopComposer; history, streaming and action row restyled), ArogyaVisitScreen.kt (Ask top bar, thread items, composer).
-- Tests: Compose UI only (not in the host suites); brace balance checked. The build is held until the user asks, so this has NOT been compiled yet.
+- Tests: Compose UI only (not in the host suites); brace balance checked. BUILD SUCCESSFUL (1m09s, compileDebugKotlin ran, warnings only). Installed with adb install -r (user asked); base.apk MD5 matches.
 - To be checked manually: empty state + tapping an example fills the box; send clears the box and shows the bubble; ■ stops a running answer; ＋ menu photo/PDF; 🎤 dictation; scrolling earlier full answers; each action in the row; the urgent warning's Escalate carries the right question; Hindi labels.
