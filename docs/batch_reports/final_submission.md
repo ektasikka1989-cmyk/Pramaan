@@ -235,3 +235,10 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Tests: docs only — no code touched; tree covered by the C2+C3 build + suites.
 - Verified on host: checklist content matches Parts A–C acceptance lines.
 - To be checked manually: everything in it — that is its purpose.
+
+### D2. 100-question benchmark
+- Changed (Final D.2): new tools/gold100_eval.py (laptop only, stdlib urllib, key from META_API_KEY env, never stored/printed): integrity of all 293 gold sources against v2 (resolution path mirror of goldPassages, page match, quote-in-chunk); keyword-path eval replicating ArogyaVerifiedAnswers.keywordOverlap exactly (unicode tokens, Hinglish map, |q∩pool|/|q|); BASELINE arm = plain Python keyword top-5 (labeled NOT the phone E5 pipeline); GOLD-ON arm = pinned passages (+ reference notes when strong); cloud generation via Muse Spark for 100 EN + 20 HI × both arms when a key exists, scored on fact coverage (numbers + key terms), citation page ∈ item pages, latency; failures recorded, no reruns. Writes docs/benchmark/gold100.md + final.md.
+- Results (real, 2026-11-03): integrity 293/293 resolved (0 via chunk_id col, 293 via row id, 0 missing), pages 293/293, quotes 293/293. Keyword self-match: EN top-1 100/100, HI 99/100 (strong 100/100 both; one HI tie lost on id order). BASELINE keyword top-5 hits the right page 46/100; GOLD-ON pins it 100/100 once resolved. Cloud generation NOT MEASURED — no key in the environment (checked META_API_KEY, META_KEY, GROQ_API_KEY, TOGETHER_API_KEY, META_MODEL_API_KEY, all absent); the script is ready to rerun with a key. Phone E5 off-vs-on + offline timings stay "to be measured manually" (checklist A/B + AROGYA_GOLD logs).
+- Files: tools/gold100_eval.py (new), docs/benchmark/gold100.md (new), docs/benchmark/final.md (new).
+- Tests: script run EXIT=0; outputs contain measured numbers only.
+- To be checked manually: phone retrieval off-vs-on; offline answer quality/timings; cloud numbers if a key is provided later (rerun the script).
