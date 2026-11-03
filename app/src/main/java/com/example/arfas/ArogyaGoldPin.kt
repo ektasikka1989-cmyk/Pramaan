@@ -14,7 +14,9 @@ object ArogyaGoldPin {
         val docId: String,
         val title: String,
         val locator: String,
-        val text: String
+        val text: String,
+        /** UI5: official document link (opens the PDF at the page); "" when unknown. */
+        val url: String = ""
     )
 
     fun referenceBlock(answerEn: String): String =
@@ -25,8 +27,10 @@ object ArogyaGoldPin {
     fun blockText(id: String, docId: String, body: String): String =
         "Source ID: $id\nSource: $id :: $docId\n\n$body"
 
-    fun sourceRef(id: String, title: String, locator: String): String =
-        "$id :: ${title.replace('\n', ' ').take(500)}" + (if (locator.isNotBlank()) " — $locator" else "")
+    fun sourceRef(id: String, title: String, locator: String, url: String = ""): String =
+        "$id :: ${title.replace('\n', ' ').take(500)}" + (if (locator.isNotBlank()) " — $locator" else "") +
+            // UI5: same " | url" tail as normal passages, so the answer keeps "Open official document".
+            (if (url.startsWith("http")) " | $url" else "")
 
     /**
      * Trim trailing normal blocks so gold + normal fit [budget] (today's normal size);

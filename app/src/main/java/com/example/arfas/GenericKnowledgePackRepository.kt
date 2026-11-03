@@ -203,10 +203,13 @@ class GenericKnowledgePackRepository(
                     ?: row.sourceName ?: row.docId
                 val locator = row.locator?.takeIf { it.isNotBlank() }
                     ?: row.page?.let { "p.$it" } ?: "p.${s.page}"
+                // UI5: the official link, from the pack's own catalog first, else the verified answer's source.
+                val url = catalog[row.sourceName]?.sourceUrl?.takeIf { it.startsWith("http") }
+                    ?: s.sourceUrl.takeIf { it.startsWith("http") }.orEmpty()
                 out += ArogyaGoldPin.GoldPassage(
                     chunkId = row.chunkId.ifBlank { "gold-${s.chunkId}" },
                     docId = row.docId.ifBlank { row.sourceName.orEmpty() },
-                    title = title, locator = locator, text = row.content.trim()
+                    title = title, locator = locator, text = row.content.trim(), url = url
                 )
             }
         }.onFailure { Log.w(TAG, "AROGYA_GOLD resolve failed ${it.message}") }

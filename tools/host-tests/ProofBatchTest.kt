@@ -39,6 +39,18 @@ fun main() = kotlinx.coroutines.runBlocking {
     // No scorer at all: the word-overlap path, untouched by the batch.
     val lex = AnswerProof.check(answer, passages, null, pairScorer = pairScorer)
     check("no-scorer-lexical", lex.statements.all { it.score == null })
+    // UI5: a long answer is capped at MAX_PROOF_PAIRS (each statement with its single best passage).
+    val many = (1..8).map { "S$it" to "Passage $it says give ORS solution number $it often and continue feeding the child $it." }
+    val longAnswer = (1..8).joinToString("\n") { "Give ORS solution often and continue feeding the child as step $it." }
+    batchPairs = 0; batchCalls = 0
+    val capped = AnswerProof.check(longAnswer, many, scorer, pairScorer = pairScorer)
+    check("cap-pairs", batchCalls == 1 && batchPairs <= AnswerProof.MAX_PROOF_PAIRS + 8, "pairs=$batchPairs")
+    check("cap-still-scored", capped.statements.isNotEmpty() && capped.statements.all { it.score != null })
+    // UI5: a timeout (cancellation) stops the check instead of falling back to per-statement scoring.
+    val cancelling: suspend (List<Pair<String, String>>) -> FloatArray? = { throw kotlinx.coroutines.CancellationException("timeout") }
+    single = 0
+    val threw = runCatching { AnswerProof.check(answer, passages, scorer, pairScorer = cancelling) }.exceptionOrNull()
+    check("cancel-propagates", threw is kotlinx.coroutines.CancellationException && single == 0, "threw=$threw single=$single")
     println("proofbatch: $n checks, $fails failures")
     if (fails > 0) kotlin.system.exitProcess(1)
 }

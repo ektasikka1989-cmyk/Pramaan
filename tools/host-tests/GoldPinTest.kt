@@ -15,6 +15,13 @@ fun main() {
     check("sr-format", sr == "S1 :: Integrated ASHA Module \u2014 p.18", sr)
     val sr2 = ArogyaGoldPin.sourceRef("S2", "Guide", "")
     check("sr-noloc", sr2 == "S2 :: Guide", sr2)
+    // UI5: a gold source carries its official link like a normal passage (Open official document).
+    val sr3 = ArogyaGoldPin.sourceRef("S1", "Integrated ASHA Module", "p.18", "https://x.in/m.pdf")
+    check("sr-url", sr3 == "S1 :: Integrated ASHA Module — p.18 | https://x.in/m.pdf", sr3)
+    check("sr-url-opens", KnowledgeSourcePresentation.openTarget(sr3) == "https://x.in/m.pdf", KnowledgeSourcePresentation.openTarget(sr3).orEmpty())
+    check("sr-nonhttp-dropped", ArogyaGoldPin.sourceRef("S1", "G", "p.2", "file:///x") == "S1 :: G — p.2")
+    check("page-once", ArogyaGuideLibrary.pageUrl("https://x.in/m.pdf#page=18", "p.18") == "https://x.in/m.pdf#page=18")
+    check("page-gold", ArogyaGuideLibrary.pageUrl("https://x.in/m.pdf", "p.18") == "https://x.in/m.pdf#page=18")
     // Trim: gold kept fully, trailing normal dropped, at least one normal survives.
     val normals = listOf("a".repeat(100), "b".repeat(100), "c".repeat(100))
     check("trim-none", ArogyaGoldPin.trimNormal(0, normals, 10000) == normals)

@@ -79,7 +79,7 @@ object ArogyaGuideLibrary {
         val page = Regex("""pages?\s+(\d+)""", RegexOption.IGNORE_CASE).find(locator)?.groupValues?.get(1)
             ?: Regex("""\bp\.?\s*(\d+)""", RegexOption.IGNORE_CASE).find(locator)?.groupValues?.get(1)
             ?: return url
-        if (!url.contains(".pdf", ignoreCase = true)) return url
+        if (!url.contains(".pdf", ignoreCase = true) || url.contains('#')) return url
         return url + "#page=$page"
     }
 

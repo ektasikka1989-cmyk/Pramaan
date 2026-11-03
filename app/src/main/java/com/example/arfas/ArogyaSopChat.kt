@@ -299,13 +299,23 @@ fun SopAnswerCard(
         if (ArogyaFlags.r7SourceLine && tabSources.isNotEmpty()) {
             val s0 = tabSources.first()
             val anyWeb = tabSources.any { it.kind == "web" }
-            TextButton(onClick = { srcOpen = !srcOpen }) {
-                Text((if (anyWeb) tr("🌐 Sources: ", "🌐 स्रोत: ") else tr("📚 From the guide: ", "📚 गाइड से: ")) + s0.title +
-                    (if (s0.locator.isNotBlank()) ", ${s0.locator}" else "") +
-                    (if (s0.kind == "web" && s0.date.isNotBlank()) " (${s0.date})" else "") +
-                    (if (tabSources.size > 1) tr(" +${tabSources.size - 1} more", " +${tabSources.size - 1} और") else "") +
-                    (if (srcOpen) " ▴" else " ▾"),
-                    fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+            // UI5: the source line expands the passages; "📄 Open PDF" opens the first source's
+            // official document at the cited page in one tap.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { srcOpen = !srcOpen }, modifier = Modifier.weight(1f)) {
+                    Text((if (anyWeb) tr("🌐 Sources: ", "🌐 स्रोत: ") else tr("📚 From the guide: ", "📚 गाइड से: ")) + s0.title +
+                        (if (s0.locator.isNotBlank()) ", ${s0.locator}" else "") +
+                        (if (s0.kind == "web" && s0.date.isNotBlank()) " (${s0.date})" else "") +
+                        (if (tabSources.size > 1) tr(" +${tabSources.size - 1} more", " +${tabSources.size - 1} और") else "") +
+                        (if (srcOpen) " ▴" else " ▾"),
+                        fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+                }
+                val firstLink = tabSources.firstOrNull { it.url.startsWith("http") }
+                if (firstLink != null) FilledTonalButton(onClick = { onOpenUrl(ArogyaGuideLibrary.pageUrl(firstLink.url, firstLink.locator)) },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
+                    Text(if (firstLink.kind == "web") tr("🌐 Open", "🌐 खोलें") else tr("📄 Open PDF", "📄 PDF खोलें"),
+                        style = MaterialTheme.typography.labelLarge)
+                }
             }
             if (srcOpen) tabSources.forEach { s ->
                 key(s.id, tab) {

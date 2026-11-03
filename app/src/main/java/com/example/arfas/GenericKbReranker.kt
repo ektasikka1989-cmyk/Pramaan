@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -227,6 +228,9 @@ class GenericKbReranker(
         val order = rows.indices.sortedBy { rows[it].size }
         val env = OrtEnvironment.getEnvironment()
         for (batch in order.chunked(BATCH_SIZE)) {
+            // UI5: a cancelled caller (the answer-proof timeout) stops between batches instead of
+            // reading every remaining pair (measured: a 12 s proof timeout ran on for 42 s).
+            ensureActive()
             val width = batch.maxOf { rows[it].size }
             val ids = LongArray(batch.size * width) { PAD }
             val mask = LongArray(batch.size * width)

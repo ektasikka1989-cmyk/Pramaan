@@ -560,13 +560,14 @@ class GenericKnowledgeContextProvider(
         val pinnedChunkIds = goldPin.map { it.chunkId }.toSet()
         goldPin.forEach { g ->
             val sourceId = "S${packed.size + 1}"
-            val ref = ArogyaGoldPin.sourceRef(sourceId, g.title, g.locator)
+            val ref = ArogyaGoldPin.sourceRef(sourceId, g.title, g.locator, g.url)
             val body = "\u2022 ${g.text}"
             packed += GenericKnowledgePackRepository.Hit(
                 chunkId = g.chunkId, originalChunkId = null, docId = g.docId,
                 sourceName = null, pageNumber = null, locator = g.locator,
                 headingContext = null, unitKind = null, content = body,
-                similarity = 1f, rankScore = 1f, smallFragment = false, sourceTitle = g.title
+                similarity = 1f, rankScore = 1f, smallFragment = false, sourceTitle = g.title,
+                sourceUrl = g.url.ifBlank { null }
             )
             sourceRefs += ref
             val block = "Source ID: $sourceId\nSource: $ref\n$body"

@@ -68,6 +68,11 @@ object AnswerProof {
 
     /** Passages read with each statement (see check). */
     const val PROOF_CANDIDATES = 2
+    /**
+     * UI5: most pairs one batched proof run reads. A long answer (8 statements x 2 passages) reads
+     * each statement with its single best passage (plus passages holding its numbers) instead.
+     */
+    const val MAX_PROOF_PAIRS = 12
     private const val UNSCORED = -99f
 
     suspend fun check(
@@ -91,18 +96,22 @@ object AnswerProof {
         val passageWords = texts.map { words(it) }
         val out = ArrayList<Statement>(list.size)
         // Which passages each statement is read with (see the comment in the loop).
-        fun keepFor(s: String): Set<Int> {
+        fun keepFor(s: String, candidates: Int = PROOF_CANDIDATES): Set<Int> {
             val sw = words(s)
             val sNums = numbers(s)
-            return if (texts.size <= PROOF_CANDIDATES) texts.indices.toSet()
-                else (texts.indices.sortedByDescending { i -> (sw intersect passageWords[i]).size }.take(PROOF_CANDIDATES) +
+            return if (texts.size <= candidates) texts.indices.toSet()
+                else (texts.indices.sortedByDescending { i -> (sw intersect passageWords[i]).size }.take(candidates) +
                     (if (sNums.isEmpty()) emptyList() else texts.indices.filter { passageNumbers[it].containsAll(sNums) })).toSet()
         }
         // All statements' pairs in one batched run, when available.
         val batched: List<FloatArray?>? = if (scorer == null || pairScorer == null) null else run {
-            val idxs = list.map { s -> texts.indices.filter { it in keepFor(s) } }
+            val full = list.map { s -> texts.indices.filter { it in keepFor(s) } }
+            val idxs = if (full.sumOf { it.size } <= MAX_PROOF_PAIRS) full
+                else list.map { s -> texts.indices.filter { it in keepFor(s, 1) } }
             val flat = list.indices.flatMap { k -> idxs[k].map { list[k] to texts[it] } }
-            val all = runCatching { pairScorer(flat) }.getOrNull()?.takeIf { it.size == flat.size } ?: return@run null
+            // A timeout (cancellation) must stop the check, never be swallowed into a fallback.
+            val all = runCatching { pairScorer(flat) }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrNull()?.takeIf { it.size == flat.size } ?: return@run null
             var pos = 0
             list.indices.map { k ->
                 val part = FloatArray(idxs[k].size) { all[pos + it] }
@@ -118,7 +127,8 @@ object AnswerProof {
             val keep = keepFor(s)
             val scores = batched?.get(sIndex) ?: scorer?.let { sc ->
                 val idx = texts.indices.filter { it in keep }
-                runCatching { sc(s, idx.map { texts[it] }) }.getOrNull()?.takeIf { it.size == idx.size }?.let { part ->
+                runCatching { sc(s, idx.map { texts[it] }) }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                    .getOrNull()?.takeIf { it.size == idx.size }?.let { part ->
                     FloatArray(texts.size) { i -> idx.indexOf(i).let { j -> if (j >= 0) part[j] else UNSCORED } }
                 }
             }
