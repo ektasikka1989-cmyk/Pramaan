@@ -468,11 +468,7 @@ fun ArogyaVisitScreen(
                 // 1. Today — what to do now
                 item { ArogyaTodayCard(hindi,dueNow,LocalDate.now()) { hubOpen="due" } }
                 item { ArogyaNextStrip(hindi,dueNow) { hubOpen="due" } }
-                // Low kit stock, with a one-tap refill request
-                run {
-                    val lowStock = ArogyaRegistryLogic.lowItems(reg.stock,reg.stockItems,LocalDate.now())
-                    if(lowStock.isNotEmpty()) item { ArogyaLowStockCard(hindi,lowStock,reg.stock,reg.stockItems,LocalDate.now()) }
-                }
+                // Low-stock / refill card removed from home (UI pass); refill stays in the stock register.
                 // Today's plan + backup status
                 item { ArogyaTodayPlan(hindi,dueNow,LocalDate.now(),onStartVisit={ id -> reg.beneficiaries.firstOrNull { it.id==id }?.let { guidedFor=it } },onOpenList={ hubOpen="due" }) }
                 item { ArogyaBackupStatusRow(hindi,ArogyaRegistryStore.get(context),onSetup={ hubOpen="backup" }) }

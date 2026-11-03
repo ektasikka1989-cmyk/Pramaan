@@ -277,3 +277,9 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Not verified on host: real E5 cosines. The host has no E5 model, so semantic behaviour was tested only through pure-function checks with controlled vectors.
 - Known gap: tools/gold100_eval.py still mirrors the OLD keyword overlap. The D2 keyword numbers in docs/benchmark/gold100.md describe the pre-F1 matcher until the script is updated and rerun.
 - To be checked manually: AROGYA_GOLD lines in app_log.txt (score/second/pin) for the checklist A/B questions and the demo gold scene (E3, Hinglish "baby ko pehla gaadha doodh…" should still pin VA-005 via E5). Ask 2–3 off-topic questions (e.g. "how to make tea") and confirm pin=false. Confirm medium pins still happen for reworded questions (thresholds not retuned).
+
+### UI1. Home screen: low-stock card removed, Today's plan shows 2 visits
+- Changed (Final UI1): home no longer shows the low-stock card (low-stock line, ANM phone field, "Request refill — WhatsApp" / SMS). ArogyaLowStockCard is kept but no longer called; the refill request is still in the stock register ("Request refill from ANM"). Today's plan now lists only the first 2 due/overdue visits (was 8), each with Start visit. "Full due list ›" opens the due list as before and shows "(N more)" when more than 2 are due.
+- Files: ArogyaVisitScreen.kt, ArogyaRegistryUi.kt.
+- Tests: Compose UI only, not in the host suites. BUILD SUCCESSFUL (1m50s). Installed on the phone with adb install -r (user asked); installed base.apk MD5 matches the build.
+- To be checked manually: home has no low-stock/refill card; Today's plan shows 2 visits; "Full due list (N more) ›" opens the full list; the stock register refill still works.

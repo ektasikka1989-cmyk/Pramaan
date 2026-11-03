@@ -315,7 +315,7 @@ fun ArogyaLowStockCard(hindi: Boolean, low: List<ArogyaRegistryLogic.LowItem>, s
     }
 }
 
-/** Today's plan: due and overdue visits in order, each with its own Start visit. */
+/** Today's plan: the first 2 due/overdue visits, each with Start visit; the rest via Full due list. */
 @Composable
 fun ArogyaTodayPlan(hindi: Boolean, due: List<DueItem>, today: LocalDate, onStartVisit: (String) -> Unit, onOpenList: () -> Unit) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
@@ -323,7 +323,7 @@ fun ArogyaTodayPlan(hindi: Boolean, due: List<DueItem>, today: LocalDate, onStar
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(tr("Today's plan", "आज की योजना"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
             if (due.isEmpty()) Text(tr("Nothing due this week", "इस हफ़्ते कुछ बाकी नहीं"))
-            due.take(8).forEach { d ->
+            due.take(2).forEach { d ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text(d.name, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -334,7 +334,10 @@ fun ArogyaTodayPlan(hindi: Boolean, due: List<DueItem>, today: LocalDate, onStar
                     Button(onClick = { onStartVisit(d.beneficiaryId) }) { Text(tr("Start visit", "विज़िट शुरू"), maxLines = 1) }
                 }
             }
-            if (due.size > 8 || due.isNotEmpty()) TextButton(onClick = onOpenList) { Text(tr("Full due list ›", "पूरी सूची ›")) }
+            if (due.isNotEmpty()) TextButton(onClick = onOpenList) {
+                Text(if (due.size > 2) tr("Full due list (${due.size - 2} more) ›", "पूरी सूची (${due.size - 2} और) ›")
+                    else tr("Full due list ›", "पूरी सूची ›"))
+            }
         }
     }
 }
