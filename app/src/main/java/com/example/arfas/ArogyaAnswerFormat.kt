@@ -109,4 +109,14 @@ object ArogyaAnswerFormat {
         }
         return n
     }
+
+    private val SUP = mapOf('0' to '⁰', '1' to '¹', '2' to '²', '3' to '³', '4' to '⁴',
+        '5' to '⁵', '6' to '⁶', '7' to '⁷', '8' to '⁸', '9' to '⁹')
+
+    /** Part B7: a citation id as inline superscript ("10" → "¹⁰"; other chars unchanged). */
+    fun supDigits(id: String): String = buildString(id.length) { id.forEach { append(SUP[it] ?: it) } }
+
+    /** Part B7: a numbered step or bullet starts its own line; plain sentences flow together. */
+    fun needsNewLine(sentence: String): Boolean =
+        Regex("^([•\\-*–]|\\d+[.)])\\s+").containsMatchIn(sentence.trimStart())
 }

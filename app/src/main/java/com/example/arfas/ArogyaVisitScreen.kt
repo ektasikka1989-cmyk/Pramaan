@@ -943,7 +943,7 @@ fun ArogyaVisitScreen(
                         }
                         aiResult?.let { result ->
                             item(key="latest") {
-                                Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                     val q=thread.lastOrNull()?.question ?: aiQuestion
                                     val askedQ=thread.lastOrNull()?.asked?.ifBlank { q } ?: q
                                     if(q.isNotBlank()) Text(q,fontWeight=FontWeight.Bold)

@@ -187,3 +187,10 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Tests: full host gate 44 suites green, EXIT=0 (gateb6.log); ExtractSplitTest 18/18 (cut detection, halves, 8-person page -> 8 grounded names, full 28-antigen immunization page -> 28 rows, Hindi 4-item receipt -> 4 lines, merges, full prompts); BUILD SUCCESSFUL (1m6s after fixing MedScan orEmpty).
 - Verified on host: split/merge logic, full-page extraction, Hindi voice rules.
 - To be checked manually: split-read on a real long card photo; multi-person photo review; Hindi voice receipt end to end.
+
+### B7. Readable layout
+- Changed (Final B.7): SopAnswerText rewritten -- flowing paragraphs (17 sp, 25 sp line height = 1.45), numbered steps/bullets keep their own lines, inline superscript citations (tappable annotated string with baseline-shift spans, multi-digit safe) replacing the [n] buttons; 12 dp between sections. History collapsed view 3 -> 6 lines with explicit Show more / Show less; card padding 12 -> 16 dp; latest card gets 16 dp padding. Input box already sits below the weighted message list (fixed at bottom) -- confirmed, no change. Pure helpers supDigits/needsNewLine in ArogyaAnswerFormat.
+- Files: ArogyaSopChat.kt, ArogyaAnswerFormat.kt, ArogyaVisitScreen.kt, AnswerFormatTest.kt.
+- Tests: full host gate 44 suites green, EXIT=0 (gateb7.log); AnswerFormatTest 37/37 (new: superscript mapping, line-break rule); BUILD SUCCESSFUL (1m16s).
+- Verified on host: superscript mapping, break rule, section parsing.
+- To be checked manually: layout on phone (both languages, history expand, citation taps, fixed input).

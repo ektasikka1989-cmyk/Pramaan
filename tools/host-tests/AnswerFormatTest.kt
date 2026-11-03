@@ -65,6 +65,13 @@ fun main() {
     val eight = (1..8).joinToString(" ") { "Keep the child warm and clean today number $it." }
     check("fam-max8", ArogyaAnswerFormat.sentenceCount(ArogyaAiExtras.groundedSentences(eight, eight, max = 8)) == 8)
     check("fam-newnum", !ArogyaAiExtras.groundedSentences("Give ORS now. Give 500 tablets daily.", "Give ORS now.", max = 8).contains("500"))
+    // Part B7: inline superscript citations + flowing-paragraph line breaks.
+    check("sup-single", ArogyaAnswerFormat.supDigits("2") == "²")
+    check("sup-multi", ArogyaAnswerFormat.supDigits("10") == "¹⁰")
+    check("sup-mixed", ArogyaAnswerFormat.supDigits("W1") == "W¹")
+    check("nl-step", ArogyaAnswerFormat.needsNewLine("1. Wash hands well."))
+    check("nl-bullet", ArogyaAnswerFormat.needsNewLine("• Keep it dry."))
+    check("nl-flow", !ArogyaAnswerFormat.needsNewLine("Keep the cord stump clean."))
     // Sentence pieces for AROGYA_ANSWER_LEN.
     check("len-simple", ArogyaAnswerFormat.sentenceCount("One two three. Four five six!") == 2)
     check("len-numbered", ArogyaAnswerFormat.sentenceCount("1. Wash hands well.\n2. Keep it dry now.") == 2)

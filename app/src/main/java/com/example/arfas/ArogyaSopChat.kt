@@ -11,14 +11,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -35,11 +37,10 @@ data class SopChatMsg(
  * An answer rendered in sections: each Answer:/What to do:/When to tell the ANM: label
  * (English or Hindi) becomes a small heading; unlabelled text renders as one block.
  * Raw Markdown is stripped: the card never shows ## or **.
- * Each sentence carries its citation markers ([1] guide, [W1] official website); tap a
- * marker to open and highlight that source. [news] sentences are highlighted (the Online
+ * Each sentence carries inline superscript citations (tappable, opens the source).
+ * [news] sentences are highlighted (the Online
  * tab marks what the offline answer lacked).
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SopAnswerText(
     text: String,
@@ -49,37 +50,62 @@ fun SopAnswerText(
 ) {
     val sections = remember(text) { ArogyaAnswerFormat.sections(text) }
     val segByText = remember(segments) { segments.associate { it.text to it.sourceIds } }
-    fun norm(t: String) = t.lowercase().replace(Regex("\\s+"), " ").trim()
+    fun norm(t: String) = t.lowercase(java.util.Locale.ROOT).replace(Regex("\\s+"), " ").trim()
     fun idsFor(sentence: String): List<String> {
         segByText[sentence]?.let { return it }
         val n = norm(sentence)
         return segByText.entries.firstOrNull { norm(it.key) == n }?.value.orEmpty()
     }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         sections.forEach { s ->
-            if (s.heading.isNotEmpty()) Text(s.heading, style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            if (s.body.isNotEmpty()) {
-                val sentences = ArogyaOfficialAnswer.splitSentences(s.body)
-                if (sentences.isEmpty()) Text(s.body, style = MaterialTheme.typography.bodyLarge)
-                else Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    sentences.forEach { sentence ->
-                        val ids = idsFor(sentence)
-                        val fresh = sentence in news
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(sentence, style = MaterialTheme.typography.bodyLarge,
-                                modifier = if (fresh) Modifier.clip(RoundedCornerShape(4.dp))
-                                    .background(MaterialTheme.colorScheme.secondaryContainer).padding(2.dp) else Modifier)
-                            ids.forEach { id ->
-                                TextButton(onClick = { onCite(id) }, contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp)) {
-                                    Text("[$id]", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (s.heading.isNotEmpty()) Text(s.heading, style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                if (s.body.isNotEmpty()) SopSectionBody(s.body, news, ::idsFor, onCite)
+            }
+        }
+    }
+}
+
+/**
+ * Part B7: one section as a flowing paragraph (17 sp, 1.45 line height): plain
+ * sentences run together, numbered steps and bullets keep their own lines, and
+ * each sentence carries inline superscript citations (tappable, opens the source).
+ */
+@Composable
+private fun SopSectionBody(
+    body: String,
+    news: Set<String>,
+    idsFor: (String) -> List<String>,
+    onCite: (String) -> Unit
+) {
+    val sentences = remember(body) { ArogyaOfficialAnswer.splitSentences(body) }
+    if (sentences.isEmpty()) {
+        Text(body, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 25.sp))
+        return
+    }
+    val primary = MaterialTheme.colorScheme.primary
+    val newsBg = MaterialTheme.colorScheme.secondaryContainer
+    val ann = remember(body, news) {
+        buildAnnotatedString {
+            sentences.forEachIndexed { i, sentence ->
+                if (i > 0) append(if (ArogyaAnswerFormat.needsNewLine(sentence)) "\n" else " ")
+                val start = length
+                append(sentence)
+                if (sentence in news) addStyle(SpanStyle(background = newsBg), start, length)
+                idsFor(sentence).forEach { id ->
+                    append(" ")
+                    val c0 = length
+                    append(ArogyaAnswerFormat.supDigits(id))
+                    addStyle(SpanStyle(color = primary, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                        baselineShift = BaselineShift.Superscript), c0, length)
+                    addStringAnnotation("cite", id, c0, length)
                 }
             }
         }
+    }
+    ClickableText(ann, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 25.sp)) { offset ->
+        ann.getStringAnnotations("cite", offset, offset).firstOrNull()?.let { onCite(it.item) }
     }
 }
 
@@ -110,7 +136,7 @@ fun SopChatHistoryCard(
     var expanded by remember(msg.id) { mutableStateOf(false) }
     val result = msg.result
     Card(Modifier.fillMaxWidth().clickable { expanded = !expanded }) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row {
                 Text(msg.question, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text(if (expanded) "▴" else "▾", color = MaterialTheme.colorScheme.primary)
@@ -118,19 +144,22 @@ fun SopChatHistoryCard(
             if (result == null) {
                 Text(tr("No answer recorded.", "कोई उत्तर दर्ज नहीं।"), style = MaterialTheme.typography.bodySmall)
             } else if (!expanded) {
-                Text(ArogyaMarkdown.strip(result.text), maxLines = 3, style = MaterialTheme.typography.bodyMedium)
+                Text(ArogyaMarkdown.strip(result.text), maxLines = 6, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 17.sp, lineHeight = 25.sp))
                 if (result.sources.isNotEmpty()) {
                     val s0 = result.sources.first()
                     Text(tr("📚 From the guide: ", "📚 गाइड से: ") + s0.title +
                         (if (s0.locator.isNotBlank()) ", ${s0.locator}" else ""),
                         style = MaterialTheme.typography.bodySmall, maxLines = 2)
                 }
+                TextButton(onClick = { expanded = true }) { Text(tr("Show more", "और देखें")) }
             } else {
                 // Expanded history shows the full card; the family explanation it triggers
                 // reads back in the latest card (one family block per window).
                 SopAnswerCard(result, msg.question, msg.asked.ifBlank { msg.question }, warning, inVisit,
                     ai, busy, pending, false, onOpenUrl, onSpeak, onStopSpeak, "", false, "", 0L,
                     onFamily, onCheckOnline, onMoreDetail, onSaveForLater, onEscalate, context, hindi)
+                TextButton(onClick = { expanded = false }) { Text(tr("Show less", "कम देखें")) }
             }
         }
     }
