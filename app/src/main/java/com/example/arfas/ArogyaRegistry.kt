@@ -18,7 +18,7 @@ import org.json.JSONObject
  *  - SNCU/NBSU/NRC discharge: day of discharge = day 1, same day pattern from discharge (HBYC handbook p.16)
  *  - LBW / preterm / SNCU: quarterly follow-up at completed 3, 6, 9, 12 months (SNCU & LBW follow-up guidelines p.6)
  *  - HBYC: completed 3, 6, 9, 12, 15 months (HBYC handbook p.19)
- *  - ANC: ≤12 w, 14–26 w, 28–34 w, 36 w–term (Integrated ASHA Module Part B p.182)
+ *  - ANC: ≤12 w, 14–26 w, 28–36 w, >36 w (Integrated ASHA Module Part B p.197); 5th ANC column under PMSMA
  *  - Immunization contacts: birth, 6/10/14 weeks, 9 months, 16–24 months, 5–6 years (Immunization Handbook p.33, p.39)
  * Dates are reminders for the ASHA; she and her ANM decide.
  */
@@ -405,7 +405,7 @@ object ArogyaSchedule {
         if (b.category == BenCategory.PREGNANT && lmp != null && b.deliveryDate.isBlank()) {
             val edd = lmp.plusDays(280)
             listOf(Triple(1, lmp.plusWeeks(6), lmp.plusWeeks(12)), Triple(2, lmp.plusWeeks(14), lmp.plusWeeks(26)),
-                Triple(3, lmp.plusWeeks(28), lmp.plusWeeks(34)), Triple(4, lmp.plusWeeks(36), edd)).forEach { (n, due, end) ->
+                Triple(3, lmp.plusWeeks(28), lmp.plusWeeks(36)), Triple(4, lmp.plusWeeks(36), edd)).forEach { (n, due, end) ->
                 val date = b.mcp.anc[n].orEmpty()
                 out += DueItem(b.id, b.name, b.village, "ANC", "ANC $n", due, end, date.isNotBlank(), date)
             }
@@ -891,7 +891,7 @@ object ArogyaForms {
             "High risk: " + if (ArogyaRegistryLogic.isHighRisk(b) || b.mcp.ancDetails.values.any { it.bp.substringBefore('/').toIntOrNull()?.let { s -> s >= 140 } == true || (it.hb.toDoubleOrNull() ?: 99.0) < 10.0 }) "YES" else "No")
         if (b.category == BenCategory.PREGNANT) {
             val lmp = runCatching { LocalDate.parse(b.lmp) }.getOrNull()
-            out += "3. Pregnancy record and antenatal care" to (1..4).map { n ->
+            out += "3. Pregnancy record and antenatal care" to (1..5).map { n ->
                 val date = b.mcp.anc[n]; val d = b.mcp.ancDetails[n]
                 val pog = if (date != null && lmp != null) java.time.temporal.ChronoUnit.WEEKS.between(lmp, LocalDate.parse(date)).toString() else ""
                 "ANC $n — date: ${date?.let(::dd) ?: "—"} · POG (weeks): ${pog.ifBlank { "—" }} · weight: ${d?.weightKg?.ifBlank { null } ?: "—"} kg · BP: ${d?.bp?.ifBlank { null } ?: "—"} · Hb: ${d?.hb?.ifBlank { null } ?: "—"}"

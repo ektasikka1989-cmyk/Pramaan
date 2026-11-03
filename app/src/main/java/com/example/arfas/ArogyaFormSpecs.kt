@@ -11,7 +11,7 @@ import org.json.JSONObject
  * (rows × visit columns, filled over successive visits).
  *  - ANNEX9:   Home Visit Form — Examination of Mother and Newborn (Handbook for ASHA Facilitators, Annexure 9)
  *  - HBYC:     HBYC card (Handbook for ASHA on HBYC, p.90)
- *  - MCP_ANC:  MCP card antenatal record + pregnancy danger signs (MCP card 2018, sections 3–5)
+ *  - MCP_ANC:  MCP card antenatal record + pregnancy danger signs (MCP Card p.5, Guidebook p.12)
  *  - SICK:     Sick child checklist (HBYC Handbook §5.4, pp.63–66)
  *  - FP:       Eligible couple / family planning entry (MCP card FP page; state register formats vary)
  */
@@ -77,23 +77,81 @@ object ArogyaOfficialForms {
         "Filled by the ASHA at each visit, verified by the ASHA Facilitator or ANM/MPW, and submitted after each visit; basis for incentive payment.")
 
     val MCP_ANC = FormSpec("mcp_anc", "MCP card — Pregnancy record and antenatal care", "MCP कार्ड — गर्भावस्था रिकॉर्ड और प्रसव पूर्व देखभाल",
-        "Mother and Child Protection Card (MoHFW/MWCD 2018), sections 3–5", listOf("ANC 1", "ANC 2", "ANC 3", "ANC 4"), listOf(
-            FieldSpec("complaints", "Any complaints", "कोई शिकायत", QType.TEXT, section = "3. ANC record"),
-            FieldSpec("weight", "Weight", "वज़न", QType.NUMBER, "kg", "3. ANC record", hint = "Copy from ANM's entry"),
-            FieldSpec("bp", "Blood pressure", "ब्लड प्रेशर", QType.TEXT, section = "3. ANC record", hint = "e.g. 110/70; 140/90 or more → refer"),
-            FieldSpec("hb", "Haemoglobin", "हीमोग्लोबिन", QType.NUMBER, "g/dl", "3. ANC record", hint = "Below 7 = severe anaemia → refer"),
-            yn("fetal_mov", "Fetal movements reduced or absent", "बच्चे की हलचल कम या नहीं", "3. ANC record", "Yes"),
-            FieldSpec("td", "T.T./Td injection (dose given today)", "TT/Td इंजेक्शन (आज की खुराक)", QType.CHOICE, section = "4. Care during pregnancy", choices = listOf("None", "TT/Td-1", "TT/Td-2", "Booster")),
-            FieldSpec("ifa", "Iron (IFA) tablets given", "दी गई आयरन गोलियाँ", QType.NUMBER, "tablets", "4. Care during pregnancy", hint = "At least 180 in pregnancy"),
-            FieldSpec("calcium", "Calcium tablets given", "दी गई कैल्शियम गोलियाँ", QType.NUMBER, "tablets", "4. Care during pregnancy", hint = "2 a day from the 4th month, as the ANM advises"),
-            FieldSpec("albendazole", "Deworming (albendazole) given", "पेट के कीड़े की गोली (एल्बेंडाजोल)", QType.NUMBER, "tablets", "4. Care during pregnancy", hint = "One 400 mg tablet after the first trimester"),
-            yn("d_bleed", "Bleeding during pregnancy", "गर्भावस्था में खून आना", "5. Danger signs", "Yes"),
-            yn("d_headache", "Headache, blurring of vision, fits or swelling all over the body", "सिरदर्द, धुंधला दिखना, दौरे या शरीर में सूजन", "5. Danger signs", "Yes"),
-            yn("d_fever", "High fever", "तेज़ बुखार", "5. Danger signs", "Yes"),
-            yn("d_water", "Bursting of water bag without labour pains", "बिना दर्द के पानी की थैली फटना", "5. Danger signs", "Yes"),
-            yn("d_anaemia", "Severe anaemia with or without breathlessness", "गंभीर खून की कमी, साँस फूलना", "5. Danger signs", "Yes"),
-            yn("bp_facility", "Hospital identified and transport arranged (birth preparedness)", "अस्पताल तय और वाहन की व्यवस्था", "5. Birth preparedness"),
-            yn("jsy", "Registered under JSY", "JSY में पंजीकरण", "5. Birth preparedness")),
+        "MCP Card p.5 (MoHFW/MoWCD) · Guidebook p.12", listOf("ANC 1", "ANC 2", "ANC 3", "ANC 4", "ANC 5 (PMSMA)"), listOf(
+            // Pregnancy record (MCP p.3; LMP/EDD come from the registration record, Date from the visit).
+            FieldSpec("gravida", "No. of pregnancies", "गर्भधारण की संख्या", QType.NUMBER, section = "Pregnancy record"),
+            FieldSpec("prev_live_births", "Previous live births", "पहले के जीवित जन्म", QType.NUMBER, section = "Pregnancy record"),
+            FieldSpec("last_delivery_at", "Last delivery conducted at", "पिछला प्रसव कहाँ हुआ", QType.TEXT, section = "Pregnancy record"),
+            FieldSpec("delivery_institution", "Name of identified delivery institution", "चुने हुए प्रसव अस्पताल का नाम", QType.TEXT, section = "Pregnancy record"),
+            FieldSpec("preg_outcome", "Pregnancy outcome", "गर्भ का परिणाम", QType.CHOICE, section = "Pregnancy record", choices = listOf("Live Birth", "Still Birth")),
+            // Obstetric complication in previous pregnancy (tick).
+            yn("oc_aph", "A. APH", "A. APH (प्रसव से पहले खून आना)", "Obstetric complication in previous pregnancy"),
+            yn("oc_eclampsia", "B. Eclampsia", "B. एक्लेम्पसिया (गर्भ में दौरे)", "Obstetric complication in previous pregnancy"),
+            yn("oc_pih", "C. PIH", "C. PIH (गर्भ में उच्च रक्तचाप)", "Obstetric complication in previous pregnancy"),
+            yn("oc_anaemia", "D. Anaemia", "D. खून की कमी (एनीमिया)", "Obstetric complication in previous pregnancy"),
+            yn("oc_obstructed", "E. Obstructed Labor", "E. अटका हुआ प्रसव", "Obstetric complication in previous pregnancy"),
+            yn("oc_pph", "F. PPH", "F. PPH (प्रसव के बाद ज़्यादा खून)", "Obstetric complication in previous pregnancy"),
+            yn("oc_lscs", "G. LSCS", "G. ऑपरेशन से प्रसव (LSCS)", "Obstetric complication in previous pregnancy"),
+            yn("oc_anomaly", "H. Congenital Anomaly", "H. जन्मजात विकृति", "Obstetric complication in previous pregnancy"),
+            yn("oc_abortion", "I. Abortion", "I. गर्भपात", "Obstetric complication in previous pregnancy"),
+            FieldSpec("oc_other", "J. Other", "J. अन्य (लिखें)", QType.TEXT, section = "Obstetric complication in previous pregnancy"),
+            // Past history (tick).
+            yn("ph_tb", "A. Tuberculosis", "A. टीबी (क्षय रोग)", "Past history"),
+            yn("ph_hyp", "B. Hypertension", "B. उच्च रक्तचाप", "Past history"),
+            yn("ph_heart", "C. Heart Disease", "C. हृदय रोग", "Past history"),
+            yn("ph_diabetes", "D. Diabetes", "D. मधुमेह (शुगर)", "Past history"),
+            yn("ph_asthma", "E. Asthma", "E. दमा", "Past history"),
+            FieldSpec("ph_other", "F. Others (Specify)", "F. अन्य (लिखें)", QType.TEXT, section = "Past history"),
+            // Examination.
+            FieldSpec("height", "Height", "ऊँचाई", QType.NUMBER, "cm", "Examination", hint = "Below 145 cm → obstetric risk"),
+            FieldSpec("heart", "Heart", "हृदय", QType.TEXT, section = "Examination"),
+            FieldSpec("lungs", "Lungs", "फेफड़े", QType.TEXT, section = "Examination"),
+            FieldSpec("breasts", "Breasts", "स्तन", QType.TEXT, section = "Examination", hint = "Check for inverted nipple"),
+            // Antenatal visits.
+            FieldSpec("pog", "POG (Weeks)", "गर्भ के हफ़्ते (POG)", QType.NUMBER, "weeks", "Antenatal visits"),
+            FieldSpec("weight", "Weight", "वज़न", QType.NUMBER, "kg", "Antenatal visits", hint = "Copy from ANM's entry"),
+            FieldSpec("pulse", "Pulse Rate", "नब्ज़ दर", QType.NUMBER, "/min", "Antenatal visits"),
+            FieldSpec("bp", "Blood Pressure", "ब्लड प्रेशर", QType.TEXT, section = "Antenatal visits", hint = "e.g. 110/70; 140/90 or more → refer"),
+            yn("pallor", "Pallor", "पीलापन", "Antenatal visits"),
+            yn("oedema", "Oedema", "सूजन", "Antenatal visits"),
+            yn("jaundice", "Jaundice", "पीलिया", "Antenatal visits"),
+            FieldSpec("complaints", "Any Complaints", "कोई शिकायत", QType.TEXT, section = "Antenatal visits"),
+            // Abdominal examination.
+            FieldSpec("fundal_height", "Fundal Height Weeks in cm", "गर्भाशय की ऊँचाई (सेमी)", QType.NUMBER, "cm", "Abdominal examination"),
+            FieldSpec("lie", "Lie/Presentation", "बच्चे की स्थिति", QType.TEXT, section = "Abdominal examination"),
+            FieldSpec("fetal_mov", "Fetal Movements (Normal / Reduced / Absent)", "बच्चे की हलचल (सामान्य / कम / नहीं)", QType.CHOICE, section = "Abdominal examination", choices = listOf("Normal", "Reduced", "Absent")),
+            FieldSpec("fhr", "Fetal Heart Rate per Minute", "बच्चे के दिल की धड़कन प्रति मिनट", QType.NUMBER, "/min", "Abdominal examination"),
+            FieldSpec("pv", "P/V if Done", "P/V (अंदरूनी जाँच, अगर हुई)", QType.TEXT, section = "Abdominal examination"),
+            // Essential investigations.
+            FieldSpec("hb", "Hemoglobin", "हीमोग्लोबिन", QType.NUMBER, "gms", "Essential investigations", hint = "Below 7 = severe anaemia → refer"),
+            FieldSpec("urine_albumin", "Urine Albumin", "पेशाब में एल्बुमिन", QType.TEXT, section = "Essential investigations"),
+            FieldSpec("urine_sugar", "Urine Sugar", "पेशाब में शुगर", QType.TEXT, section = "Essential investigations"),
+            yn("hiv", "HIV Screening", "HIV जाँच", "Essential investigations", hint = "Record Yes/No only — never the result"),
+            FieldSpec("syphilis", "Syphilis", "सिफलिस", QType.TEXT, section = "Essential investigations"),
+            yn("usg", "Ultrasonography (Y/N)", "अल्ट्रासाउंड (हाँ/नहीं)", "Essential investigations"),
+            FieldSpec("gdm", "Gestational Diabetes Mellitus", "गर्भावस्था की शुगर (GDM)", QType.TEXT, section = "Essential investigations"),
+            // Blood Group & Rh.
+            FieldSpec("blood_group", "Blood Group & Rh Typing", "ब्लड ग्रुप और Rh", QType.TEXT, section = "Blood Group & Rh"),
+            FieldSpec("bg_date", "Blood Group & Rh Date", "ब्लड ग्रुप जाँच की तारीख", QType.TEXT, section = "Blood Group & Rh"),
+            // Optional investigations (value + date).
+            FieldSpec("tsh", "Thyroid-Stimulating Hormone", "थायरॉइड (TSH)", QType.TEXT, section = "Optional investigations", hint = "Value + date"),
+            FieldSpec("hbsag", "Hbs Ag", "HbsAg", QType.TEXT, section = "Optional investigations", hint = "Value + date"),
+            FieldSpec("blood_sugar", "Blood sugar", "ब्लड शुगर", QType.TEXT, section = "Optional investigations", hint = "Value + date"),
+            FieldSpec("opt_other", "Others", "अन्य", QType.TEXT, section = "Optional investigations", hint = "Value + date"),
+            // Checkup rows (MCP p.4).
+            FieldSpec("td", "Td (TT on older cards)", "Td (पुराने कार्ड पर TT)", QType.CHOICE, section = "Checkup", choices = listOf("None", "Td-1", "Td-2", "Booster"), hint = "Td-1 when pregnancy confirmed, Td-2 after 1 month; one dose if vaccinated within 3 years"),
+            FieldSpec("ifa", "IFA tablets count", "आयरन (IFA) गोलियों की संख्या", QType.NUMBER, "tablets", "Checkup", hint = "1 a day for 6 months after 1st trimester; at least 180"),
+            FieldSpec("calcium", "Calcium tablets count", "कैल्शियम गोलियों की संख्या", QType.NUMBER, "tablets", "Checkup", hint = "2 a day for 6 months after 1st trimester"),
+            FieldSpec("albendazole", "Albendazole (400 mg, single dose)", "एल्बेंडाजोल (400 mg, एक खुराक)", QType.NUMBER, "tablets", "Checkup", hint = "Single dose after the 1st trimester"),
+            // Danger signs (MCP p.6 wording).
+            yn("d_bleed", "Bleeding during pregnancy / excessive bleeding during or after delivery", "गर्भ में खून / प्रसव के समय या बाद में ज़्यादा खून", "Danger signs", "Yes"),
+            yn("d_anaemia", "Severe anaemia with or without breathlessness", "गंभीर खून की कमी, साँस फूले या नहीं", "Danger signs", "Yes"),
+            yn("d_fever", "High fever during pregnancy or within one month of delivery", "गर्भ में या प्रसव के एक महीने के अंदर तेज़ बुखार", "Danger signs", "Yes"),
+            yn("d_headache", "Headache, blurring of vision, fits and swelling all over the body", "सिरदर्द, धुंधला दिखना, दौरे और पूरे शरीर में सूजन", "Danger signs", "Yes"),
+            yn("d_labour", "Labour pain before term / labour pain for more than 12 hours / reduced foetal movement", "समय से पहले प्रसव दर्द / 12 घंटे से ज़्यादा दर्द / बच्चे की हलचल कम", "Danger signs", "Yes"),
+            yn("d_water", "Bursting of water bag without labour pains / preterm labour pains (< 37 weeks)", "बिना दर्द पानी की थैली फटना / समय से पहले दर्द (37 हफ़्ते से पहले)", "Danger signs", "Yes"),
+            yn("bp_facility", "Hospital identified and transport arranged (birth preparedness)", "अस्पताल तय और वाहन की व्यवस्था", "Birth preparedness"),
+            yn("jsy", "Registered under JSY", "JSY में पंजीकरण", "Birth preparedness")),
         "Any danger sign → refer to hospital immediately (108 / 102).")
 
     val SICK = FormSpec("sick", "Sick child checklist (HBYC Handbook §5.4, pp. 63–66)", "बीमार बच्चा चेकलिस्ट (HBYC हैंडबुक §5.4, पृ. 63–66)",
@@ -267,6 +325,8 @@ object ArogyaOfficialForms {
                 v["bp"]?.split("/")?.let { p -> val s = p.getOrNull(0)?.trim()?.toIntOrNull(); val di = p.getOrNull(1)?.trim()?.toIntOrNull()
                     if ((s ?: 0) >= 140 || (di ?: 0) >= 90) out += "Blood pressure ${v["bp"]} (140/90 or more)" }
                 d("hb")?.let { if (it < 7.0) out += "Severe anaemia (Hb $it g/dl)" }
+                d("height")?.let { if (it < 145) out += "obstetric risk (MCP guidebook p.13)" }
+                v["fetal_mov"]?.let { if (it == "Reduced" || it == "Absent") out += "Fetal movements ${it.lowercase()}" }
             }
             "sick" -> d("temp")?.let { if (it >= 38.5) out += "High fever $it °C" }
         }
@@ -275,7 +335,9 @@ object ArogyaOfficialForms {
 
     private val ANNEX9_DAYS = listOf(1L, 3L, 7L, 14L, 21L, 28L, 42L)
     private val HBYC_MONTHS = listOf(3L, 6L, 9L, 12L, 15L)
-    private val ANC_WEEKS = listOf(12L, 20L, 30L, 36L)   // MCP card: 1st ≤12 wk, 2nd 14–26, 3rd 28–34, 4th 36–term
+    // Due windows (Integrated ASHA Module Part B p.197): 1st ≤12 wk, 2nd 14–26, 3rd 28–36, 4th >36.
+    // Targets are the window mid/end points; the 5th column is filled under PMSMA with no fixed window.
+    private val ANC_WEEKS = listOf(12L, 20L, 30L, 36L)
 
     /** Next visit date for this form after the visit in [column] on [date] (from the printed schedules). Null = form complete. */
     fun nextDue(spec: FormSpec, b: Beneficiary, column: Int, date: LocalDate): LocalDate? {
@@ -299,7 +361,10 @@ object ArogyaOfficialForms {
     }
 
     /** Facts that stay true once recorded (carried into later columns until changed). */
-    private val CARRY = setOf("jsy", "bp_facility")
+    private val CARRY = setOf("jsy", "bp_facility", "gravida", "prev_live_births", "last_delivery_at", "delivery_institution",
+        "preg_outcome", "oc_aph", "oc_eclampsia", "oc_pih", "oc_anaemia", "oc_obstructed", "oc_pph", "oc_lscs", "oc_anomaly",
+        "oc_abortion", "oc_other", "ph_tb", "ph_hyp", "ph_heart", "ph_diabetes", "ph_asthma", "ph_other",
+        "height", "heart", "lungs", "breasts", "blood_group", "bg_date")
 
     /** Latest earlier value per row, for "last time" hints and carry-forward. */
     fun previous(spec: FormSpec, b: Beneficiary, entries: List<FormEntry>, column: Int): Map<String, Pair<String, String>> {
@@ -400,7 +465,7 @@ object ArogyaOfficialForms {
                 if (spec.id == "mcp_anc") {
                     val n = column + 1
                     m = m.copy(anc = m.anc + (n to d), ancDetails = m.ancDetails + (n to AncDetail(values["weight"].orEmpty(), values["bp"].orEmpty(), values["hb"].orEmpty())))
-                    values["td"]?.takeIf { it.startsWith("TT") || it == "Booster" }?.let { if (d !in m.tdDates) m = m.copy(tdDates = m.tdDates + d) }
+                    values["td"]?.takeIf { it.startsWith("TT") || it.startsWith("Td") || it == "Booster" }?.let { if (d !in m.tdDates) m = m.copy(tdDates = m.tdDates + d) }
                     // IFA is set per column, not added: re-saving replaces this column's share, other columns keep theirs.
                     val oldIfa = r.forms.firstOrNull { it.beneficiaryId == b.id && it.formId == spec.id && it.column == column }?.values?.get("ifa")?.toDoubleOrNull()?.toInt() ?: 0
                     m = m.copy(ifaTablets = (m.ifaTablets - oldIfa + (values["ifa"]?.toDoubleOrNull()?.toInt() ?: 0)).coerceAtLeast(0))
@@ -436,7 +501,10 @@ object ArogyaOfficialForms {
                 v["m_meals"] = "4"; v["m_pads"] = if (column == 0) "4" else "2"; v["m_temp"] = "37"; v["temp"] = "36.8" }
             "hbyc" -> { listOf("bf", "imm", "wfa", "wfh", "ors_home", "c_ebf", "c_hw", "c_par").forEach { v[it] = "Yes" }; v["sick"] = "No"; v["dev"] = "Yes"
                 if (column >= 1) { v["cf"] = "Yes"; v["c_cf"] = "Yes" }; if (column >= 2) { v["measles"] = "Yes"; v["vita"] = "Yes" }; if (column == 4) v["c_fp"] = "Yes" }
-            "mcp_anc" -> { v["complaints"] = "None"; v["fetal_mov"] = "No"; listOf("d_bleed", "d_headache", "d_fever", "d_water", "d_anaemia").forEach { v[it] = "No" }; v["jsy"] = "Yes"
+            "mcp_anc" -> { v["complaints"] = "None"; v["fetal_mov"] = "Normal"; listOf("d_bleed", "d_headache", "d_fever", "d_water", "d_anaemia", "d_labour").forEach { v[it] = "No" }; v["jsy"] = "Yes"
+                listOf("oc_aph", "oc_eclampsia", "oc_pih", "oc_anaemia", "oc_obstructed", "oc_pph", "oc_lscs", "oc_anomaly", "oc_abortion",
+                    "ph_tb", "ph_hyp", "ph_heart", "ph_diabetes", "ph_asthma", "pallor", "oedema", "jaundice").forEach { v[it] = "No" }
+                v["hiv"] = "Yes"; v["usg"] = "No"
                 if (column >= 1) v["bp_facility"] = "Yes" }
         }
         return v
@@ -487,7 +555,7 @@ object ArogyaOfficialForms {
             old.anc.toSortedMap().forEach { (k, d) ->
                 val col = k - 1; val det = old.ancDetails[k] ?: AncDetail()
                 val v = normal(MCP_ANC, col); v["weight"] = det.weightKg; v["bp"] = det.bp; v["hb"] = det.hb
-                v["td"] = when (k) { 1 -> "TT/Td-1"; 2 -> "TT/Td-2"; else -> "None" }
+                v["td"] = when (k) { 1 -> "Td-1"; 2 -> "Td-2"; else -> "None" }
                 if (k <= 2) v["ifa"] = "30"
                 if (det.bp == "142/94") v["d_headache"] = "Yes"
                 save(b0, MCP_ANC, col, LocalDate.parse(d), v.filterValues { it.isNotBlank() })

@@ -117,7 +117,7 @@ object ArogyaGrowth {
     }
 
     /**
-     * ANC trend across ANC 1..4: "Weight 45 -> 47 -> 50 kg (+5); Hb 10.2 -> 11 (+0.8)".
+     * ANC trend across ANC 1..5 (5th under PMSMA): "Weight 45 -> 47 -> 50 kg (+5); Hb 10.2 -> 11 (+0.8)".
      * A series needs 2+ numeric values to appear; "" when there is no trend.
      */
     fun ancTrend(details: Map<Int, AncDetail>): String {
@@ -130,8 +130,8 @@ object ArogyaGrowth {
             return "$label " + vals.joinToString(" → ", transform = ::fmt) +
                 (if (unit.isBlank()) "" else " $unit") + " ($ds)"
         }
-        val ws = (1..4).mapNotNull { details[it]?.weightKg?.let(::num) }
-        val hs = (1..4).mapNotNull { details[it]?.hb?.let(::num) }
+        val ws = (1..5).mapNotNull { details[it]?.weightKg?.let(::num) }
+        val hs = (1..5).mapNotNull { details[it]?.hb?.let(::num) }
         return listOfNotNull(series("Weight", ws, "kg"), series("Hb", hs, "")).joinToString("; ")
     }
 

@@ -174,7 +174,7 @@ object ArogyaDocRender {
     ): FilledDoc {
         val mother = if (b.category == BenCategory.CHILD)
             all.firstOrNull { it.household == b.household && it.household.isNotBlank() && it.category != BenCategory.CHILD } else b
-        val ancRows = if (b.category == BenCategory.PREGNANT) (1..4).map { n ->
+        val ancRows = if (b.category == BenCategory.PREGNANT) (1..5).map { n ->
             val d = b.mcp.ancDetails[n]
             mapOf("n" to "ANC $n", "date" to (b.mcp.anc[n]?.let(::dd) ?: ""),
                 "weight" to (d?.weightKg.orEmpty()), "bp" to (d?.bp.orEmpty()), "hb" to (d?.hb.orEmpty()),
