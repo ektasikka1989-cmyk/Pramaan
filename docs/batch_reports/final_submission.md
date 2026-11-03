@@ -296,3 +296,9 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Tests: ProofBatchTest 9/9 (batched vs per-statement: same verdicts, same scores, 1 call instead of 5, failed batch falls back, no-scorer path untouched). BUILD SUCCESSFUL (3m04s). Installed with adb install -r (user asked); base.apk MD5 matches the build.
 - Expected (NOT yet measured): first words ~53 s → ~41 s (−9 s prefill, −3 s self-test on the first turn); total ~105 s → ~80 s (plus −8 s proof). Generation speed is unchanged (7.4 tok/s).
 - To be checked manually: ask the same fever question offline and send logcat (AROGYA_ASK_BREAKDOWN firstWordsMs/totalMs, AROGYA_PHONE_EVIDENCE_CAP, RERANK_TIMING ... mixed=true); answer quality with 4 passages vs 6; scroll up while an answer streams (it must stay put), scroll back down (following resumes); the answer area is visibly larger; ✕ closes; Cloud answers still use full evidence (no AROGYA_PHONE_EVIDENCE_CAP line in Cloud mode).
+
+### UI3. Home: two status lines and the Today's plan card removed (BUILD PENDING)
+- Changed (Final UI3): home no longer shows "Sample data · fictional people" or "Saved on this phone • private by default". Live status ("Saving on this phone…", "Processing locally…") still shows while it applies. "Clear sample data" (that line used to be the only way in) is now a button next to "Reset sample village", with the same confirm dialog. The "Today's plan" card is removed from home; the Today card and "Next visits this week" strip stay unchanged. ArogyaTodayPlan is kept in ArogyaRegistryUi.kt but no longer called.
+- Files: ArogyaVisitScreen.kt.
+- Tests: Compose UI only (not in the host suites). The build is held until the user asks (their instruction), so this has NOT been compiled yet.
+- To be checked manually: neither line on home; Today card + Next visits strip present; no Today's plan card; Clear sample data asks for confirmation and keeps real people.

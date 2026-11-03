@@ -431,9 +431,6 @@ fun ArogyaVisitScreen(
             Text(LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM",if(hindi) java.util.Locale("hi","IN") else java.util.Locale.ENGLISH)),
                 style=MaterialTheme.typography.bodyMedium)
             ArogyaModeSwitch(hindi,context,modeTick) { modelSettingsOpen=true }
-            if(reg.beneficiaries.any { it.demo })
-                Text(tr("Sample data · fictional people","नमूना डेटा · काल्पनिक लोग"),style=MaterialTheme.typography.bodySmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.clickable { clearAsk=true })
             if(clearAsk) AlertDialog(onDismissRequest={ clearAsk=false },
                 title={ Text(tr("Clear sample data?","नमूना डेटा हटाएँ?")) },
                 text={ Text(tr("Removes the fictional sample people and their rows. Your real people stay.","काल्पनिक नमूना लोग और उनकी पंक्तियाँ हटेंगी। असली लोग रहेंगे।")) },
@@ -446,7 +443,8 @@ fun ArogyaVisitScreen(
             }
             Text(visit.name.ifBlank { tr("New visit","नई विज़िट") },style=MaterialTheme.typography.titleLarge)
         }
-        Text(if(pending>0) "Saving on this phone…" else if(mediaBusy) "Processing locally…" else tr("Saved on this phone • private by default","इस फ़ोन पर सुरक्षित • अपने आप अपलोड नहीं होता"),style=MaterialTheme.typography.bodySmall)
+        // UI3: the static "Saved on this phone • private by default" line is gone; only live status shows.
+        if(pending>0 || mediaBusy) Text(if(pending>0) "Saving on this phone…" else "Processing locally…",style=MaterialTheme.typography.bodySmall)
         if(error.isNotBlank()) {
             Text(error,color=MaterialTheme.colorScheme.error)
             if(loaded) TextButton(onClick={ queue.retry() },enabled=pending==0) { Text(tr("Retry save","फिर सहेजें")) }
@@ -469,8 +467,8 @@ fun ArogyaVisitScreen(
                 item { ArogyaTodayCard(hindi,dueNow,LocalDate.now()) { hubOpen="due" } }
                 item { ArogyaNextStrip(hindi,dueNow) { hubOpen="due" } }
                 // Low-stock / refill card removed from home (UI pass); refill stays in the stock register.
-                // Today's plan + backup status
-                item { ArogyaTodayPlan(hindi,dueNow,LocalDate.now(),onStartVisit={ id -> reg.beneficiaries.firstOrNull { it.id==id }?.let { guidedFor=it } },onOpenList={ hubOpen="due" }) }
+                // Backup status
+                // UI3: "Today's plan" card removed (it repeated the Today card and the Next visits strip).
                 item { ArogyaBackupStatusRow(hindi,ArogyaRegistryStore.get(context),onSetup={ hubOpen="backup" }) }
                 // 2. Four things she does, nothing else
                 item { ArogyaHomeGrid(hindi,reg.beneficiaries.count {it.active},
@@ -541,7 +539,11 @@ fun ArogyaVisitScreen(
                     }
                 }
                 if(reg.beneficiaries.any {it.demo}) item {
-                    TextButton(onClick={loadSample()}) { Text(tr("Reset sample village","नमूना गाँव फिर से शुरू करें"),style=MaterialTheme.typography.bodySmall) }
+                    Row {
+                        TextButton(onClick={loadSample()}) { Text(tr("Reset sample village","नमूना गाँव फिर से शुरू करें"),style=MaterialTheme.typography.bodySmall) }
+                        // UI3: moved here from the removed "Sample data · fictional people" line.
+                        TextButton(onClick={clearAsk=true}) { Text(tr("Clear sample data","नमूना डेटा हटाएँ"),style=MaterialTheme.typography.bodySmall) }
+                    }
                 }
             }
         } else {
