@@ -85,3 +85,21 @@ manually".
   (ANC ticks, BCG date), no unreplaced placeholders, portrait.
 - To be checked manually: MCP PDF on phone for Neha + baby (all pages,
   page breaks, pastel print colors, growth chart, SAMPLE watermark).
+
+### A4. Demo data + card reading
+- Audit: `seedDemo` fills ANNEX9/HBYC/ANC/SICK/FP; Baby of Neha is 6 days
+  old, home birth, day-1 + day-3 visits done; `cardPrompt` was generic.
+- Changed (`Final A.4`): Neha's household now shows filled MCP_ANC (4
+  columns at 12/22/32/38 weeks), MCP_PNC (day 1 + 3, Home–SBA), MCP_BABY
+  (day 1 + 3, weight from day 3 to avoid duplicating birth weight) and
+  MCP_IMM (birth antigens at the day-3 visit, card vaccines updated
+  through the linked save). `cardPrompt` names the p.36 immunization
+  layout with the exact antigen names. Test updates (official doc
+  required): 8 seeded form types, 22 patients, diary invariant is now
+  one line per person-day (same-day re-saves share a line).
+- Files: `ArogyaFormSpecs.kt`, `ArogyaAiExtras.kt`, `FormSpecsTest.kt`.
+- Tests: full host gate 41 suites green; BUILD SUCCESSFUL.
+- Verified on host: seeded counts; baby's card carries BCG/OPV0/HEPB0;
+  ORS/IFA balances unchanged; prompt contains the antigen list.
+- To be checked manually: Neha + baby filled forms on phone; MCP card
+  photo read of an immunization page.

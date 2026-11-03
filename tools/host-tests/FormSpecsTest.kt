@@ -86,12 +86,12 @@ fun main() {
     check("demo history exists", sample.forms.isNotEmpty())
     check("demo history not future", sample.forms.all { !LocalDate.parse(it.date).isAfter(today) })
     // Review: all 6 pregnant women with ANC history are seeded now (was take(5)), so 21 people have forms.
-    check("demo 21 patients filled", sample.forms.map { it.beneficiaryId }.toSet().size == 21)
-    check("demo all 5 form types", sample.forms.map { it.formId }.toSet() == setOf("annex9", "hbyc", "mcp_anc", "sick", "fp"))
+    check("demo 22 patients filled", sample.forms.map { it.beneficiaryId }.toSet().size == 22)
+    check("demo all 8 form types", sample.forms.map { it.formId }.toSet() == setOf("annex9", "hbyc", "mcp_anc", "sick", "fp", "mcp_pnc", "mcp_baby", "mcp_imm"))
     check("demo stock never negative", ArogyaRegistryLogic.stockBalance(sample.stock).values.all { it >= 0 })
     check("demo ANC card matches form", sample.beneficiaries.filter { b -> sample.forms.any { it.beneficiaryId == b.id && it.formId == "mcp_anc" } }.all { b ->
         b.mcp.anc.size == sample.forms.count { it.beneficiaryId == b.id && it.formId == "mcp_anc" } })
-    check("demo diary = forms", sample.diary.count { it.kind == DiaryKind.HOME_VISIT } == sample.forms.size)
+    check("demo diary = form-days", sample.diary.count { it.kind == DiaryKind.HOME_VISIT } == sample.forms.map { it.beneficiaryId to it.date }.toSet().size)
     val ritu = sample.beneficiaries.first { it.name.startsWith("Baby of Ritu") }
     check("early visit goes to next empty column", ArogyaOfficialForms.formFor(ritu, sample.forms, today).let { it.first.id == "annex9" && it.second == 3 } )
     val mom2 = sample.beneficiaries.first { it.category == BenCategory.MOTHER && it.name.startsWith("Asha") }

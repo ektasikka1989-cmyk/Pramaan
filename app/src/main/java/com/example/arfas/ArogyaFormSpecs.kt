@@ -713,9 +713,9 @@ object ArogyaOfficialForms {
      */
     fun seedDemo(r0: RegistryData, visits0: List<ArogyaVisit>, today: LocalDate): Pair<RegistryData, List<ArogyaVisit>> {
         var r = r0; var visits = visits0
-        fun save(b: Beneficiary, spec: FormSpec, col: Int, date: LocalDate, v: Map<String, String>) {
+        fun save(b: Beneficiary, spec: FormSpec, col: Int, date: LocalDate, v: Map<String, String>, vaccinesGiven: Set<String> = emptySet()) {
             val cur = r.beneficiaries.first { it.id == b.id }
-            r = apply(r, cur, spec, col, v, v.mapValues { "demo" }, emptySet(), date)
+            r = apply(r, cur, spec, col, v, v.mapValues { "demo" }, vaccinesGiven, date)
             r = r.copy(forms = r.forms.map { if (it.beneficiaryId == b.id && it.formId == spec.id && it.column == col) it.copy(id = "demo-f-${b.id}-${spec.id}-$col") else it })
             visits = visits + visitRecord(r.beneficiaries.first { it.id == b.id }, spec, col, v, date).copy(id = "demo-v-${b.id}-${spec.id}-$col")
         }
@@ -763,6 +763,43 @@ object ArogyaOfficialForms {
         }
         r0.beneficiaries.firstOrNull { it.category == BenCategory.ELIGIBLE_COUPLE && it.familyPlanning == "Condom" }?.let { b ->
             save(b, FP, 0, today.minusDays(3), mapOf("method" to "Condom", "counsel" to "Yes", "condoms" to "20"))
+        }
+        // Neha's household: her ANC history, PNC visits, and her baby's card (all synthetic, all consistent).
+        val neha = r0.beneficiaries.firstOrNull { it.name == "Neha (mother)" }
+        val nehaBaby = r0.beneficiaries.firstOrNull { it.name == "Baby of Neha" }
+        if (neha != null && nehaBaby != null) {
+            val dob = LocalDate.parse(neha.deliveryDate.ifBlank { nehaBaby.dob })
+            // ANC at 12/22/32/38 weeks of a 40-week pregnancy (windows ≤12, 14–26, 28–36, >36).
+            listOf(28L to 0, 18L to 1, 8L to 2, 2L to 3).forEach { (agoW, col) ->
+                val v = normal(MCP_ANC, col)
+                v["weight"] = listOf("48", "51", "54", "56")[col]; v["bp"] = "110/70"; v["hb"] = "11.0"
+                v["td"] = when (col) { 0 -> "Td-1"; 1 -> "Td-2"; else -> "None" }
+                if (col <= 1) v["ifa"] = "30"
+                v["height"] = "152"
+                save(neha, MCP_ANC, col, dob.minusWeeks(agoW), v.filterValues { it.isNotBlank() })
+            }
+            // PNC day 1 + day 3 (home SBA delivery, everything normal).
+            listOf(0L to 0, 2L to 1).forEach { (plusD, col) ->
+                save(neha, MCP_PNC, col, dob.plusDays(plusD), mapOf(
+                    "del_place_detail" to "Home–SBA", "pnc_outcome" to "Live Birth", "term" to "Term",
+                    "cried" to "Yes", "bf_1hr" to "Yes", "vitk" to "Yes", "complaints" to "None",
+                    "pallor" to "No", "pulse" to "78", "bp" to "110/70", "temp" to "36.9",
+                    "breasts" to "Soft", "nipples" to "Normal", "uterus" to "Absent", "bleeding" to "Normal",
+                    "lochia" to "Healthy", "episiotomy" to "Healthy", "fp_counsel" to "Yes", "complications_ref" to "No"))
+            }
+            // Baby day 1 + day 3 (weight only from day 3 — birth weight is already on the card).
+            save(nehaBaby, MCP_BABY, 0, dob, mapOf(
+                "urine" to "Yes", "stool" to "Yes", "diarrhoea" to "No", "vomiting" to "No", "convulsions" to "No",
+                "activity" to "Good", "sucking" to "Good", "breathing" to "Normal", "chest_indrawing" to "Absent",
+                "temp" to "36.8", "jaundice" to "No", "cord" to "Dry"))
+            save(nehaBaby, MCP_BABY, 1, dob.plusDays(2), mapOf(
+                "weight" to "2.85", "urine" to "Yes", "stool" to "Yes", "diarrhoea" to "No", "vomiting" to "No",
+                "convulsions" to "No", "activity" to "Good", "sucking" to "Good", "breathing" to "Normal",
+                "chest_indrawing" to "Absent", "temp" to "36.9", "jaundice" to "No", "cord" to "Dry"))
+            // Birth vaccines given at the day-3 visit (home birth, so none at birth).
+            val v3 = dob.plusDays(2).toString()
+            save(nehaBaby, MCP_IMM, 0, dob.plusDays(2), mapOf("opv0" to v3, "hepb0" to v3, "bcg" to v3,
+                "next_vac_date" to dob.plusDays(42).toString()), setOf("BCG", "OPV0", "HEPB0"))
         }
         // Everything created here is sample data: mark it so "Reset sample village" replaces it instead of adding twice.
         val oldStock = r0.stock.map { it.id }.toSet(); val oldDiary = r0.diary.map { it.id }.toSet()
