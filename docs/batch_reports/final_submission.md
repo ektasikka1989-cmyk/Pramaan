@@ -194,3 +194,11 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Tests: full host gate 44 suites green, EXIT=0 (gateb7.log); AnswerFormatTest 37/37 (new: superscript mapping, line-break rule); BUILD SUCCESSFUL (1m16s).
 - Verified on host: superscript mapping, break rule, section parsing.
 - To be checked manually: layout on phone (both languages, history expand, citation taps, fixed input).
+
+### B8. Stream word by word into the real card
+- Changed (Final B.8): new SopStreamingCard -- the draft streams into the real card (sections render as they arrive via SopAnswerText; citations appear with the checked answer), chip "Writing... / checking against the guide" (EN/HI), rejected draft struck through with "Rewriting from the guide..." (existing abort flow), "Read so far" early speak, Cancel kept. Before first words the spinner card stays. Auto-scroll pauses while the user has scrolled up. route() gains onDelta: phone via new LocalModelManager.generateDetachedStream (minimal Pramaan addition on generateEphemeral partials), cloud via new OpenAiCompatibleClient.completeStream (SSE, reusing SseStreamParser, blocking fallback); "" resets on engine switch. Family explanation and ANM polish stream with progress (polish detokenized live). Cloud limits: 120 s hard cap (was 60 s), new 15 s idle watcher (streaming turns only, clears the partial draft), 20 s first token kept; net-loss instant fallback already wired (ArogyaNetWatch -> cancelCloudCall).
+- Limitation (honest): per-sentence live verdicts (fade/strike single sentences) are not implemented -- the checker judges whole drafts, so rejection shows at draft level with rewrite. B8 adds no new host suite: SseStreamParser is covered by SpeedTest, the draft reduce by ReviewTest (both green).
+- Files: ArogyaSopChat.kt, ArogyaVisitScreen.kt, ArogyaVisitAi.kt, ArogyaModelClient.kt, LocalModelManager.kt, PocketRagEngine.kt, PocketRagCloudResolver.kt.
+- Tests: full host gate 44 suites green, EXIT=0 (gateb8.log); BUILD SUCCESSFUL (2m23s).
+- Verified on host: suites green; streaming paths compile.
+- To be checked manually: live streaming on phone (offline + cloud + check-online + more-detail + family + polish); idle fallback; net-loss fallback; autoscroll pause.

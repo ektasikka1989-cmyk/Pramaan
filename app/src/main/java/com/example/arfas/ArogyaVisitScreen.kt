@@ -131,6 +131,7 @@ fun ArogyaVisitScreen(
     var aiChecking by remember { mutableStateOf(false) }
     var aiStartedAt by remember { mutableStateOf(0L) }
     var lastDeltaAt by remember { mutableStateOf(0L) }
+    var streamQ by remember { mutableStateOf("") }
     var nowMs by remember { mutableStateOf(0L) }
     var familyText by remember { mutableStateOf("") }
     var familyBusy by remember { mutableStateOf(false) }
@@ -777,7 +778,7 @@ fun ArogyaVisitScreen(
                     val qNow=questionOverride ?: aiQuestion
                     val askedQuestion=qNow.ifBlank { tr("About the attached file","अटैच की गई फ़ाइल के बारे में") }+(if(qFiles.isNotEmpty()) "  [📎 ${qFiles.joinToString(", ")}]" else "")
                     aiOnline=forceOnline
-                    aiBusy=true;aiError="";aiDraft="";aiChecking=false;familyText="";familyModel="";familyMs=0L;aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L
+                    aiBusy=true;aiError="";aiDraft="";aiChecking=false;familyText="";familyModel="";familyMs=0L;aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L;streamQ=askedQuestion
                     aiJob=scope.launch {
                         try {
                             val result=onRunAi(ArogyaAiRequest(aiTask,snapshot,qNow,hindi,aiTopic,aiPrevious,forceOnline,afterSafetyPrompt=afterSafety,
@@ -821,7 +822,7 @@ fun ArogyaVisitScreen(
                 // visit's guide log) is replaced in place, not appended.
                 fun runMoreDetail(displayQ:String,askedQ:String) {
                     val snapshot=gv; val engine=ai ?: return
-                    aiBusy=true;aiError="";aiDraft="";aiChecking=false;aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L
+                    aiBusy=true;aiError="";aiDraft="";aiChecking=false;aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L;streamQ=displayQ
                     aiJob=scope.launch {
                         try {
                             val result=engine.moreDetail(askedQ,snapshot,
@@ -920,7 +921,12 @@ fun ArogyaVisitScreen(
                         if(aiResult==null) thread.lastOrNull()?.result?.let { aiResult=it;aiCopy=it.text;aiCapture=it.captureItems }
                     }
                     LaunchedEffect(thread.size,aiBusy,aiDraft.length,aiError) {
-                        runCatching { val n=chatState.layoutInfo.totalItemsCount; if(n>0) chatState.animateScrollToItem(n-1) }
+                        runCatching {
+                            val info=chatState.layoutInfo
+                            val lastVisible=info.visibleItemsInfo.lastOrNull()?.index
+                            // Part B8: auto-scroll pauses while the user has scrolled up to read.
+                            if(info.totalItemsCount>0 && (lastVisible==null || lastVisible>=info.totalItemsCount-1)) chatState.animateScrollToItem(info.totalItemsCount-1)
+                        }
                     }
                     if(savedReady>0) Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)) {
                         Row(Modifier.padding(10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -936,7 +942,7 @@ fun ArogyaVisitScreen(
                         val history=if(aiResult!=null) thread.dropLast(1) else thread
                         items(history,key={it.id}) { msg ->
                             val askedH=msg.asked.ifBlank { msg.question }
-                            fun familyH(h:Boolean) { val r=msg.result ?: return; val engine=ai ?: return; familyBusy=true; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(r.text,r.quote,h); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
+                            fun familyH(h:Boolean) { val r=msg.result ?: return; val engine=ai ?: return; familyBusy=true; familyText=""; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(r.text,r.quote,h,{ p -> if(p.draft.isNotBlank()) familyText=p.draft }); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { familyText=""; aiError=e.message ?: "" } finally { familyBusy=false } } }
                             SopChatHistoryCard(msg,hindi,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,
                                 { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
                                 {speak(it)},{tts.stop()},{familyH(it)},{checkOnline(askedH)},{runMoreDetail(msg.question,askedH)},{saveForLater(msg.question,askedH)},{escalate(it)},context)
@@ -947,7 +953,7 @@ fun ArogyaVisitScreen(
                                     val q=thread.lastOrNull()?.question ?: aiQuestion
                                     val askedQ=thread.lastOrNull()?.asked?.ifBlank { q } ?: q
                                     if(q.isNotBlank()) Text(q,fontWeight=FontWeight.Bold)
-                                    fun family(h:Boolean) { val engine=ai ?: return; familyBusy=true; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(result.text,result.quote,h); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { aiError=e.message ?: "" } finally { familyBusy=false } } }
+                                    fun family(h:Boolean) { val engine=ai ?: return; familyBusy=true; familyText=""; scope.launch { try { val (t,by,ms)=engine.familyExplainDetailed(result.text,result.quote,h,{ p -> if(p.draft.isNotBlank()) familyText=p.draft }); familyText=t; familyModel=by; familyMs=ms } catch(e:CancellationException) { throw e } catch(e:Exception) { familyText=""; aiError=e.message ?: "" } finally { familyBusy=false } } }
                                     SopAnswerCard(result,q,askedQ,warningNow,gv.id!=SOP_VISIT_ID,ai,aiBusy,pending,true,
                                         { url -> runCatching {uriHandler.openUri(url)}.onFailure {Toast.makeText(context,"No browser or PDF viewer is available.",Toast.LENGTH_LONG).show()} },
                                         {speak(it)},{tts.stop()},familyText,familyBusy,familyModel,familyMs,{family(it)},{checkOnline(askedQ)},{runMoreDetail(q,askedQ)},{saveForLater(q,askedQ)},{escalate(it)},context,hindi)
@@ -955,7 +961,9 @@ fun ArogyaVisitScreen(
                             }
                         }
                         if(aiBusy) item(key="progress") {
-                            SopBusyCard(hindi,aiOnline,aiChecking,true,aiDraft,((nowMs-aiStartedAt).coerceAtLeast(0))/1000,aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500) {onCancelAi();aiJob?.cancel()}
+                            val secs=((nowMs-aiStartedAt).coerceAtLeast(0))/1000
+                            if(aiDraft.isNotBlank()) SopStreamingCard(streamQ,aiDraft,aiChecking,secs,hindi,{speak(it)}) {onCancelAi();aiJob?.cancel()}
+                            else SopBusyCard(hindi,aiOnline,aiChecking,true,aiDraft,secs,aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500) {onCancelAi();aiJob?.cancel()}
                         }
                         if(aiError.isNotBlank()) item(key="error") {
                             Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -1061,6 +1069,7 @@ fun ArogyaVisitScreen(
         }
         var message by remember(visit.id,escalateConcern) { mutableStateOf(ArogyaAnmTemplate.build(templateInput(hindi))) }
         var polishNote by remember(visit.id,escalateConcern) { mutableStateOf("") }
+        var polishDraft by remember(visit.id,escalateConcern) { mutableStateOf("") }
         fun record(how:String) {
             ArogyaShare.setAnmName(context,anmName); ArogyaShare.setAnmPhone(context,anmPhone)
             val current=queue.state.value.visits.firstOrNull {it.id==visit.id}
@@ -1096,14 +1105,20 @@ fun ArogyaVisitScreen(
                         Text(tr("Message from your records (you can edit it)","आपके रिकॉर्ड से संदेश (बदल सकते हैं)"),style=MaterialTheme.typography.labelMedium)
                         OutlinedTextField(message,{message=it},modifier=Modifier.fillMaxWidth(),minLines=8)
                         var anmBusy by remember { mutableStateOf(false) }
-                        if(ai!=null) Button(onClick={ anmBusy=true; scope.launch {
+                        if(ai!=null) Button(onClick={ anmBusy=true; polishDraft=""; scope.launch {
                             try {
                                 val person=reg.beneficiaries.firstOrNull {it.id==visit.personId}
                                 val toks=listOfNotNull(person?.name,person?.phone,person?.relativeName,person?.household,ashaName,anmName).filter {it.isNotBlank()}
-                                val (polished,_,note)=ai.polishAnmMessage(message,visit,msgHindi,toks)
-                                message=polished; polishNote=note
-                            } catch(e:CancellationException) { throw e } catch(e:Exception) { toast(e.message ?: "Could not improve the wording.") }
+                                val (polished,_,note)=ai.polishAnmMessage(message,visit,msgHindi,toks,{ p -> if(p.draft.isNotBlank()) polishDraft=p.draft })
+                                message=polished; polishNote=note; polishDraft=""
+                            } catch(e:CancellationException) { throw e } catch(e:Exception) { polishDraft=""; toast(e.message ?: "Could not improve the wording.") }
                             finally { anmBusy=false } } },enabled=!anmBusy,modifier=Modifier.fillMaxWidth()) { Text(if(anmBusy) tr("Writing…","लिखा जा रहा है…") else tr("✨ Improve wording","✨ शब्द सुधारें")) }
+                        if(anmBusy && polishDraft.isNotBlank()) Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                Text(tr("✍️ Writing…","✍️ लिखा जा रहा है…"),style=MaterialTheme.typography.labelLarge,fontWeight=FontWeight.Medium,color=MaterialTheme.colorScheme.primary)
+                                Text(polishDraft,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                         if(ai!=null) AiBadge("Message to ANM")
                         if(anmBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
                         if(polishNote.isNotBlank()) Text(tr("Kept the original wording","मूल शब्द रखे")+": "+polishNote,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)

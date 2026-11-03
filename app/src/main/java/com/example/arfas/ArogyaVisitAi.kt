@@ -9,13 +9,16 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
+import kotlin.coroutines.coroutineContext
 
 /**
  * ArogyaDoot is a WRAPPER over Pramaan. Guide questions go through Pramaan's own turn
@@ -68,26 +71,40 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     private suspend fun <T> route(feature: String, prompt: String, maxTokens: Int, cloudPrompt: String = prompt,
                                   system: String = "Follow the instructions exactly.", cloud: Boolean = true,
                                   cloudTokens: Int = maxTokens, lang: String = "en",
+                                  onDelta: ((String) -> Unit)? = null,
                                   accept: (String) -> T?): Pair<T?, String> {
         val c = runCatching { withContext(Dispatchers.IO) { cloudChoice?.invoke() } }.getOrNull()
         val ep = c?.endpoint; val key = c?.key.orEmpty()
+        var emitted = false
+        // Part B8: word-by-word deltas per engine; "" resets the shown draft when the turn
+        // falls back to the other engine, so two half-answers never concatenate on screen.
+        val emit: (String) -> Unit = { d -> if (d.isNotEmpty()) emitted = true; onDelta?.invoke(d) }
         suspend fun cloud(): Pair<T?, String>? {
             if (!cloud || ep == null || key.isBlank()) return null
             val t = System.currentTimeMillis()
             val budget = ArogyaBudget.tokens(cloudTokens, lang, ArogyaBudget.estimatePromptTokens(cloudPrompt.length), ArogyaBudget.CLOUD_CONTEXT, feature, "cloud")
-            val raw = ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS, feature) { OpenAiCompatibleClient(ep, { key }, CLOUD_DEADLINE_MS.toInt()).complete(system, cloudPrompt, budget) }
-            Log.i(TAG, "AROGYA_ROUTE feature=$feature engine=cloud model=${ep.model} ok=${raw != null} ms=${System.currentTimeMillis() - t}")
+            val client = OpenAiCompatibleClient(ep, { key }, CLOUD_DEADLINE_MS.toInt())
+            val raw = if (onDelta == null) {
+                ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS, feature) { client.complete(system, cloudPrompt, budget) }
+            } else {
+                val streamed = ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS, feature) { runBlocking { client.completeStream(system, cloudPrompt, budget, emit) } }
+                if (!streamed.isNullOrBlank()) streamed
+                else if (coroutineContext.isActive) ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS, feature) { client.complete(system, cloudPrompt, budget) }
+                else null
+            }
+            Log.i(TAG, "AROGYA_ROUTE feature=$feature engine=cloud model=${ep.model} ok=${raw != null} streamed=${onDelta != null} ms=${System.currentTimeMillis() - t}")
             return raw?.let { r -> accept(r)?.let { it to ep.label } }
         }
         suspend fun phone(): Pair<T?, String>? = try {
             val model = readyModel(); val t = System.currentTimeMillis()
             val budget = ArogyaBudget.tokens(maxTokens, lang, ArogyaBudget.estimatePromptTokens(prompt.length), ArogyaBudget.PHONE_CONTEXT, feature, "phone")
-            val raw = generate(prompt, model, budget).orEmpty()
+            val raw = generate(prompt, model, budget, onPartial = if (onDelta == null) null else emit).orEmpty()
             Log.i(TAG, "AROGYA_ROUTE feature=$feature engine=phone ms=${System.currentTimeMillis() - t} chars=${raw.length}")
             accept(raw)?.let { it to "On-phone model (offline): " + (model.loadedModelFileName?.substringBeforeLast('.') ?: "local") }
         } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.w(TAG, "AROGYA_ROUTE feature=$feature engine=phone failed ${e.message?.take(120)}"); null }
         for (engine in ArogyaRouting.order(c?.cloudFirst == true, cloud && ep != null && key.isNotBlank())) {
             (if (engine == "cloud") cloud() else phone())?.let { return it }
+            if (emitted) { emitted = false; onDelta?.invoke("") }
         }
         return null to ""
     }
@@ -464,11 +481,11 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         return ArogyaAiResult(ArogyaCapture.render(items), "ArogyaDoot • $by", System.currentTimeMillis() - start, canCopyToNotes = true, captureItems = items)
     }
 
-    private suspend fun generate(prompt: String, model: LocalModelManager, maxTokens: Int = 420): String? = coroutineScope {
+    private suspend fun generate(prompt: String, model: LocalModelManager, maxTokens: Int = 420, onPartial: ((String) -> Unit)? = null): String? = coroutineScope {
         val expired = AtomicBoolean(false)
         val watchdog = launch { delay(90000); expired.set(true); model.requestCancelActiveGeneration("arogya_90s_limit") }
         try {
-            val result = model.generateDetached(prompt, maxTokens, "arogya_visit")
+            val result = model.generateDetachedStream(prompt, maxTokens, "arogya_visit", onPartial)
             check(!expired.get()) { "Local AI exceeded the time limit. No draft was accepted; your visit is unchanged." }
             result
         } catch (e: CancellationException) { model.requestCancelActiveGeneration("arogya_cancel"); throw e }
@@ -485,12 +502,14 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     /** Simple words for the family, rewritten from the guide answer only. New numbers are removed; falls back to the guide sentence. */
     suspend fun familyExplain(answer: String, quote: String, hindi: Boolean): String = familyExplainDetailed(answer, quote, hindi).first
 
-    /** Same, plus the engine label + time for the A5 result chip. */
-    suspend fun familyExplainDetailed(answer: String, quote: String, hindi: Boolean): Triple<String, String, Long> = mutex.withLock {
+    /** Same, plus the engine label + time for the A5 result chip. Part B8: streams the draft via [onProgress]. */
+    suspend fun familyExplainDetailed(answer: String, quote: String, hindi: Boolean, onProgress: ((ArogyaProgress) -> Unit)? = null): Triple<String, String, Long> = mutex.withLock {
         val t = System.currentTimeMillis()
+        val buf = StringBuilder()
         val (opt, by) = route("family_explain", ArogyaAiExtras.familyPrompt(answer, quote, hindi), 450,
             ArogyaAiExtras.familyPrompt(ArogyaOnlinePolicy.scrubGeneric(answer), ArogyaOnlinePolicy.scrubGeneric(quote), hindi),
-            cloudTokens = 900, lang = if (hindi) "hi" else "en") { out ->
+            cloudTokens = 900, lang = if (hindi) "hi" else "en",
+            onDelta = if (onProgress == null) null else { d -> if (d.isEmpty()) buf.clear() else buf.append(d); onProgress(ArogyaProgress("draft", buf.toString())) }) { out ->
             ArogyaAiExtras.groundedSentences(out, answer + "\n" + quote, max = 8).takeIf { it.isNotBlank() } }
         val clean = opt.orEmpty()
         Log.i(TAG, "AROGYA_TIMING event=family_explain ms=${System.currentTimeMillis() - t} chars=${clean.length}")
@@ -511,7 +530,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
      * afterwards, so names and phones never leave the device). Returns the message, the
      * engine label, and a note: "" when polished, else why the template is shown instead.
      */
-    suspend fun polishAnmMessage(template: String, visit: ArogyaVisit?, hindi: Boolean, extraTokens: List<String> = emptyList()): Triple<String, String, String> = mutex.withLock {
+    suspend fun polishAnmMessage(template: String, visit: ArogyaVisit?, hindi: Boolean, extraTokens: List<String> = emptyList(), onProgress: ((ArogyaProgress) -> Unit)? = null): Triple<String, String, String> = mutex.withLock {
         val t = System.currentTimeMillis()
         val v = visit ?: ArogyaVisit()
         val values = listOf(v.name, v.village, v.birthDate) + extraTokens
@@ -519,7 +538,12 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val toks = used.mapIndexed { i, _ -> "[P${i + 1}]" }
         val cloudPrompt = if (visit != null) ArogyaOnlinePolicy.scrub(tokenized, v) else ArogyaOnlinePolicy.scrubGeneric(tokenized)
         val lang = if (hindi) "hi" else ArogyaBudget.langOf(template)
-        val (opt, by) = route("anm_message", ArogyaAiExtras.anmPrompt(template, hindi), 450, ArogyaAiExtras.anmPrompt(cloudPrompt, hindi), cloudTokens = 900, lang = lang) { out ->
+        val buf = StringBuilder()
+        val (opt, by) = route("anm_message", ArogyaAiExtras.anmPrompt(template, hindi), 450, ArogyaAiExtras.anmPrompt(cloudPrompt, hindi), cloudTokens = 900, lang = lang,
+            onDelta = if (onProgress == null) null else { d ->
+                if (d.isEmpty()) buf.clear() else buf.append(d)
+                onProgress(ArogyaProgress("draft", ArogyaAnmTemplate.detokenize(buf.toString(), used)))
+            }) { out ->
             ArogyaAiExtras.groundedSentences(out, template + "\n" + tokenized, max = 60, lineMode = true).takeIf { it.length >= 30 } }
         val cloudRan = !by.startsWith("On-phone")
         val seen = if (cloudRan) tokenized else template

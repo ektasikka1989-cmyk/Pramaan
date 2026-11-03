@@ -7,6 +7,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -73,7 +74,10 @@ class PocketRagEngine(
          * back to the phone (D7's 300 s stays the outer net). The log names the limit.
          */
         const val CLOUD_FIRST_TOKEN_MS = 20_000L
-        const val CLOUD_TOTAL_MS = 60_000L
+        /** Part B8: 120 s hard cap for a cloud answer (was 60 s). */
+        const val CLOUD_TOTAL_MS = 120_000L
+        /** Part B8: a cloud stream silent this long falls back to the phone. */
+        const val CLOUD_IDLE_MS = 15_000L
         /** Length of an extractive (verbatim key facts) answer. */
         const val EXTRACTIVE_CHARS = 1400
 
@@ -167,7 +171,24 @@ class PocketRagEngine(
                                 limitFired = "first_token"
                                 withTimeoutOrNull(5_000) { job.cancelAndJoin() }
                                 null
-                            } else job.await()
+                            } else {
+                                // Part B8 idle limit: a stream silent for 15 s falls back to the
+                                // phone (streaming turns only; a non-streaming call waits out the total).
+                                val idleWatch = launch {
+                                    while (job.isActive) {
+                                        delay(1_000)
+                                        val res = streamFlag
+                                        val last = res?.lastDeltaMs ?: 0L
+                                        if (job.isActive && res?.didStream == true && last > 0 &&
+                                            System.currentTimeMillis() - last > CLOUD_IDLE_MS) {
+                                            limitFired = "idle"
+                                            Log.w(TAG, "POCKET_RAG_CLOUD_IDLE_LIMIT silentMs=${System.currentTimeMillis() - last}")
+                                            runCatching { job.cancelAndJoin() }
+                                        }
+                                    }
+                                }
+                                try { job.await() } finally { idleWatch.cancel() }
+                            }
                         }
                     }
                 } catch (ce: CancellationException) {
@@ -180,8 +201,13 @@ class PocketRagEngine(
                     } else throw ce
                 }
                 if (limitFired != null) {
-                    Log.w(TAG, "POCKET_RAG_CLOUD_TIMEOUT mode=$cloudMode limit=$limitFired ms=${if (limitFired == "first_token") CLOUD_FIRST_TOKEN_MS else CLOUD_TOTAL_MS} fallback=local")
-                    if (limitFired == "first_token" && streamFlag?.didStream == true) runCatching { onDraftRejected?.invoke() }
+                    val limitMs = when (limitFired) {
+                        "first_token" -> CLOUD_FIRST_TOKEN_MS
+                        "idle" -> CLOUD_IDLE_MS
+                        else -> CLOUD_TOTAL_MS
+                    }
+                    Log.w(TAG, "POCKET_RAG_CLOUD_TIMEOUT mode=$cloudMode limit=$limitFired ms=$limitMs fallback=local")
+                    if ((limitFired == "first_token" || limitFired == "idle") && streamFlag?.didStream == true) runCatching { onDraftRejected?.invoke() }
                 }
                 if (cloudMode == CloudMode.VERIFY && cloudAnswer?.contains(NOT_IN_EVIDENCE) == true) {
                     // The KB evidence does not answer it: the caller runs a live web search (labelled).

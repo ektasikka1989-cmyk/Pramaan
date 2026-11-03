@@ -1168,6 +1168,13 @@ ${localDraft.trim().take(2_000)}
      * JSON). Greedy; the resident chat session is not touched. Null when the model is not ready.
      */
     suspend fun generateDetached(prompt: String, maxOutputTokens: Int, tag: String): String? =
+        generateDetachedStream(prompt, maxOutputTokens, tag, null)
+
+    /**
+     * Part B8: [generateDetached] with raw text fragments while the answer is written
+     * ([onPartial] deltas; the returned text is the cleaned final). Same contract otherwise.
+     */
+    suspend fun generateDetachedStream(prompt: String, maxOutputTokens: Int, tag: String, onPartial: ((String) -> Unit)?): String? =
         withContext(Dispatchers.IO) {
             if (!isReady || permanentlyDisabled || prompt.isBlank()) return@withContext null
             val started = System.currentTimeMillis()
@@ -1177,7 +1184,8 @@ ${localDraft.trim().take(2_000)}
                     currentUser = prompt,
                     systemPrompt = null,
                     maxOutputToken = maxOutputTokens,
-                    temperature = 0.0
+                    temperature = 0.0,
+                    onPartial = onPartial
                 )
                 Log.i(TAG, "DETACHED_GENERATION tag=$tag ms=${System.currentTimeMillis() - started} chars=${result.text.length} completed=${result.completed}")
                 result.text.takeIf { it.isNotBlank() }

@@ -200,6 +200,47 @@ fun SopBusyCard(
 }
 
 /**
+ * Part B8: the answer streaming into the real card, word by word. Sections render as
+ * they arrive; citations appear when the checked answer lands. While the checker runs,
+ * the rejected draft shows struck through with "Rewriting from the guide…".
+ */
+@Composable
+fun SopStreamingCard(
+    question: String,
+    draft: String,
+    checking: Boolean,
+    secs: Long,
+    hindi: Boolean,
+    onSpeakSoFar: (String) -> Unit,
+    onCancel: () -> Unit
+) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (question.isNotBlank()) Text(question, fontWeight = FontWeight.Bold)
+        LinearProgressIndicator(Modifier.fillMaxWidth())
+        Text(
+            if (checking) tr("Rewriting from the guide…", "गाइड से फिर लिखा जा रहा है…")
+            else tr("✍️ Writing… · checking against the guide", "✍️ लिखा जा रहा है… · गाइड से मिलाया जा रहा है"),
+            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        if (draft.isNotBlank()) {
+            if (checking) Text(ArogyaMarkdown.strip(draft),
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 25.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
+            else SopAnswerText(draft, emptyList(), emptySet()) {}
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (draft.isNotBlank() && !checking) OutlinedButton(onClick = { onSpeakSoFar(draft) }) {
+                Text(tr("🔊 Read so far", "🔊 अब तक सुनें"))
+            }
+            TextButton(onClick = onCancel) { Text(tr("Cancel", "रद्द करें") + "  ${secs}s") }
+        }
+    }
+}
+
+/**
  * Item 4 + 5 answer layout (latest card and expanded history alike): the model chip, the
  * "guide says" quote only when it adds to the answer (>= 70% overlap hides it), the
  * answer first in cited sections, one compact source line that expands to the highlighted
@@ -347,6 +388,7 @@ fun SopAnswerCard(
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(tr("For the family", "परिवार के लिए"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 if (familyModel.isNotBlank()) AiResultChip(familyModel, !familyModel.startsWith("On-phone"), familyMs, hindi)
+                if (familyBusy) Text(tr("✍️ Writing…", "✍️ लिखा जा रहा है…"), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
                 Text(familyText, style = MaterialTheme.typography.bodyLarge, fontSize = 20.sp, lineHeight = 29.sp)
                 Button(onClick = { onSpeak(familyText) }, modifier = Modifier.fillMaxWidth()) { Text(tr("🔊 Read to the family", "🔊 परिवार को सुनाएँ")) }
                 OutlinedButton(onClick = { ArogyaShare.shareText(context, tr("For the family", "परिवार के लिए"), familyText) }, modifier = Modifier.fillMaxWidth()) { Text(tr("Share with family (WhatsApp)", "परिवार को भेजें (WhatsApp)")) }

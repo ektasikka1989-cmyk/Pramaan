@@ -16,6 +16,8 @@ class PocketRagCloudResolver(
 
     /** True once any streamed text reached the UI (the engine clears it when the draft is rejected). */
     @Volatile var didStream = false
+    /** Part B8: last delta arrival, for the 15 s idle limit (0 = none yet). */
+    @Volatile var lastDeltaMs = 0L
         private set
 
     override suspend fun generate(
@@ -72,6 +74,7 @@ class PocketRagCloudResolver(
                 { piece: String ->
                     if (firstMs < 0 && piece.isNotBlank()) firstMs = System.currentTimeMillis() - t0
                     didStream = true
+                    lastDeltaMs = System.currentTimeMillis()
                     runCatching { cb(piece) }
                 }
             }

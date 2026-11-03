@@ -2,8 +2,12 @@ package com.example.arfas
 
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.coroutines.coroutineContext
 
 /**
  * A hosted model reached through an OpenAI-compatible chat-completions endpoint.
@@ -40,6 +44,46 @@ class OpenAiCompatibleClient(private val endpoint: ArogyaModelEndpoint, private 
         // Muse Spark reasons by default; visit AI needs the fastest answer (V1 proved minimal works).
         if (ArogyaFlags.r11LowReasoning && endpoint.model.startsWith("muse-spark")) b.put("reasoning_effort", "minimal")
         return b.toString()
+    }
+
+    /**
+     * Part B8: SSE streaming variant of [complete]. Each content piece goes to [onDelta]
+     * as it arrives; returns the full text, or "" when the provider sent no stream
+     * (the caller falls back to [complete]). A real cancellation is rethrown.
+     */
+    suspend fun completeStream(system: String, user: String, maxTokens: Int, onDelta: (String) -> Unit): String = withContext(Dispatchers.IO) {
+        val k = key().trim()
+        if (k.isBlank()) throw HttpError(0, "No API key saved for ${endpoint.label}.")
+        val conn = URL(endpoint.baseUrl.trimEnd('/') + "/chat/completions").openConnection() as HttpURLConnection
+        val full = StringBuilder()
+        try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 15_000
+            conn.readTimeout = timeoutMs
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Authorization", "Bearer $k")
+            conn.setRequestProperty("Accept", "text/event-stream")
+            val body = JSONObject(requestBody(system, user, maxTokens)).put("stream", true).toString()
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val err = conn.errorStream?.use { it.readBytes().decodeToString() }.orEmpty()
+                throw HttpError(code, "HTTP $code from ${endpoint.label}: ${err.take(200)}")
+            }
+            conn.inputStream.bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    if (coroutineContext[Job]?.isActive == false) throw kotlinx.coroutines.CancellationException("stream cancelled")
+                    SseStreamParser.contentOf(line)?.let { piece ->
+                        if (piece.isNotEmpty()) {
+                            full.append(piece)
+                            onDelta(piece)
+                        }
+                    }
+                }
+            }
+            full.toString().trim()
+        } finally { conn.disconnect() }
     }
 
     fun complete(system: String, user: String, maxTokens: Int = 600): String {
