@@ -35,9 +35,9 @@ fun synthWav(rate: Int, channels: Int, float32: Boolean, frames: Int, withFact: 
 }
 
 fun main() {
-    // Script shape (Part B, Part D3): 18 scenes, 3-6 sentences per language, unique ids, one hero.
-    check("s-count", ArogyaDemoScript.scenes.size == 18)
-    check("s-ids", ArogyaDemoScript.scenes.map { it.id }.toSet().size == 18)
+    // Script shape (demo UI pass): 16 scenes, 3-6 sentences per language, unique ids, one hero.
+    check("s-count", ArogyaDemoScript.scenes.size == 16)
+    check("s-ids", ArogyaDemoScript.scenes.map { it.id }.toSet().size == 16)
     check("s-titles-en", ArogyaDemoScript.scenes.all { it.title.isNotBlank() })
     check("s-titles-hi", ArogyaDemoScript.scenes.all { it.hi.isNotBlank() })
     check("s-nar-en", ArogyaDemoScript.scenes.all { it.narration.size in 3..6 && it.narration.all { s -> s.endsWith('.') } })

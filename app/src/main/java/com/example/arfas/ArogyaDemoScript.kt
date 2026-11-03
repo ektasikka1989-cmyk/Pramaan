@@ -5,7 +5,7 @@ package com.example.arfas
  * helpers the host tests check — navigation bounds, the AI-steps table and the
  * before/after table. No Android or Compose imports.
  *
- * 18 scenes, each with 3-6 short sentences in English and Hindi. One hero
+ * 16 scenes (demo UI pass), three short sentences each in English and Hindi. One hero
  * everywhere: Baby of Neha (नेहा का बच्चा).
  */
 object ArogyaDemoScript {
@@ -31,212 +31,172 @@ object ArogyaDemoScript {
     const val GOLD_EN = "baby ko pehla gaadha doodh dena chahiye?"
     const val GOLD_HI = "क्या बच्चे को पहला गाढ़ा दूध देना चाहिए?"
 
-    data class Scene(val id: String, val title: String, val hi: String, val narration: List<String>, val narrationHi: List<String>)
+    /** [screen]: the app screen this scene shows, as a heading ("Register · Add person"). */
+    data class Scene(val id: String, val title: String, val hi: String, val narration: List<String>, val narrationHi: List<String>,
+                     val screen: String = "", val screenHi: String = "")
+    // Demo UI pass: 16 scenes, three short sentences each, nothing repeated scene to scene.
+    // "She confirms every AI result" is said once (scene 1); the cards show it after that.
     val scenes = listOf(
-        Scene("meet", "Meet Sunita, and the problem", "सुनीता से मिलिए, और समस्या",
+        Scene("meet", "Meet Sunita, ASHA of Rampur", "मिलिए सुनीता से, रामपुर की आशा",
             listOf(
-                "This is Sunita. She is an ASHA in our sample village, Rampur.",
-                "Every day she plans visits, fills paper forms, copies registers, and answers health questions from memory.",
-                "With no signal in the village, she cannot look anything up.",
-                "ArogyaDoot puts her visits, official guides, and registers on her phone, and it works offline."),
+                "Sunita is the ASHA of Rampur, a sample village.",
+                "Her day is home visits, paper forms, registers and health questions, often with no signal.",
+                "ArogyaDoot does that paperwork with AI on her phone, and she confirms every result."),
             listOf(
-                "ये हैं सुनीता। वे हमारे नमूना गाँव, रामपुर की आशा हैं।",
-                "रोज़ वे विज़िट तय करती हैं, कागज़ी फ़ॉर्म भरती हैं, रजिस्टर नकल करती हैं, और स्वास्थ्य के सवालों के जवाब याद से देती हैं।",
-                "गाँव में सिग्नल नहीं होता, तो वे कुछ देख नहीं पातीं।",
-                "ArogyaDoot उनकी विज़िट, आधिकारिक गाइड और रजिस्टर फ़ोन में रखता है, और बिना इंटरनेट चलता है।")),
-        Scene("due", "Today's visits in one look", "आज की विज़िट एक नज़र में",
+                "सुनीता नमूना गाँव रामपुर की आशा हैं।",
+                "उनका दिन घर-घर विज़िट, कागज़ी फ़ॉर्म, रजिस्टर और स्वास्थ्य के सवालों में जाता है, अक्सर बिना सिग्नल।",
+                "ArogyaDoot यह काम फ़ोन पर AI से करता है, और हर नतीजा सुनीता पक्का करती हैं।"),
+            "Introduction", "परिचय"),
+        Scene("due", "Today's visits", "आज की विज़िट",
             listOf(
-                "Every morning the app lists who Sunita must visit, and why.",
-                "These dates come from the government's fixed schedules. They are rules, not AI.",
-                "Baby of Neha needs a Day 7 visit, so she taps the name and starts.",
-                "No diary to flip through, no date to calculate."),
+                "The app lists who is due today, and why.",
+                "Dates come from fixed government schedules, not AI.",
+                "Baby of Neha is due for the Day 7 visit."),
             listOf(
-                "हर सुबह ऐप बताता है कि सुनीता को किसके घर जाना है, और क्यों।",
-                "ये तारीख़ें सरकार के तय शेड्यूल से आती हैं। ये नियम हैं, AI नहीं।",
-                "नेहा के बच्चे की 7वें दिन की विज़िट बाकी है, तो वे नाम दबाकर शुरू करती हैं।",
-                "न डायरी पलटनी है, न तारीख़ गिननी है।")),
-        Scene("addperson", "Add a new person from a photo", "फ़ोटो से नया व्यक्ति जोड़िए",
+                "ऐप बताता है कि आज किसकी विज़िट बाकी है, और क्यों।",
+                "तारीख़ें सरकार के तय शेड्यूल से आती हैं, AI से नहीं।",
+                "नेहा के बच्चे की 7वें दिन की विज़िट बाकी है।"),
+            "Home · Today", "होम · आज"),
+        Scene("addperson", "New family, added from a photo", "नया परिवार, फ़ोटो से दर्ज",
             listOf(
-                "A new family has come to the village, and Sunita photographs their register page.",
-                "The phone reads the photo and copies the names into a review card.",
-                "She checks every field, then saves. The new person joins the due list at once.",
-                "No retyping, and the family agrees before anything is saved."),
+                "Sunita photographs the new family's register page.",
+                "AI reads it into a review card on the phone, and removes any Aadhaar number.",
+                "One tap adds them to the register and the due list."),
             listOf(
-                "गाँव में एक नया परिवार आया है, और सुनीता उनके रजिस्टर पेज की फ़ोटो लेती हैं।",
-                "फ़ोन फ़ोटो पढ़ता है और नाम जाँच कार्ड में उतारता है।",
-                "वे हर जानकारी देखती हैं, फिर सेव करती हैं। नया व्यक्ति तुरंत बाकी सूची में जुड़ जाता है।",
-                "दोबारा लिखना नहीं पड़ता, और सेव से पहले परिवार की हामी होती है।")),
-        Scene("form", "Baby of Neha, Day 7: the right form, right column", "नेहा का बच्चा, 7वाँ दिन: सही फ़ॉर्म, सही कॉलम",
+                "सुनीता नए परिवार के रजिस्टर पेज की फ़ोटो लेती हैं।",
+                "AI फ़ोन पर ही उसे जाँच कार्ड में पढ़ता है, और आधार नंबर हटा देता है।",
+                "एक टैप में वे रजिस्टर और बाकी सूची में जुड़ जाते हैं।"),
+            "Register · Add person", "रजिस्टर · नया व्यक्ति"),
+        Scene("form", "The right form opens itself", "सही फ़ॉर्म खुद खुलता है",
             listOf(
-                "For a 7-day-old baby born at home, the app opens the official Home Visit Form at the Day 7 column.",
-                "This is the government's own form. Same rows, same order.",
-                "Sunita does not choose the form. The app picks it from the baby's age.",
-                "Her job is to check the baby and speak what she sees."),
+                "The baby is 7 days old, so the official Home Visit Form opens at the Day 7 column.",
+                "Same rows, same order as the government paper form.",
+                "Sunita only has to examine the baby."),
             listOf(
-                "घर में पैदा हुए 7 दिन के बच्चे के लिए ऐप आधिकारिक गृह भ्रमण फ़ॉर्म का 7वें दिन वाला कॉलम खोलता है।",
-                "ये सरकार का अपना फ़ॉर्म है। वही पंक्तियाँ, वही क्रम।",
-                "सुनीता को फ़ॉर्म नहीं चुनना पड़ता। बच्चे की उम्र से ऐप खुद चुनता है।",
-                "उनका काम है बच्चे को देखना और जो दिखे वो बोलना।")),
-        Scene("voice", "Speak once, the form fills itself", "एक बार बोलिए, फ़ॉर्म खुद भरेगा",
+                "बच्चा 7 दिन का है, तो सरकारी गृह भ्रमण फ़ॉर्म 7वें दिन के कॉलम पर खुलता है।",
+                "पंक्तियाँ और क्रम सरकारी कागज़ी फ़ॉर्म जैसे ही।",
+                "सुनीता को बस बच्चे को देखना है।"),
+            "Visit · Official form", "विज़िट · सरकारी फ़ॉर्म"),
+        Scene("voice", "Speak once, the form fills", "एक बार बोलें, फ़ॉर्म भरे",
             listOf(
-                "Sunita speaks one short note about mother and baby.",
-                "The phone turns her speech into text, then AI fills the form rows.",
-                "Every value shows the exact words it came from, so she can check.",
-                "Nothing is saved until she confirms each value herself."),
+                "Sunita speaks one note about mother and baby.",
+                "Speech becomes text, and AI fills each form row.",
+                "Every value shows the words it came from."),
             listOf(
-                "सुनीता माँ और बच्चे के बारे में एक छोटा नोट बोलती हैं।",
-                "फ़ोन उनकी आवाज़ को लिखता है, फिर AI फ़ॉर्म की पंक्तियाँ भरता है।",
-                "हर मान के साथ वही शब्द दिखते हैं जिनसे वो आया, ताकि वे जाँच सकें।",
-                "जब तक वे हर मान पक्का न करें, कुछ सेव नहीं होता।")),
-        Scene("danger", "Danger sign: refer now", "खतरे का लक्षण: तुरंत रेफ़र",
+                "सुनीता माँ और बच्चे पर एक नोट बोलती हैं।",
+                "आवाज़ लिखे शब्द बनती है, और AI फ़ॉर्म की हर पंक्ति भरता है।",
+                "हर मान के साथ वे शब्द दिखते हैं जिनसे वह आया।"),
+            "Visit · Voice note", "विज़िट · वॉइस नोट"),
+        Scene("danger", "Danger sign: refer today", "खतरे का लक्षण: आज रेफ़र",
             listOf(
-                "Fever and poor feeding in a newborn are danger signs printed on the form itself.",
-                "These are fixed government rules, not AI. They can never guess.",
-                "The app tells Sunita to refer the baby to the PHC today.",
-                "AI only drafts the message to the ANM. Sunita reads it and decides to send."),
+                "Fever and poor feeding are danger signs printed on the form.",
+                "Fixed rules catch them, so the app says refer to the PHC today.",
+                "AI drafts the message to the ANM, and Sunita decides to send it."),
             listOf(
-                "नवजात में बुखार और कम दूध पीना फ़ॉर्म पर छपे खतरे के लक्षण हैं।",
-                "ये तय सरकारी नियम हैं, AI नहीं। ये अंदाज़ा नहीं लगा सकते।",
-                "ऐप सुनीता को बच्चे को आज ही PHC रेफ़र करने को कहता है।",
-                "AI सिर्फ़ ANM को संदेश लिखता है। सुनीता उसे पढ़ती हैं और भेजने का फ़ैसला करती हैं।")),
-        Scene("explain", "Explain to the family in Hindi", "परिवार को हिंदी में समझाइए",
+                "बुखार और कम दूध पीना फ़ॉर्म पर छपे खतरे के लक्षण हैं।",
+                "तय नियम इन्हें पकड़ते हैं, और ऐप आज ही PHC रेफ़र करने को कहता है।",
+                "AI ANM के लिए संदेश लिखता है, और भेजना सुनीता तय करती हैं।"),
+            "Visit · Danger signs", "विज़िट · खतरे के लक्षण"),
+        Scene("explain", "Explained to the family in Hindi", "परिवार को हिंदी में समझाया",
             listOf(
-                "The family is worried, so Sunita explains the danger signs in simple Hindi.",
-                "AI turns the guide's answer into short spoken lines. Every line comes from the guide.",
-                "The phone reads it aloud in Hindi, even with no signal.",
-                "The family understands, and Sunita decides what happens next."),
+                "AI turns the guide's advice into short, simple Hindi.",
+                "The phone reads it aloud, even offline.",
+                "Nothing is added beyond what the guide says."),
             listOf(
-                "परिवार चिंतित है, तो सुनीता खतरे के लक्षण आसान हिंदी में समझाती हैं।",
-                "AI गाइड के उत्तर को छोटी बोली जाने वाली पंक्तियों में बदलता है। हर पंक्ति गाइड से आती है।",
-                "फ़ोन इसे हिंदी में पढ़कर सुनाता है, बिना सिग्नल भी।",
-                "परिवार समझ जाता है, और सुनीता तय करती हैं कि आगे क्या होगा।")),
-        Scene("guides", "Where answers come from", "उत्तर कहाँ से आते हैं",
+                "AI गाइड की सलाह को छोटी, आसान हिंदी में बदलता है।",
+                "फ़ोन इसे बोलकर सुनाता है, ऑफ़लाइन भी।",
+                "गाइड से बाहर कुछ नहीं जुड़ता।"),
+            "Visit · Family", "विज़िट · परिवार"),
+        Scene("guides", "Answers only from official guides", "उत्तर सिर्फ़ सरकारी गाइड से",
             listOf(
-                "Every answer in this app comes only from official Government of India documents.",
-                "The guides were downloaded from government portals, cut into small passages, and stored on this phone.",
-                "That is why answers work offline, and always name the document and page.",
-                "Tap the link to open the library and read the documents yourself."),
+                "Official Government of India guides are stored on this phone.",
+                "Every answer names its document and page.",
+                "Tap the button to open the library."),
             listOf(
-                "इस ऐप का हर उत्तर सिर्फ़ भारत सरकार के आधिकारिक दस्तावेज़ों से आता है।",
-                "गाइड सरकारी पोर्टलों से उतारे गए, छोटे हिस्सों में काटे गए, और इसी फ़ोन में रखे गए।",
-                "इसीलिए उत्तर ऑफ़लाइन मिलते हैं, और हमेशा दस्तावेज़ और पेज बताते हैं।",
-                "लाइब्रेरी खोलने के लिए लिंक दबाएँ और दस्तावेज़ खुद पढ़ें।")),
-        Scene("sops", "Ask SOP, then ask again", "SOP से पूछिए, फिर दोबारा पूछिए",
+                "भारत सरकार की आधिकारिक गाइड इसी फ़ोन में रखी हैं।",
+                "हर उत्तर अपना दस्तावेज़ और पेज बताता है।",
+                "लाइब्रेरी खोलने के लिए बटन दबाएँ।"),
+            "Guide library", "गाइड लाइब्रेरी"),
+        Scene("sops", "Ask, and get a cited answer", "पूछें, और हवाले वाला उत्तर पाएँ",
             listOf(
-                "Sunita asks what should be applied on the baby's cord stump.",
-                "The app searches the official guides, shows the top passages with document and page, then writes the answer from them.",
-                "Every sentence carries its citation, and she opens the official document with one tap.",
-                "She taps the source to read the printed passage itself.",
-                "Then she asks a follow-up, and the app remembers the first question.",
-                "When the phone is online, she also taps Check online and compares both answers."),
+                "Sunita asks what to apply on the baby's cord stump.",
+                "The answer is written from guide passages, with page citations she can tap.",
+                "A follow-up works too, and online she can compare the cloud answer."),
             listOf(
-                "सुनीता पूछती हैं कि बच्चे की नाल पर क्या लगाना चाहिए।",
-                "ऐप आधिकारिक गाइड खोजता है, दस्तावेज़ और पेज के साथ मुख्य हिस्से दिखाता है, फिर उन्हीं से उत्तर लिखता है।",
-                "स्रोत दबाकर वे छपी हुई असली पंक्तियाँ पढ़ती हैं।",
-                "हर वाक्य के साथ उसका हवाला है, और एक दबाने पर आधिकारिक दस्तावेज़ खुलता है।",
-                "फिर वे दोबारा पूछती हैं, और ऐप पहला सवाल याद रखता है।",
-                "फ़ोन ऑनलाइन हो तो वे ऑनलाइन जाँच भी दबाती हैं और दोनों उत्तर मिलाती हैं।")),
-        Scene("gold", "The 100 questions that steer the AI", "AI को राह दिखाने वाले 100 सवाल",
+                "सुनीता पूछती हैं कि बच्चे की नाल पर क्या लगाएँ।",
+                "उत्तर गाइड के हिस्सों से लिखा जाता है, पेज के हवाले के साथ जिन्हें वे दबा सकती हैं।",
+                "दोबारा सवाल भी चलता है, और ऑनलाइन वे क्लाउड का उत्तर मिला सकती हैं।"),
+            "Ask the ASHA guide", "ASHA गाइड से पूछें"),
+        Scene("card", "MCP card photo, read by AI", "MCP कार्ड की फ़ोटो, AI ने पढ़ी",
             listOf(
-                "One hundred of the most common ASHA questions were prepared word for word from the official guides.",
-                "They steer the AI to the right pages and let us measure its accuracy.",
-                "Sunita asks in her own words about the baby's first thick milk.",
-                "The answer itself is always generated live and cited to its guide page.",
-                "She taps the citation to read the printed sentence, then hears it in Hindi."),
+                "Sunita photographs the family's MCP card.",
+                "AI pulls out the vaccines, weights and dates printed on it.",
+                "She ticks each value, and the register updates."),
             listOf(
-                "आशा के 100 सबसे आम सवाल आधिकारिक गाइड से शब्द-शब्द तैयार किए गए।",
-                "वे AI को सही पन्नों तक पहुँचाते हैं और सटीकता नापने देते हैं।",
-                "सुनीता अपने शब्दों में बच्चे के पहले गाढ़े दूध के बारे में पूछती हैं।",
-                "उत्तर हमेशा ताज़ा बनता है और गाइड के पेज का हवाला देता है।",
-                "वे हवाला दबाकर छपी पंक्ति पढ़ती हैं, फिर इसे हिंदी में सुनती हैं।")),
-        Scene("card", "MCP card photo becomes the card", "MCP कार्ड की फ़ोटो बनती है कार्ड",
+                "सुनीता परिवार के MCP कार्ड की फ़ोटो लेती हैं।",
+                "AI उस पर छपे टीके, वज़न और तारीख़ें निकालता है।",
+                "वे हर मान पर निशान लगाती हैं, और रजिस्टर अपडेट होता है।"),
+            "MCP card · Photo", "MCP कार्ड · फ़ोटो"),
+        Scene("mcpcard", "Neha's official MCP card, updated", "नेहा का आधिकारिक MCP कार्ड, अपडेट",
             listOf(
-                "Sunita photographs the family's MCP card. No typing.",
-                "The phone reads the printed text and pulls out vaccines, weights, and dates.",
-                "Only values printed on the card are kept, and she ticks each one.",
-                "Confirmed vaccines leave the due list, and the weight is added to the card."),
+                "This is Neha's official MCP card, filled from today's visit.",
+                "Highlighted fields changed today.",
+                "NA means not applicable yet, and Not recorded means still to be filled."),
             listOf(
-                "सुनीता परिवार के MCP कार्ड की फ़ोटो लेती हैं। लिखना नहीं पड़ता।",
-                "फ़ोन छपा अक्षर पढ़ता है और टीके, वज़न और तारीख़ें निकालता है।",
-                "सिर्फ़ कार्ड पर छपी जानकारी रखी जाती है, और वे हर मान पर निशान लगाती हैं।",
-                "पक्के टीके बाकी सूची से हट जाते हैं, और वज़न कार्ड में जुड़ जाता है।")),
-        Scene("mcpcard", "The official MCP card, filled itself", "आधिकारिक MCP कार्ड, खुद भरा",
+                "यह नेहा का आधिकारिक MCP कार्ड है, आज की विज़िट से भरा।",
+                "हाइलाइट वाले खाने आज बदले।",
+                "NA मतलब अभी लागू नहीं, और दर्ज नहीं मतलब अभी भरना बाकी।"),
+            "MCP card · Official", "MCP कार्ड · आधिकारिक"),
+        Scene("medscan", "Medicine scan and kit count", "दवा स्कैन और किट गिनती",
             listOf(
-                "This is the official Mother and Child Protection Card, field for field.",
-                "Neha's card fills itself automatically from the visit — no copying by hand.",
-                "ANC visits, vaccines, and the growth chart all sit where the printed card puts them.",
-                "Sunita checks every value before it is saved."),
+                "A photo of a medicine strip gives its name, batch and expiry, fully offline.",
+                "One tap adds it to the stock register.",
+                "Online, Meta SAM 3.1 also counts the packets in a kit photo."),
             listOf(
-                "ये आधिकारिक मदर एंड चाइल्ड प्रोटेक्शन कार्ड है, हर खाना वैसा ही।",
-                "नेहा का कार्ड विज़िट से खुद भर जाता है — हाथ से नकल नहीं।",
-                "ANC विज़िट, टीके और विकास चार्ट सब छपे कार्ड वाली जगह पर हैं।",
-                "सेव होने से पहले सुनीता हर मान देखती हैं।")),
-        Scene("medscan", "Scan a medicine, count the kit", "दवा स्कैन करिए, किट गिनिए",
+                "दवा के पत्ते की फ़ोटो से नाम, बैच और एक्सपायरी मिलती है, पूरी तरह ऑफ़लाइन।",
+                "एक टैप में यह स्टॉक रजिस्टर में जुड़ जाती है।",
+                "ऑनलाइन, Meta SAM 3.1 किट की फ़ोटो में पैकेट भी गिनता है।"),
+            "Stock register", "स्टॉक रजिस्टर"),
+        Scene("saved", "One save updates everything", "एक सेव, सब अपडेट",
             listOf(
-                "To record new stock, Sunita photographs a strip. Name, batch, and expiry are read offline.",
-                "She confirms, and it becomes a stock entry in the drug register.",
-                "To count, she photographs the shelf and the cloud counts each packet.",
-                "Counting needs internet, so offline the app says so and skips it. It never guesses."),
+                "One tap saves the form, the MCP card, the diary and the next visit date.",
+                "Registers are real tables, ready to print or share.",
+                "The list below shows exactly what changed."),
             listOf(
-                "नया स्टॉक दर्ज करने के लिए सुनीता पत्ते की फ़ोटो लेती हैं। नाम, बैच और एक्सपायरी ऑफ़लाइन पढ़े जाते हैं।",
-                "वे पक्का करती हैं, और ये दवा रजिस्टर में स्टॉक बन जाता है।",
-                "गिनने के लिए वे शेल्फ़ की फ़ोटो लेती हैं और क्लाउड हर पैकेट गिनता है।",
-                "गिनती को इंटरनेट चाहिए, इसलिए ऑफ़लाइन ऐप बता देता है और छोड़ देता है। अंदाज़ा कभी नहीं लगाता।")),
-        Scene("saved", "Saved everywhere at once", "एक साथ हर जगह सेव",
+                "एक टैप में फ़ॉर्म, MCP कार्ड, डायरी और अगली विज़िट की तारीख़ सेव।",
+                "रजिस्टर असली तालिकाएँ हैं, छापने या भेजने को तैयार।",
+                "नीचे की सूची बताती है कि ठीक क्या बदला।"),
+            "Registers · Saved", "रजिस्टर · सेव"),
+        Scene("practice", "Three questions a day", "रोज़ तीन सवाल",
             listOf(
-                "One tap saves the visit form, the MCP card, the diary, and the next visit date.",
-                "The registers are proper tables now, not copied pages.",
-                "The form prints and shares exactly like the paper one.",
-                "Sunita checks everything on screen before it is saved."),
+                "AI makes three questions a day from the official guides.",
+                "Sunita sees right or wrong at once, with the source page.",
+                "Practice, not exams."),
             listOf(
-                "एक टैप में विज़िट फ़ॉर्म, MCP कार्ड, डायरी और अगली विज़िट की तारीख़ सेव हो जाते हैं।",
-                "रजिस्टर अब सही तालिकाएँ हैं, नकल किए पन्ने नहीं।",
-                "फ़ॉर्म कागज़ जैसा ही छपता और भेजा जाता है।",
-                "सेव होने से पहले सुनीता सब कुछ स्क्रीन पर देखती हैं।")),
-        Scene("practice", "Learn every day", "रोज़ सीखिए",
+                "AI रोज़ सरकारी गाइड से तीन सवाल बनाता है।",
+                "सुनीता सही-गलत तुरंत देखती हैं, स्रोत पेज के साथ।",
+                "अभ्यास, परीक्षा नहीं।"),
+            "Daily practice", "रोज़ अभ्यास"),
+        Scene("aitable", "AI tools behind this visit", "इस विज़िट के पीछे AI टूल",
             listOf(
-                "Every day the app makes three small questions from the official guides.",
-                "Sunita answers, sees right or wrong at once, and reads the source.",
-                "Each answer names the document and page it came from.",
-                "Her weekly score grows. Practice, not exams."),
+                "Each row is a feature, with the tool that runs it on the phone and in the cloud.",
+                "Meta's tools are marked, and a tick shows what ran in this demo.",
+                "Danger signs stay fixed rules, not AI."),
             listOf(
-                "रोज़ ऐप आधिकारिक गाइड से तीन छोटे सवाल बनाता है।",
-                "सुनीता जवाब देती हैं, सही-गलत तुरंत देखती हैं, और स्रोत पढ़ती हैं।",
-                "हर उत्तर बताता है कि वो किस दस्तावेज़ के किस पेज से आया।",
-                "उनका हफ़्ते का स्कोर बढ़ता है। अभ्यास, परीक्षा नहीं।")),
-        Scene("setting", "One setting for everything", "सबके लिए एक सेटिंग",
+                "हर पंक्ति एक सुविधा है, साथ में वह टूल जो उसे फ़ोन पर और क्लाउड में चलाता है।",
+                "Meta के टूल चिह्नित हैं, और सही का निशान बताता है कि इस डेमो में क्या चला।",
+                "खतरे के लक्षण तय नियम हैं, AI नहीं।"),
+            "AI summary", "AI सारांश"),
+        Scene("beforeafter", "How AI eased Sunita's visit", "AI ने सुनीता की विज़िट कैसे आसान की",
             listOf(
-                "The whole app follows one setting: Local first or Cloud first.",
-                "Local first keeps everything on the phone and works without signal.",
-                "Cloud first uses Meta's larger models when there is signal and a key.",
-                "Whichever she picks, the phone is always the fallback. Nothing stops offline."),
+                "By hand, these tasks take long on every visit.",
+                "The table shows what AI did, today's time, and the usual time online and offline.",
+                "Hand times are estimates, and AI times are measured."),
             listOf(
-                "पूरा ऐप एक सेटिंग मानता है: Local first या Cloud first।",
-                "Local first सब कुछ फ़ोन पर रखता है और बिना सिग्नल चलता है।",
-                "Cloud first सिग्नल और key होने पर Meta के बड़े मॉडल इस्तेमाल करता है।",
-                "वे जो भी चुनें, फ़ोन हमेशा बैकअप रहता है। ऑफ़लाइन कुछ रुकता नहीं।")),
-        Scene("aitable", "What AI did in this visit", "इस विज़िट में AI ने क्या किया",
-            listOf(
-                "This table lists every AI step the demo really ran, with its model and measured time.",
-                "A phone icon means it ran offline on this phone. A cloud icon means Meta's cloud.",
-                "Danger rules are marked as fixed rules. They are not AI.",
-                "Built with Muse Code."),
-            listOf(
-                "ये तालिका डेमो में चले हर AI चरण को उसके मॉडल और नपे समय के साथ बताती है।",
-                "फ़ोन का निशान मतलब इसी फ़ोन पर ऑफ़लाइन चला। क्लाउड का निशान मतलब Meta का क्लाउड।",
-                "खतरे के नियम तय नियम लिखे हैं। वे AI नहीं हैं।",
-                "Muse Code से बनाया गया।")),
-        Scene("beforeafter", "Sunita's day, before and after", "सुनीता का दिन, पहले और अब",
-            listOf(
-                "Before, the form, registers, and diary were all copied by hand.",
-                "After, one voice note fills them. The table shows only times this demo measured.",
-                "Where nothing was timed, it says so honestly.",
-                "No invented percentages, ever."),
-            listOf(
-                "पहले फ़ॉर्म, रजिस्टर और डायरी सब हाथ से नकल होते थे।",
-                "अब एक वॉइस नोट से सब भर जाता है। तालिका में सिर्फ़ वही समय है जो इस डेमो ने नापा।",
-                "जहाँ कुछ नापा नहीं, वहाँ साफ़ लिखा है।",
-                "मनगढ़ंत प्रतिशत कभी नहीं।"))
+                "हाथ से ये काम हर विज़िट में बहुत समय लेते हैं।",
+                "तालिका बताती है कि AI ने क्या किया, आज का समय, और ऑनलाइन-ऑफ़लाइन का आम समय।",
+                "हाथ वाले समय अनुमान हैं, और AI वाले समय नापे गए।"),
+            "Impact", "असर")
     )
 }
 
@@ -286,6 +246,116 @@ object ArogyaDemoTicks {
             if (hindi) "⚙ तय नियम (AI नहीं)" else "⚙ Fixed rules (not AI)", false, 0)
         return out
     }
+
+    // ── Demo UI pass: the "AI tools" table and the "How AI eased the visit" table ──
+
+    /**
+     * One app feature with the tool that runs it on the phone (offline) and in the cloud (online).
+     * [metaOffline]/[metaOnline]: the tool is Meta's. [keys]: the tick features that prove it ran today.
+     * [rule]: fixed government rules, never AI. [phoneOnly]: kept on the phone on purpose (privacy).
+     */
+    data class Tool(
+        val feature: String, val featureHi: String,
+        val offline: String, val offlineHi: String, val metaOffline: Boolean,
+        val online: String, val onlineHi: String, val metaOnline: Boolean,
+        val keys: List<String>, val rule: Boolean = false, val phoneOnly: Boolean = false
+    )
+    data class ToolRow(val tool: Tool, val ranMs: Long, val ranCloud: Boolean?, val ran: Boolean)
+
+    private const val LLAMA = "Llama 3.2 3B (Meta)"
+    private const val SPARK = "Muse Spark 1.3 (Meta)"
+    private const val OCR = "ML Kit text (Google)"
+
+    /** Every AI feature in the app, with its real tools (as wired in ArogyaVisitAi / MetaModelApi). */
+    val tools = listOf(
+        Tool("Speech to text", "बोलकर लिखना", "Whisper (OpenAI)", "Whisper (OpenAI)", false,
+            "Muse Voice Transcribe (Meta)", "Muse Voice Transcribe (Meta)", true, listOf("speech-to-text")),
+        Tool("Form filled from the voice note", "वॉइस नोट से फ़ॉर्म भरना", LLAMA, LLAMA, true, SPARK, SPARK, true,
+            listOf("form filling + evidence check")),
+        Tool("Danger signs", "खतरे के लक्षण", "Fixed government rules", "तय सरकारी नियम", false,
+            "Fixed government rules", "तय सरकारी नियम", false, emptyList(), rule = true),
+        Tool("ANM message draft", "ANM संदेश ड्राफ़्ट", LLAMA, LLAMA, true, SPARK, SPARK, true, listOf("ANM message")),
+        Tool("Family explanation in Hindi", "परिवार को हिंदी में समझाना", LLAMA, LLAMA, true, SPARK, SPARK, true,
+            listOf("family explanation")),
+        Tool("Guide search + cited answer", "गाइड खोज + हवाले वाला उत्तर",
+            "E5 search + reranker + $LLAMA", "E5 खोज + रीरैंकर + $LLAMA", true, SPARK, SPARK, true,
+            listOf("guide search + grounded answer", "guide follow-up", "online check")),
+        Tool("Add person from a photo", "फ़ोटो से नया व्यक्ति", "$OCR + $LLAMA", "$OCR + $LLAMA", true,
+            "Stays on the phone (names never leave)", "फ़ोन पर ही (नाम बाहर नहीं जाते)", false,
+            listOf("add person from photo"), phoneOnly = true),
+        Tool("MCP card reading", "MCP कार्ड पढ़ना", "$OCR + $LLAMA", "$OCR + $LLAMA", true,
+            "Stays on the phone (names never leave)", "फ़ोन पर ही (नाम बाहर नहीं जाते)", false,
+            listOf("card text reading + extraction"), phoneOnly = true),
+        Tool("Medicine scan", "दवा स्कैन", "$OCR + rules, then $LLAMA", "$OCR + नियम, फिर $LLAMA", true,
+            "$SPARK (names removed)", "$SPARK (नाम हटाकर)", true, listOf("medicine scan")),
+        Tool("Drug-kit count", "दवा किट गिनती", "Counted by hand", "हाथ से गिनती", false,
+            "SAM 3.1 (Meta)", "SAM 3.1 (Meta)", true, listOf("SAM 3.1 count")),
+        Tool("Daily practice questions", "रोज़ अभ्यास के सवाल", LLAMA, LLAMA, true, SPARK, SPARK, true, listOf("daily practice")),
+        Tool("Read aloud", "पढ़कर सुनाना", "Android voice (offline)", "Android आवाज़ (ऑफ़लाइन)", false,
+            "Android voice", "Android आवाज़", false, listOf("reading aloud"))
+    )
+
+    /** The catalogue with what ran in this demo (first matching tick; danger rules when they ran). */
+    fun toolRows(ticks: List<ArogyaAiTick>, dangerRan: Boolean): List<ToolRow> = tools.map { t ->
+        val tick = ticks.firstOrNull { it.feature in t.keys }
+        when {
+            t.rule -> ToolRow(t, 0, null, dangerRan)
+            tick != null -> ToolRow(t, tick.ms, tick.cloud, true)
+            else -> ToolRow(t, 0, null, false)
+        }
+    }
+
+    /** How many catalogue tools are Meta's (offline, online). */
+    fun metaCounts(): Pair<Int, Int> = tools.count { it.metaOffline } to tools.count { it.metaOnline }
+
+    /**
+     * A visit task, its rough by-hand time (an ESTIMATE, labelled as such on screen, never measured)
+     * and the tick features that measure the AI doing it.
+     */
+    data class Task(val task: String, val taskHi: String, val handMin: Int, val keys: List<String>)
+    val tasks = listOf(
+        Task("Fill the Day 7 visit form", "7वें दिन का फ़ॉर्म भरना", 10, listOf("form filling + evidence check")),
+        Task("Find the answer in the guides", "गाइड में उत्तर ढूँढना", 15, listOf("guide search + grounded answer")),
+        Task("Copy the MCP card", "MCP कार्ड नकल करना", 10, listOf("card text reading + extraction")),
+        Task("Register a new person", "नया व्यक्ति दर्ज करना", 8, listOf("add person from photo")),
+        Task("Write the ANM message", "ANM संदेश लिखना", 5, listOf("ANM message")),
+        Task("Prepare the family explanation", "परिवार के लिए समझाना तैयार करना", 5, listOf("family explanation")),
+        Task("Enter new stock", "नया स्टॉक दर्ज करना", 3, listOf("medicine scan")),
+        Task("Count the drug kit", "दवा किट गिनना", 5, listOf("SAM 3.1 count"))
+    )
+    data class Impact(val task: Task, val todayMs: Long, val todayCloud: Boolean?, val onlineMs: Long, val offlineMs: Long)
+
+    /**
+     * Rows for tasks with any measurement (today, or remembered from an earlier run in either mode).
+     * [remembered]: feature → (last online ms, last offline ms), from [timesDecode].
+     */
+    fun impact(ticks: List<ArogyaAiTick>, remembered: Map<String, Pair<Long, Long>>): List<Impact> = tasks.mapNotNull { t ->
+        val tick = ticks.firstOrNull { it.feature in t.keys }
+        val mem = t.keys.mapNotNull { remembered[it] }
+        val on = mem.maxOfOrNull { it.first } ?: 0L
+        val off = mem.maxOfOrNull { it.second } ?: 0L
+        if (tick == null && on == 0L && off == 0L) null
+        else Impact(t, tick?.ms ?: 0L, tick?.cloud, on, off)
+    }
+
+    /** Last measured time per feature and mode, kept across demo runs: "feature|on|off;..." */
+    fun timesEncode(map: Map<String, Pair<Long, Long>>): String =
+        map.entries.joinToString(";") { (k, v) -> "${k.replace(";", ",").replace("|", "/")}|${v.first}|${v.second}" }
+
+    fun timesDecode(s: String): Map<String, Pair<Long, Long>> = s.split(";").mapNotNull { e ->
+        val p = e.split("|")
+        if (p.size != 3) null else p[0] to ((p[1].toLongOrNull() ?: 0L) to (p[2].toLongOrNull() ?: 0L))
+    }.toMap()
+
+    /** [map] with [tick] recorded under its mode (only measured ticks, ms > 0). */
+    fun timesRecord(map: Map<String, Pair<Long, Long>>, tick: ArogyaAiTick): Map<String, Pair<Long, Long>> {
+        if (tick.ms <= 0) return map
+        val cur = map[tick.feature] ?: (0L to 0L)
+        return map + (tick.feature to if (tick.cloud) tick.ms to cur.second else cur.first to tick.ms)
+    }
+
+    /** Total hand minutes (estimate) for the rows shown. */
+    fun handTotal(rows: List<Impact>): Int = rows.sumOf { it.task.handMin }
 
     /**
      * Before/after rows only for work this run actually measured. "Before" is never

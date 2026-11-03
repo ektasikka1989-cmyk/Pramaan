@@ -21,11 +21,14 @@ fun main() {
     d(ArogyaDemoScript.scenes.all { it.narration.size in 3..6 && it.narrationHi.size in 3..6 }, "3-6 sentences per language")
     d(ArogyaDemoScript.scenes.flatMap { it.narration + it.narrationHi }.all { it.isNotBlank() }, "no blank sentences")
     val ids = ArogyaDemoScript.scenes.map { it.id }
-    d(ids == listOf("meet", "due", "addperson", "form", "voice", "danger", "explain", "guides", "sops", "gold", "card", "mcpcard", "medscan", "saved", "practice", "setting", "aitable", "beforeafter"),
-        "all 18 scenes in order: ${ids.joinToString(",")}")
+    d(ids == listOf("meet", "due", "addperson", "form", "voice", "danger", "explain", "guides", "sops", "card", "mcpcard", "medscan", "saved", "practice", "aitable", "beforeafter"),
+        "all 16 scenes in order (gold + setting removed): ${ids.joinToString(",")}")
+    d(ArogyaDemoScript.scenes.all { it.narration.size == 3 }, "demo UI pass: three short sentences per scene")
+    d(ArogyaDemoScript.scenes.all { it.screen.isNotBlank() && it.screenHi.isNotBlank() }, "every scene has an app-screen heading")
+    d(ArogyaDemoScript.scenes.flatMap { it.narration }.count { it.contains("confirm", ignoreCase = true) } <= 1, "'she confirms' said once, not every scene")
     d(ArogyaDemoScript.scenes.all { it.narration.size == it.narrationHi.size }, "EN and HI sentence counts match")
     d(ArogyaDemoScript.GOLD_EN.contains("gaadha doodh") && ArogyaDemoScript.GOLD_HI.contains("गाढ़ा दूध"), "gold scene asks in her own words")
-    d(ArogyaDemoScript.scenes.first { it.id == "mcpcard" }.narration.any { it.contains("Mother and Child Protection Card") },
+    d(ArogyaDemoScript.scenes.first { it.id == "mcpcard" }.narration.any { it.contains("official MCP card") },
         "MCP scene names the official card")
     d(ArogyaDemoScript.scenes.first { it.id == "mcpcard" }.narration.any { it.contains("Neha") }, "MCP scene keeps the hero")
     d(ArogyaDemoScript.QUESTION_EN.contains("cord stump") && ArogyaDemoScript.QUESTION_HI.contains("नाल"),
@@ -59,6 +62,27 @@ fun main() {
     d(ba.size == 1 && ba[0].afterMs == 12000L, "measured task appears with its time")
     d(ba[0].before.contains("not timed"), "paper side always says not timed")
     d(ArogyaDemoTicks.beforeAfter(ticks, true).isEmpty(), "unmeasured tasks stay out even in Hindi")
+    // 5. Demo UI pass: the AI tools table (catalogue + what ran) and the impact table.
+    val tr = ArogyaDemoTicks.toolRows(ticks, dangerRan = true)
+    d(tr.size == ArogyaDemoTicks.tools.size, "every catalogue feature is a row")
+    d(tr.first { it.tool.feature == "Speech to text" }.let { it.ran && it.ranMs == 9000L && it.ranCloud == false }, "a tick marks its feature as ran today")
+    d(tr.first { it.tool.feature == "Drug-kit count" }.let { it.ran && it.ranCloud == true && it.tool.metaOnline }, "SAM count is Meta, online")
+    d(tr.first { it.tool.rule }.let { it.ran && it.ranCloud == null && !it.tool.metaOffline && !it.tool.metaOnline }, "danger rules: ran, never AI, never Meta")
+    d(tr.first { it.tool.feature == "Daily practice questions" }.ran.not(), "untouched feature is not marked as ran")
+    d(ArogyaDemoTicks.tools.filter { it.phoneOnly }.all { !it.metaOnline && it.online.contains("phone") }, "card + person reading stay on the phone")
+    d(ArogyaDemoTicks.tools.none { it.offline.contains("Whisper") && it.metaOffline }, "Whisper is never labelled Meta")
+    val (mOff, mOn) = ArogyaDemoTicks.metaCounts()
+    d(mOff >= 5 && mOn >= 6, "Meta tools counted: $mOff offline, $mOn online")
+    val mem = ArogyaDemoTicks.timesRecord(ArogyaDemoTicks.timesRecord(emptyMap(),
+        ArogyaAiTick("form filling + evidence check", "f", "M", 4000, true)), ArogyaAiTick("form filling + evidence check", "f", "M", 60000, false))
+    d(mem["form filling + evidence check"] == (4000L to 60000L), "times kept per mode")
+    d(ArogyaDemoTicks.timesDecode(ArogyaDemoTicks.timesEncode(mem)) == mem, "times round-trip")
+    d(ArogyaDemoTicks.timesRecord(mem, ArogyaAiTick("x", "x", "M", 0, true)) == mem, "unmeasured tick is not recorded")
+    d(ArogyaDemoTicks.timesDecode("garbage").isEmpty(), "bad times string decodes to nothing")
+    val imp = ArogyaDemoTicks.impact(listOf(ArogyaAiTick("form filling + evidence check", "f", "M", 5000, true)), mem)
+    d(imp.size == 1 && imp[0].todayMs == 5000L && imp[0].onlineMs == 4000L && imp[0].offlineMs == 60000L && imp[0].task.handMin > 0, "impact row: today + online + offline + hand estimate")
+    d(ArogyaDemoTicks.impact(emptyList(), emptyMap()).isEmpty(), "impact: nothing measured, no rows")
+    d(ArogyaDemoTicks.handTotal(imp) == imp[0].task.handMin, "hand total sums the shown rows")
     println("DemoTourTest: $dp passed, $df failed")
     if (df > 0) kotlin.system.exitProcess(1)
 }

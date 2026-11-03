@@ -337,3 +337,12 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Files: ArogyaVisitScreen.kt, ArogyaSopChat.kt, ArogyaVisitAi.kt, ArogyaAnswerFormat.kt, AnswerFormatTest.kt.
 - Tests: AnswerFormatTest 51/51 (new: 12 strip cases incl. Hindi danda, links, doses, line breaks; 2 citeAt cases); TierTest 41/41. Brace balance checked. The build is held until the user asks. BUILD SUCCESSFUL (1m35s, compileDebugKotlin ran). Installed with adb install -r (user asked); base.apk MD5 matches.
 - To be checked manually: ■ during search, writing and checking frees the screen at once; asking again right after a Stop works (it may wait a few seconds for the old step); a cloud answer has no [S1]/[1] and shows grouped superscripts; tapping a superscript opens that passage; shared text/PDF has no tags.
+
+### DUI1. Demo script: 16 scenes, short non-repeating narration, screen headings (BUILD PENDING)
+- Changed (Final DUI1): the "100 questions" (gold) and "One setting" scenes are removed (user items 6 and 10), leaving 16 scenes. Every scene now has exactly three short sentences in English and Hindi, rewritten so nothing repeats scene to scene ("she confirms every result" is said once, in scene 1). Each scene has an app-screen heading (Scene.screen / screenHi, e.g. "Register · Add person", "Visit · Danger signs", "MCP card · Official", "AI summary", "Impact"). New pure helpers in ArogyaDemoTicks:
+  - the AI tools catalogue: 12 features, each with its real offline and online tool, Meta tools flagged, as wired in code. Llama 3.2 3B on the phone; Muse Spark 1.3, Muse Voice Transcribe and SAM 3.1 online. Whisper, ML Kit, E5 and the reranker are named with their real owners and not flagged as Meta. Danger signs are fixed rules. Card and person reading stay on the phone.
+  - toolRows / metaCounts;
+  - the impact table: tasks with by-hand ESTIMATES (shown labelled as estimates, never measured), today's measured time, and the last measured online and offline times remembered across runs (timesEncode / timesDecode / timesRecord).
+  - ArogyaDemoTour now switches on scene ids instead of numbers (no renumbering drift); the gold and setting bodies and runner are gone.
+- Files: ArogyaDemoScript.kt, ArogyaDemoTour.kt, DemoTourTest.kt, Batch5Test.kt.
+- Tests: DemoTourTest 51/51 (new: 16 ids, 3 sentences each, screen headings, "confirm" said once, tool rows, Meta flags, Whisper never Meta, phone-only reading, times per mode + round-trip, impact rows, hand total); Batch5Test 21/21. The build is held until the user asks.
