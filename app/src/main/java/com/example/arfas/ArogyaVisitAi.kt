@@ -491,7 +491,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val (opt, by) = route("family_explain", ArogyaAiExtras.familyPrompt(answer, quote, hindi), 450,
             ArogyaAiExtras.familyPrompt(ArogyaOnlinePolicy.scrubGeneric(answer), ArogyaOnlinePolicy.scrubGeneric(quote), hindi),
             cloudTokens = 900, lang = if (hindi) "hi" else "en") { out ->
-            ArogyaAiExtras.groundedSentences(out, answer + "\n" + quote, max = 4).takeIf { it.isNotBlank() } }
+            ArogyaAiExtras.groundedSentences(out, answer + "\n" + quote, max = 8).takeIf { it.isNotBlank() } }
         val clean = opt.orEmpty()
         Log.i(TAG, "AROGYA_TIMING event=family_explain ms=${System.currentTimeMillis() - t} chars=${clean.length}")
         check(clean.isNotBlank()) { "Could not make a simple explanation. Read the guide sentence to the family instead." }

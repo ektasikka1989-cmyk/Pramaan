@@ -166,3 +166,10 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Tests: full host gate 42 suites green, EXIT=0 (gateb3.log); AnswerFormatTest 26/26 (new: cloud totals, Hindi labels, new sections); BUILD SUCCESSFUL (5m37s).
 - Verified on host: prompt lines per type/lang/engine, section parsing EN+HI, sentence counting.
 - To be checked manually: answer completeness EN+HI on phone; salvage exact-words block; check-online depth.
+
+### B4. Explain to family (5-8 sentences)
+- Changed (Final B.4): familyPrompt rewritten -- 5 to 8 short warm sentences spoken to "you" covering what to do / what not to do / warning signs / when to call the ASHA-ANM or go to the facility, simple spoken Hindi in Devanagari when asked; full answer + quote passed (quote.take(600) / answer.take(1500) removed). groundedSentences max 4 -> 8 on the family path. Card: 20 sp text (29 sp lines), "Read to the family" as the main full-width button, new "Share with family (WhatsApp)" via the share sheet.
+- Files: ArogyaAiExtras.kt, ArogyaVisitAi.kt, ArogyaSopChat.kt, AnswerFormatTest.kt.
+- Tests: full host gate 42 suites green, EXIT=0 (gateb4.log); AnswerFormatTest 31/31 (new: prompt ask, Hindi, full-input, max-8 keeper, new-number rejection); BUILD SUCCESSFUL (2m31s).
+- Verified on host: prompt wording, keeper keeps 8 and drops new numbers.
+- To be checked manually: family card text size/buttons/share on phone; Hindi explanation quality.

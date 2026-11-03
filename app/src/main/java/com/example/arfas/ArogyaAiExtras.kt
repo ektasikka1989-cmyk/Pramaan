@@ -215,12 +215,13 @@ object ArogyaAiExtras {
 
     fun familyPrompt(answer: String, quote: String, hindi: Boolean): String = """
         You help an ASHA health worker explain advice to a family at home.
-        Rewrite the GUIDE ANSWER below as 3 short, simple sentences a mother can understand${if (hindi) ", in Hindi (Devanagari script)" else ", in simple English"}.
+        Rewrite the GUIDE ANSWER below as 5 to 8 short, warm sentences spoken to "you" (the mother and family)${if (hindi) ", in simple spoken Hindi (Devanagari script)" else ", in simple English"}.
+        Cover what to do, what not to do, the warning signs to watch for, and when to call the ASHA or ANM or go to the health facility.
         Use only facts from the guide answer and guide sentence. Do not add medicines, doses, numbers or advice that are not there.
         If they say to refer or go to a health facility, keep that.
-        GUIDE SENTENCE: ${quote.take(600)}
-        GUIDE ANSWER: ${answer.take(1500)}
-        Write only the 3 sentences.
+        GUIDE SENTENCE: $quote
+        GUIDE ANSWER: $answer
+        Write only the 5 to 8 sentences.
     """.trimIndent()
 
     // ── ANM message ──

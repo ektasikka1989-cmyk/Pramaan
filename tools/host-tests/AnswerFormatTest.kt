@@ -55,6 +55,16 @@ fun main() {
     check("sec-why", why.map { it.heading } == listOf("Answer", "Why it matters", "Common mistakes to avoid"), why.toString())
     val hiNew = ArogyaAnswerFormat.sections("उत्तर: ठीक है।\nक्यों ज़रूरी:\nविकास होता है।\nआम गलतियाँ:\nपानी देना।")
     check("sec-hi-new", hiNew.map { it.heading } == listOf("उत्तर", "क्यों ज़रूरी", "आम गलतियाँ"), hiNew.toString())
+    // Part B4: family prompt (5-8 warm sentences, full inputs) + grounded keeper (max 8).
+    val fp = ArogyaAiExtras.familyPrompt("Give ORS after every loose motion.", "ORS saves lives.", false)
+    check("fam-ask", "5 to 8" in fp && "what not to do" in fp && "warning signs" in fp && "ASHA" in fp)
+    val fpHi = ArogyaAiExtras.familyPrompt("उत्तर।", "वाक्य।", true)
+    check("fam-hi", "Devanagari" in fpHi && "5 to 8" in fpHi)
+    val longAns = "Give ORS. ".repeat(300)
+    check("fam-full", ArogyaAiExtras.familyPrompt(longAns, "Q.", false).contains(longAns))
+    val eight = (1..8).joinToString(" ") { "Keep the child warm and clean today number $it." }
+    check("fam-max8", ArogyaAnswerFormat.sentenceCount(ArogyaAiExtras.groundedSentences(eight, eight, max = 8)) == 8)
+    check("fam-newnum", !ArogyaAiExtras.groundedSentences("Give ORS now. Give 500 tablets daily.", "Give ORS now.", max = 8).contains("500"))
     // Sentence pieces for AROGYA_ANSWER_LEN.
     check("len-simple", ArogyaAnswerFormat.sentenceCount("One two three. Four five six!") == 2)
     check("len-numbered", ArogyaAnswerFormat.sentenceCount("1. Wash hands well.\n2. Keep it dry now.") == 2)

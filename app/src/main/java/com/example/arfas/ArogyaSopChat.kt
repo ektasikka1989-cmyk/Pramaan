@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /** One Ask SOP exchange in the chat thread. The full result (sources, quote) is kept for re-open. */
 data class SopChatMsg(
@@ -314,11 +315,12 @@ fun SopAnswerCard(
         }
         if (warning != null && inVisit) Button(onClick = { onEscalate(question) }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), modifier = Modifier.fillMaxWidth()) { Text(tr("Escalate to ANM", "ANM को सूचित करें")) }
         if (showFamily && ai != null && !result.sourceOnly && familyText.isNotBlank()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-            Column(Modifier.padding(12.dp)) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(tr("For the family", "परिवार के लिए"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 if (familyModel.isNotBlank()) AiResultChip(familyModel, !familyModel.startsWith("On-phone"), familyMs, hindi)
-                Text(familyText, style = MaterialTheme.typography.bodyLarge)
-                TextButton(onClick = { onSpeak(familyText) }) { Text(tr("🔊 Read to the family", "🔊 परिवार को सुनाएँ")) }
+                Text(familyText, style = MaterialTheme.typography.bodyLarge, fontSize = 20.sp, lineHeight = 29.sp)
+                Button(onClick = { onSpeak(familyText) }, modifier = Modifier.fillMaxWidth()) { Text(tr("🔊 Read to the family", "🔊 परिवार को सुनाएँ")) }
+                OutlinedButton(onClick = { ArogyaShare.shareText(context, tr("For the family", "परिवार के लिए"), familyText) }, modifier = Modifier.fillMaxWidth()) { Text(tr("Share with family (WhatsApp)", "परिवार को भेजें (WhatsApp)")) }
                 Text(tr("AI rewrite of the guide answer in simple words. No new advice or numbers are added — check before reading out.", "गाइड के उत्तर का सरल रूप। कोई नई सलाह या संख्या नहीं जोड़ी गई — सुनाने से पहले देख लें।"), style = MaterialTheme.typography.bodySmall)
             }
         }
