@@ -302,3 +302,15 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Files: ArogyaVisitScreen.kt.
 - Tests: Compose UI only (not in the host suites). The build is held until the user asks (their instruction), so this has NOT been compiled yet.
 - To be checked manually: neither line on home; Today card + Next visits strip present; no Today's plan card; Clear sample data asks for confirmation and keeps real people.
+
+### UI4. Ask the ASHA guide: chat-style layout (BUILD PENDING)
+- Changed (Final UI4): the Ask window now follows a modern AI-chat layout, using the app's existing theme colours (MaterialTheme primary / primaryContainer / surfaceVariant).
+  - Top bar: ✕ close (left), title, Ask SOP badge, 📖 guides used, ✎ New chat; a divider below.
+  - Thread: each question is a right-aligned bubble (primaryContainer); each answer sits below it on the left under a small "📚 ASHA guide" avatar row, as plain text (no card). Earlier answers now show in full (they used to collapse to 6 lines behind "Show more"). The answer while writing uses the same bubble + avatar layout.
+  - Empty chat: centred greeting, one line on where answers come from, and tappable example cards (the guide's own topic suggestions when known, else 4 built-in ASHA questions).
+  - Composer: one rounded bar at the bottom with ＋ (📷 Take photo / 📎 Photo-PDF), a borderless 1–5 line question box, 🎤 (when the box is empty) and a round ↑ send button that becomes ■ stop while an answer is being written. Sending clears the box (the question stays as a bubble). Attachment chip + Remove sit above the bar. A one-line disclaimer sits under it.
+  - Answer actions in one compact row: 🔊 Listen, ⏹ Stop, 👪 Family (हिंदी), 👪 English, ☁ Check online, ➕ More detail, ↗ Share.
+  - Every earlier feature is kept: sources line + passages + Open official document, inline citations, Offline/Online tabs, guide-says quote, family block, Ask ANM / Save to check later (r8), Escalate to ANM (now escalates the asked question, since the box is cleared after sending), saved-questions banner, auto-follow scroll (UI2).
+- Files: ArogyaSopChat.kt (new SopUserBubble, SopAssistantHeader, SopEmptyState, SopComposer; history, streaming and action row restyled), ArogyaVisitScreen.kt (Ask top bar, thread items, composer).
+- Tests: Compose UI only (not in the host suites); brace balance checked. The build is held until the user asks, so this has NOT been compiled yet.
+- To be checked manually: empty state + tapping an example fills the box; send clears the box and shows the bubble; ■ stops a running answer; ＋ menu photo/PDF; 🎤 dictation; scrolling earlier full answers; each action in the row; the urgent warning's Escalate carries the right question; Hindi labels.

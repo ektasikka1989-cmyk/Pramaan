@@ -133,35 +133,16 @@ fun SopChatHistoryCard(
     context: Context
 ) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
-    var expanded by remember(msg.id) { mutableStateOf(false) }
     val result = msg.result
-    Card(Modifier.fillMaxWidth().clickable { expanded = !expanded }) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row {
-                Text(msg.question, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text(if (expanded) "▴" else "▾", color = MaterialTheme.colorScheme.primary)
-            }
-            if (result == null) {
-                Text(tr("No answer recorded.", "कोई उत्तर दर्ज नहीं।"), style = MaterialTheme.typography.bodySmall)
-            } else if (!expanded) {
-                Text(ArogyaMarkdown.strip(result.text), maxLines = 6, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 17.sp, lineHeight = 25.sp))
-                if (result.sources.isNotEmpty()) {
-                    val s0 = result.sources.first()
-                    Text(tr("📚 From the guide: ", "📚 गाइड से: ") + s0.title +
-                        (if (s0.locator.isNotBlank()) ", ${s0.locator}" else ""),
-                        style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                }
-                TextButton(onClick = { expanded = true }) { Text(tr("Show more", "और देखें")) }
-            } else {
-                // Expanded history shows the full card; the family explanation it triggers
-                // reads back in the latest card (one family block per window).
-                SopAnswerCard(result, msg.question, msg.asked.ifBlank { msg.question }, warning, inVisit,
-                    ai, busy, pending, false, onOpenUrl, onSpeak, onStopSpeak, "", false, "", 0L,
-                    onFamily, onCheckOnline, onMoreDetail, onSaveForLater, onEscalate, context, hindi)
-                TextButton(onClick = { expanded = false }) { Text(tr("Show less", "कम देखें")) }
-            }
-        }
+    // UI4: chat layout. The question as a bubble, the whole answer below it (no collapsed card).
+    // The family explanation it triggers reads back in the latest answer (one family block per window).
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SopUserBubble(msg.question)
+        SopAssistantHeader(hindi)
+        if (result == null) Text(tr("No answer recorded.", "कोई उत्तर दर्ज नहीं।"), style = MaterialTheme.typography.bodySmall)
+        else SopAnswerCard(result, msg.question, msg.asked.ifBlank { msg.question }, warning, inVisit,
+            ai, busy, pending, false, onOpenUrl, onSpeak, onStopSpeak, "", false, "", 0L,
+            onFamily, onCheckOnline, onMoreDetail, onSaveForLater, onEscalate, context, hindi)
     }
 }
 
@@ -215,9 +196,8 @@ fun SopStreamingCard(
     onCancel: () -> Unit
 ) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
-    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (question.isNotBlank()) Text(question, fontWeight = FontWeight.Bold)
-        LinearProgressIndicator(Modifier.fillMaxWidth())
+    // UI4: the question bubble and the ■ stop button live in the chat screen.
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             if (checking) tr("Rewriting from the guide…", "गाइड से फिर लिखा जा रहा है…")
             else tr("✍️ Writing… · checking against the guide", "✍️ लिखा जा रहा है… · गाइड से मिलाया जा रहा है"),
@@ -231,11 +211,11 @@ fun SopStreamingCard(
                 textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
             else SopAnswerText(draft, emptyList(), emptySet()) {}
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (draft.isNotBlank() && !checking) OutlinedButton(onClick = { onSpeakSoFar(draft) }) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (draft.isNotBlank() && !checking) TextButton(onClick = { onSpeakSoFar(draft) }) {
                 Text(tr("🔊 Read so far", "🔊 अब तक सुनें"))
             }
-            TextButton(onClick = onCancel) { Text(tr("Cancel", "रद्द करें") + "  ${secs}s") }
+            Text("${secs}s", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -371,17 +351,23 @@ fun SopAnswerCard(
                 OutlinedButton(onClick = onSaveForLater, modifier = Modifier.weight(1f)) { Text(tr("💾 Save to check later", "💾 बाद में जाँचें")) }
             }
         }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = { onSpeak(tabText) }) { Text(tr("🔊 Read aloud", "🔊 सुनें")) }
-            TextButton(onClick = onStopSpeak) { Text(tr("Stop", "रोकें")) }
+        // UI4: compact action row under the answer, like a chat app's icon row (every action kept).
+        val small = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { onSpeak(tabText) }, contentPadding = small) { Text(tr("🔊 Listen", "🔊 सुनें")) }
+            TextButton(onClick = onStopSpeak, contentPadding = small) { Text(tr("⏹ Stop", "⏹ रोकें")) }
             if (ai != null && !result.sourceOnly && !result.storedCopy) {
-                Button(onClick = { onFamily(true) }, enabled = !familyBusy && !busy) { Text(if (familyBusy) tr("Writing…", "लिखा जा रहा है…") else tr("👪 Explain to family (हिंदी)", "👪 परिवार को समझाएँ")) }
-                TextButton(onClick = { onFamily(false) }, enabled = !familyBusy && !busy) { Text(tr("English", "English")) }
+                TextButton(onClick = { onFamily(true) }, enabled = !familyBusy && !busy, contentPadding = small) {
+                    Text(if (familyBusy) tr("Writing…", "लिखा जा रहा है…") else tr("👪 Family (हिंदी)", "👪 परिवार को समझाएँ"))
+                }
+                TextButton(onClick = { onFamily(false) }, enabled = !familyBusy && !busy, contentPadding = small) { Text(tr("👪 English", "👪 English")) }
                 AiBadge("Explain to family")
             }
-            if (!hasOnline && !result.online && !ArogyaOnlinePolicy.localOnly(question)) Button(onClick = onCheckOnline, enabled = !busy && pending == 0 && asked.isNotBlank()) { Text(tr("☁ Check online", "☁ ऑनलाइन जाँचें")) }
-            if (!result.sourceOnly && !result.storedCopy) OutlinedButton(onClick = onMoreDetail, enabled = !busy && pending == 0 && asked.isNotBlank()) { Text(tr("More detail", "और विस्तार")) }
-            OutlinedButton(onClick = { shareOpen = true }) { Text(tr("Share answer", "उत्तर भेजें")) }
+            if (!hasOnline && !result.online && !ArogyaOnlinePolicy.localOnly(question))
+                TextButton(onClick = onCheckOnline, enabled = !busy && pending == 0 && asked.isNotBlank(), contentPadding = small) { Text(tr("☁ Check online", "☁ ऑनलाइन जाँचें")) }
+            if (!result.sourceOnly && !result.storedCopy)
+                TextButton(onClick = onMoreDetail, enabled = !busy && pending == 0 && asked.isNotBlank(), contentPadding = small) { Text(tr("➕ More detail", "➕ और विस्तार")) }
+            TextButton(onClick = { shareOpen = true }, contentPadding = small) { Text(tr("↗ Share", "↗ भेजें")) }
         }
         if (warning != null && inVisit) Button(onClick = { onEscalate(question) }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), modifier = Modifier.fillMaxWidth()) { Text(tr("Escalate to ANM", "ANM को सूचित करें")) }
         if (showFamily && ai != null && !result.sourceOnly && !result.storedCopy && familyText.isNotBlank()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
@@ -468,6 +454,133 @@ fun SopAnswerCard(
                         }
                     }
                 })
+        }
+    }
+}
+
+// ── UI4: chat-style Ask screen (layout like a modern AI chat app, the app's own colours) ──
+
+/** The worker's question as a right-aligned bubble. */
+@Composable
+fun SopUserBubble(text: String) {
+    if (text.isBlank()) return
+    Row(Modifier.fillMaxWidth().padding(start = 48.dp), horizontalArrangement = Arrangement.End) {
+        Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ) {
+            Text(text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp))
+        }
+    }
+}
+
+/** Small "guide" avatar row above an answer, like the assistant marker in a chat app. */
+@Composable
+fun SopAssistantHeader(hindi: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(shape = androidx.compose.foundation.shape.CircleShape, color = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(26.dp)) {
+            Box(contentAlignment = Alignment.Center) { Text("📚", fontSize = 13.sp) }
+        }
+        Text(if (hindi) "ASHA गाइड" else "ASHA guide", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** Empty chat: a greeting and tappable example questions (the guide's own suggestions when known). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SopEmptyState(hindi: Boolean, suggestTitle: String, suggestions: List<String>, onPick: (String) -> Unit) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val examples = suggestions.take(4).ifEmpty {
+        listOf(
+            tr("What should be applied on the baby's cord stump?", "बच्चे की नाल पर क्या लगाना चाहिए?"),
+            tr("Should colostrum be given to the newborn?", "क्या नवजात को पहला गाढ़ा दूध देना चाहिए?"),
+            tr("How do I make ORS at home?", "घर पर ओआरएस कैसे बनाएँ?"),
+            tr("What are the danger signs in a newborn?", "नवजात में खतरे के लक्षण क्या हैं?"))
+    }
+    Column(Modifier.fillMaxWidth().padding(top = 48.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(shape = androidx.compose.foundation.shape.CircleShape, color = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(52.dp)) {
+            Box(contentAlignment = Alignment.Center) { Text("📚", fontSize = 24.sp) }
+        }
+        Text(tr("What would you like to ask?", "आप क्या पूछना चाहती हैं?"), style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold)
+        Text(tr("Answers come from the official ASHA guides, with the page they are from.",
+            "उत्तर आधिकारिक ASHA गाइड से आते हैं, पेज के हवाले के साथ।"),
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        if (suggestions.isNotEmpty() && suggestTitle.isNotBlank())
+            Text(tr("Ask about ", "पूछें ") + suggestTitle.take(60), style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary)
+        examples.forEach { q ->
+            OutlinedCard(onClick = { onPick(q.take(200)) }, modifier = Modifier.fillMaxWidth(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+                Text(q, Modifier.padding(horizontal = 16.dp, vertical = 12.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+/**
+ * Bottom composer: rounded bar with ＋ (photo / file), the question, 🎤 and a round send button
+ * that turns into ■ stop while an answer is being written.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SopComposer(
+    value: String,
+    onValueChange: (String) -> Unit,
+    hindi: Boolean,
+    busy: Boolean,
+    canSend: Boolean,
+    attachEnabled: Boolean,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+    onMic: () -> Unit,
+    onPhoto: () -> Unit,
+    onFile: () -> Unit
+) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    var menu by remember { mutableStateOf(false) }
+    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.Bottom) {
+            Box {
+                TextButton(onClick = { menu = true }, enabled = attachEnabled && !busy,
+                    contentPadding = PaddingValues(0.dp), modifier = Modifier.size(48.dp)) {
+                    Text("＋", style = MaterialTheme.typography.titleLarge)
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }, onClick = { menu = false; onPhoto() })
+                    DropdownMenuItem(text = { Text(tr("📎 Photo / PDF", "📎 फ़ोटो / PDF")) }, onClick = { menu = false; onFile() })
+                }
+            }
+            TextField(
+                value = value, onValueChange = onValueChange, enabled = !busy,
+                placeholder = { Text(if (busy) tr("Writing the answer…", "उत्तर लिखा जा रहा है…") else tr("Ask the ASHA guide", "ASHA गाइड से पूछें")) },
+                modifier = Modifier.weight(1f), minLines = 1, maxLines = 5,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    disabledContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent)
+            )
+            if (!busy && value.isBlank()) TextButton(onClick = onMic, contentPadding = PaddingValues(0.dp), modifier = Modifier.size(48.dp)) {
+                Text("🎤", fontSize = 20.sp)
+            }
+            val sendColor = if (busy || canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+            Surface(onClick = { if (busy) onStop() else if (canSend) onSend() }, enabled = busy || canSend,
+                shape = androidx.compose.foundation.shape.CircleShape, color = sendColor,
+                contentColor = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.padding(4.dp).size(40.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(if (busy) "■" else "↑", fontSize = if (busy) 16.sp else 20.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 }
