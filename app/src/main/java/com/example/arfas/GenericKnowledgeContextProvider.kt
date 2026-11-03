@@ -58,6 +58,8 @@ class GenericKnowledgeContextProvider(
         /** "Check online": passages (and characters per passage) sent to the online model. */
         const val ONLINE_PASSAGES = 12
         const val ONLINE_WINDOW_CHARS = 1_600
+        /** Part B3: Check-online turns read up to 16 passages; the Cloud-first wide set stays 12 x 1600. */
+        const val CHECK_PASSAGES = 16
         /** Evidence budget (characters) from which the model reads whole passages instead of key sentences. */
         const val PASSAGE_MODE_MIN_CHARS = 3_000
     }
@@ -548,7 +550,7 @@ class GenericKnowledgeContextProvider(
             // them); with less room it reads only the key sentences.
             val windows = if (evidenceCharBudget >= PASSAGE_MODE_MIN_CHARS)
                 (if (widePassages) GenericKbKeyFacts.passageWindows(result.hits.take(keyFactPassageCount(queryPlan)).map { it.content }, keyFacts,
-                    count = ONLINE_PASSAGES, maxChars = ONLINE_WINDOW_CHARS)
+                    count = CHECK_PASSAGES, maxChars = ONLINE_WINDOW_CHARS)
                 else GenericKbKeyFacts.passageWindows(result.hits.take(keyFactPassageCount(queryPlan)).map { it.content }, keyFacts))
             else null
             // Passages in the order of their best fact; the calculation goes with the first fact that states a percentage.
@@ -706,7 +708,7 @@ class GenericKnowledgeContextProvider(
     /** A question asking several things gets two more passages per extra part to choose from. */
     private fun keyFactPassageCount(queryPlan: GenericKbQueryPlan): Int {
         val partCount = maxOf(currentRewrite?.parts?.size ?: 1, queryPlan.clauses.size).coerceIn(1, 3)
-        if (widePassages) return ONLINE_PASSAGES + 2 * (partCount - 1)
+        if (widePassages) return CHECK_PASSAGES + 2 * (partCount - 1)
         // R1-lite: six passages compete for key facts when the switch is on, else five.
         val base = if (ArogyaFlags.r1WideEvidence) KEY_FACT_PASSAGES + 1 else KEY_FACT_PASSAGES
         return base + 2 * (partCount - 1)

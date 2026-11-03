@@ -75,46 +75,61 @@ object ArogyaQuestionType {
      * The last line the model reads (replaces COMPLETE_ANSWER when r2LengthPrompt is on).
      * Matches the question type so it no longer contradicts the LENGTH tiers.
      * [query] adds the dose rule: a dose asked for a named age group must not list others (Q11).
+     * Part B3: five labelled parts (Answer / Why it matters / What to do / When to tell the
+     * ANM / Common mistakes to avoid), Hindi labels when the question is in Devanagari, and
+     * per-engine sentence totals (six to ten on the phone, eight to fourteen from the cloud).
      */
-    fun lengthLine(kind: Kind, query: String = ""): String {
+    fun lengthLine(kind: Kind, query: String = "", cloud: Boolean = false): String {
         val head = "Answer completely in your own words: cover every point the material gives on this question "
         val doseForGroup = query.isNotBlank() && ArogyaDoseCheck.isDoseQuestion(query) &&
             ArogyaDoseCheck.askedGroup(query) != ArogyaDoseCheck.Group.UNKNOWN
         val core = when (kind) {
             Kind.PROCEDURE -> "(this asks HOW to do something: give every numbered step in order, each step " +
-                "as its own numbered line; do not merge steps, do not add steps, do not stop early). "
-            Kind.LIST -> "(this asks for ITEMS: give one line per item for every item the material gives; " +
-                "do not stop after the first items). "
+                "as its own numbered line with what to watch for while doing it; do not merge steps, do not add steps, do not stop early). "
+            Kind.LIST -> "(this asks for ITEMS: give one line per item for every item the material gives, " +
+                "each with a one-line explanation; do not stop after the first items). "
             Kind.FACT -> if (doseForGroup) "(this asks a DOSE for one age group: give only the dose for the asked age group; " +
                 "do not list other age groups. Keep it short: the dose, how to give it, and for how long). "
             else "(for a \"what is\" question: what it is, its role or purpose, and its key details; " +
                 "for a comparison or a \"difference between\" question: first what each one is, then how they " +
                 "differ). "
-            Kind.URGENT -> "(this is URGENT: start with the most useful action first, then the details). "
+            Kind.URGENT -> "(this is URGENT: start with the most useful action first, then the steps and the referral conditions). "
         }
-        // Item 4 shape: up to three labelled parts; the card renders each label as a small heading.
-        val shape = "Shape the answer in up to three parts, each part on its own lines starting with its label and a colon: " +
-            "'Answer:' with the direct answer in two to five sentences (three to five for a fact question; " +
-            "never a single sentence when the material has more); " +
-            "'What to do:' with the numbered steps, or one line per item, only from the material " +
+        // Part B3 shape: five labelled parts; the card renders each label as a small heading.
+        // A Hindi question gets the Hindi labels so the sections still parse.
+        val hindi = ArogyaBudget.langOf(query) == "hi"
+        val l = if (hindi) listOf("'उत्तर:'", "'क्यों ज़रूरी:'", "'क्या करें:'", "'ANM को कब बताएँ:'", "'आम गलतियाँ:'")
+        else listOf("'Answer:'", "'Why it matters:'", "'What to do:'", "'When to tell the ANM:'", "'Common mistakes to avoid:'")
+        val total = if (cloud) "eight to fourteen" else "six to ten"
+        val shape = "Shape the answer in labelled parts, each part on its own lines starting with its label and a colon: " +
+            "${l[0]} with the direct answer in two to three sentences; " +
+            "${l[1]} with one to two sentences on why it matters; " +
+            "${l[2]} with the numbered steps, or one line per item, only from the material " +
             "(skip this part when the material gives no steps or items); " +
-            "'When to tell the ANM:' with one line, only when the material gives referral conditions " +
-            "(otherwise skip this part). "
+            "${l[3]} with the referral conditions, only when the material gives them " +
+            "(otherwise skip this part); " +
+            "${l[4]} with the mistakes the material warns about (skip when it gives none). " +
+            "Write $total sentences in total when the material supports it; " +
+            "never a single sentence when the material has more. "
         return head + core + shape + "The app already shows one quoted line above your answer, so do not just repeat that line."
     }
 
     /**
      * Item 4 "More detail": a fuller answer from the SAME passages (no new search), up to
      * the model ceiling. PROCEDURE-style: every step, item, condition and limit, each on its
-     * own line, in the same three labelled parts the card renders.
+     * own line, in the same labelled parts the card renders (Part B3 adds the mistakes part).
      */
     fun detailLine(): String {
         return "Give a fuller answer from the same material: every step, item, condition and limit it gives " +
             "on this question, each on its own numbered or bulleted line; do not merge steps and do not stop early. " +
-            "Shape it in up to three parts, each part on its own lines starting with its label and a colon: " +
+            "Shape it in labelled parts, each part on its own lines starting with its label and a colon: " +
             "'Answer:' with the full direct answer (five or more sentences when the material supports it); " +
+            "'Why it matters:' with why it matters; " +
             "'What to do:' with the numbered steps, or one line per item, only from the material; " +
-            "'When to tell the ANM:' with one line, only when the material gives referral conditions. " +
+            "'When to tell the ANM:' with one line, only when the material gives referral conditions; " +
+            "'Common mistakes to avoid:' with the mistakes the material warns about (skip when it gives none). " +
+            "When the question is in Hindi, use the Hindi labels 'उत्तर:', 'क्यों ज़रूरी:', 'क्या करें:', " +
+            "'ANM को कब बताएँ:', 'आम गलतियाँ:' instead. " +
             "The app already shows one quoted line above your answer, so do not just repeat that line."
     }
 }

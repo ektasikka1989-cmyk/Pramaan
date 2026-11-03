@@ -48,21 +48,26 @@ object PocketRagPromptBuilder {
             "Reply in the language and script the question is written in."
 
     /**
-     * Length tiers sized to the phone's writing speed (~60 words ≈ 4–6 s, ~150 words ≈ 10 s,
-     * ~220 words ≈ 15 s); PocketRagEngine's output ceiling is the hard limit behind the largest.
+     * Length tiers (Part B3): full answers in both languages; PocketRagEngine's output
+     * ceiling is the hard limit behind the largest. The last-line lengthLine carries the
+     * per-question shape; these tiers must never contradict it with a shorter ask.
      */
     const val LENGTH =
-        " LENGTH: a fact, definition or yes/no: three to five sentences, about 80 words, with the conditions " +
-            "and limits the evidence gives; types or a list: one line per item for every item in the evidence, " +
-            "about 150 to 200 words; a procedure, comparison, or a question asking to explain or give detail: " +
-            "numbered steps or short paragraphs, about 250 words. Never answer with only one sentence when the " +
+        " LENGTH: a fact, definition or yes/no: Answer (two to three sentences), Why it matters " +
+            "(one to two), What to do (steps from the evidence), When to tell the ANM (only if the " +
+            "evidence gives conditions), Common mistakes to avoid (only if the evidence gives them); " +
+            "six to ten sentences on the phone, eight to fourteen from the cloud; types or a list: " +
+            "one line per item for every item in the evidence, each with a one-line explanation; " +
+            "a procedure, comparison, or a question asking to explain or give detail: every numbered " +
+            "step in order plus what to watch for; urgent: the most useful action first, then the " +
+            "steps and referral conditions. Never answer with only one sentence when the " +
             "evidence has more on the question."
 
     const val COMPLETE_ANSWER =
         "Answer completely in your own words: cover every point the material gives on this question " +
             "(for a \"what is\" question: what it is, its role or purpose, and its key details; for a comparison or a " +
             "\"difference between\" question: first what each one is, then how they differ), with the most " +
-            "useful action first, in three to six sentences or a short list. The app already shows one quoted " +
+            "useful action first, in six to ten sentences or a complete list. The app already shows one quoted " +
             "line above your answer, so do not just repeat that line."
 
     private const val RECOVERY_ADDON =

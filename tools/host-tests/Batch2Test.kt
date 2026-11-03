@@ -15,7 +15,7 @@ fun main() {
     val proc = ArogyaQuestionType.lengthLine(ArogyaQuestionType.Kind.PROCEDURE)
     check("t-line-proc", "numbered step" in proc && "three to six" !in proc)
     val fact = ArogyaQuestionType.lengthLine(ArogyaQuestionType.Kind.FACT)
-    check("t-line-fact", "three to five" in fact)
+    check("t-line-fact", "six to ten" in fact)
     // Markdown strip (display only).
     check("md-bold", ArogyaMarkdown.strip("Give **ORS** now.") == "Give ORS now.")
     check("md-bullet", ArogyaMarkdown.strip("* Wash hands\n- Boil water") == "• Wash hands\n• Boil water")

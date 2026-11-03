@@ -15,15 +15,22 @@ object ArogyaAnswerFormat {
     /** Model-written labels (lowercased for Latin) to the canonical heading shown. */
     private val LABELS = linkedMapOf(
         "answer" to "Answer",
+        "why it matters" to "Why it matters",
         "what to do" to "What to do",
         "when to tell the anm" to "When to tell the ANM",
         "when to tell anm" to "When to tell the ANM",
+        "common mistakes to avoid" to "Common mistakes to avoid",
+        "common mistakes" to "Common mistakes to avoid",
         "उत्तर" to "उत्तर",
+        "क्यों ज़रूरी" to "क्यों ज़रूरी",
+        "क्यों जरूरी" to "क्यों ज़रूरी",
         "क्या करें" to "क्या करें",
         "क्या करे" to "क्या करें",
         "anm को कब बताएं" to "ANM को कब बताएं",
         "anm को कब बताये" to "ANM को कब बताएं",
-        "एएनएम को कब बताएं" to "ANM को कब बताएं"
+        "एएनएम को कब बताएं" to "ANM को कब बताएं",
+        "आम गलतियाँ" to "आम गलतियाँ",
+        "आम गलतिया" to "आम गलतियाँ"
     )
 
     /** A line starting with a known label + colon opens a section; returns (heading, rest). */

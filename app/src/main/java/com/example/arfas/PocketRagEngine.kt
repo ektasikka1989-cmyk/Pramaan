@@ -75,7 +75,7 @@ class PocketRagEngine(
         const val CLOUD_FIRST_TOKEN_MS = 20_000L
         const val CLOUD_TOTAL_MS = 60_000L
         /** Length of an extractive (verbatim key facts) answer. */
-        const val EXTRACTIVE_CHARS = 700
+        const val EXTRACTIVE_CHARS = 1400
 
         /**
          * Enforced partial-coverage disclosure: every question part that retrieval marked
@@ -262,7 +262,7 @@ class PocketRagEngine(
         // R3-lite statement salvage as a function: with salvageBeforeRecovery it runs here on
         // the first draft (no second full generation on rejection); otherwise it keeps its old
         // place after the recovery pass.
-        fun tryStatementSalvage(draft: String, reason: String, stage: String): String? {
+        suspend fun tryStatementSalvage(draft: String, reason: String, stage: String): String? {
             if (!ArogyaFlags.r3Salvage || !reason.startsWith("low_evidence_support") || draft.isBlank()) return null
             // Item 4: one supported sentence is still shown (with "More detail") instead of a one-line dead end.
             val salvaged = qualityGate.salvageUnsupportedStatements(draft, packet.evidenceText)
@@ -272,7 +272,7 @@ class PocketRagEngine(
             val salvageDecision = evalGate(packet.query, salvaged, packet, stage)
             if (salvageDecision.acceptLocal) {
                 Log.i(TAG, "POCKET_RAG_STATEMENT_SALVAGE_ACCEPT removedUnsupported=true stage=$stage")
-                return salvaged
+                return salvageWithFallback(salvaged, packet, stage)
             }
             Log.w(TAG, "POCKET_RAG_STATEMENT_SALVAGE_REJECT reason=${salvageDecision.reason} stage=$stage")
             return null
@@ -421,11 +421,27 @@ class PocketRagEngine(
     }
 
     /**
+     * Part B3: fewer than 4 sentences survived while the passages hold more: keep them and
+     * add the passages' own key facts under "From the guide (exact words)" instead of a stub.
+     * Skipped when the facts add nothing over the salvaged text (high overlap) or the
+     * evidence is weak (the extractive answer is null then). Nothing is generated here.
+     */
+    private suspend fun salvageWithFallback(salvaged: String, packet: PocketRagPacket, stage: String): String {
+        if (ArogyaAnswerFormat.sentenceCount(salvaged) >= 4) return salvaged
+        val extra = runCatching { extractiveAnswer(packet, exactWordsHeader = true) }.getOrNull()
+        if (extra.isNullOrBlank()) return salvaged
+        if (ArogyaAnswerFormat.overlap(salvaged, extra) >= 0.7) return salvaged
+        val full = "$salvaged\n\n$extra"
+        logAnswerLen(stage + "_exactwords", salvaged, full)
+        return full
+    }
+
+    /**
      * Key-fact lines of the evidence ("• sentence" plus the app's calculation line) as a cited
      * answer, best facts first, about [EXTRACTIVE_CHARS] characters. Null when the re-ranker judged
      * the evidence weak (the facts would not answer the question) or there are no key-fact lines.
      */
-    internal suspend fun extractiveAnswer(packet: PocketRagPacket): String? {
+    internal suspend fun extractiveAnswer(packet: PocketRagPacket, exactWordsHeader: Boolean = false): String? {
         val relevance = packet.bestRelevance ?: return null
         if (relevance < PocketRagPromptBuilder.WEAK_EVIDENCE_RELEVANCE) return null
         // The passages as the model read them (whole windows or key sentences), without the
@@ -446,7 +462,7 @@ class PocketRagEngine(
         // The sentences that answer the question (word overlap with the question, best first; no
         // model involved), at most ~EXTRACTIVE_CHARS, shown in their passage order with their source.
         val facts = runCatching {
-            GenericKbKeyFacts.select(packet.query, passageTexts.map { it.second }, null, EXTRACTIVE_CHARS, 6)
+            GenericKbKeyFacts.select(packet.query, passageTexts.map { it.second }, null, EXTRACTIVE_CHARS, 10)
         }.getOrDefault(emptyList())
         val lines = mutableListOf<String>()
         facts.sortedWith(compareBy({ it.passage }, { it.index })).forEach { f ->
@@ -465,8 +481,10 @@ class PocketRagEngine(
             val (abbr, long) = t.split('=', limit = 2).map { it.trim() }
             if (abbr.isNotBlank() && long.isNotBlank()) lines.add(0, "\u2022 $abbr: ${long.split(' ').joinToString(" ") { w -> if (w.length > 3) w.replaceFirstChar { it.uppercase() } else w }}")
         }
-        val header = if (KbReplyText.dominantScript(packet.query) == KbReplyText.Script.DEVANAGARI)
-            "चुने गए ज्ञान आधार में यह लिखा है:" else "Here is what the selected knowledge base says:"
+        val devanagari = KbReplyText.dominantScript(packet.query) == KbReplyText.Script.DEVANAGARI
+        val header = if (exactWordsHeader) {
+            if (devanagari) "गाइड के शब्दों में (सटीक शब्द):" else "From the guide (exact words):"
+        } else if (devanagari) "चुने गए ज्ञान आधार में यह लिखा है:" else "Here is what the selected knowledge base says:"
         return header + "\n" + lines.joinToString("\n")
     }
 

@@ -158,3 +158,11 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Tests: full host gate 42 suites green, EXIT=0 (gateb2.log); BudgetTest 30/30; BUILD SUCCESSFUL (3m51s).
 - Verified on host: multipliers, caps, all bases, lang detection, ceiling parity.
 - To be checked manually: AROGYA_BUDGET lines on phone; Hindi answers visibly fuller.
+
+### B3. Ask SOP answers -- complete in both languages
+- Changed (Final B.3): lengthLine rewritten to the 5-part shape (Answer 2-3 / Why it matters 1-2 / What to do / When to tell the ANM / Common mistakes to avoid), Hindi labels (उत्तर / क्यों ज़रूरी / क्या करें / ANM को कब बताएँ / आम गलतियाँ) when the query is Devanagari, totals six to ten (phone) / eight to fourteen (cloud, new cloud flag set by PocketRagCloudResolver); PROCEDURE adds what-to-watch-for, LIST one-line explanations, URGENT steps + referral after the action. LENGTH tiers + COMPLETE_ANSWER rewritten to match (no more "three to five sentences / 80 words"). detailLine gains the mistakes part + Hindi labels. Card renderer (ArogyaAnswerFormat) parses the 2 new labels EN+HI. Salvage: < 4 sentences surviving appends "From the guide (exact words)" (गाइड के शब्दों में) unless overlap >= 0.7; EXTRACTIVE_CHARS 700 -> 1400, up to 10 facts. Check-online evidence up to 16 passages (CHECK_PASSAGES; cloud-first wide stays 12 x 1600). More detail reuses the cached packet (no new search).
+- Decision: More detail keeps the cached packet passages (spec B3 says no new search); the 16-passage widening applies to Check online (contextForOnline).
+- Files: ArogyaQuestionType.kt, PocketRagPromptBuilder.kt, PocketRagCloudResolver.kt, PocketRagEngine.kt, ArogyaAnswerFormat.kt, GenericKnowledgeContextProvider.kt, AnswerFormatTest.kt, Batch2Test.kt.
+- Tests: full host gate 42 suites green, EXIT=0 (gateb3.log); AnswerFormatTest 26/26 (new: cloud totals, Hindi labels, new sections); BUILD SUCCESSFUL (5m37s).
+- Verified on host: prompt lines per type/lang/engine, section parsing EN+HI, sentence counting.
+- To be checked manually: answer completeness EN+HI on phone; salvage exact-words block; check-online depth.
