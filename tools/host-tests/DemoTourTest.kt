@@ -21,9 +21,13 @@ fun main() {
     d(ArogyaDemoScript.scenes.all { it.narration.size in 3..6 && it.narrationHi.size in 3..6 }, "3-6 sentences per language")
     d(ArogyaDemoScript.scenes.flatMap { it.narration + it.narrationHi }.all { it.isNotBlank() }, "no blank sentences")
     val ids = ArogyaDemoScript.scenes.map { it.id }
-    d(ids == listOf("meet", "due", "addperson", "form", "voice", "danger", "explain", "guides", "sops", "card", "medscan", "saved", "practice", "setting", "aitable", "beforeafter"),
-        "all 16 scenes in order: ${ids.joinToString(",")}")
+    d(ids == listOf("meet", "due", "addperson", "form", "voice", "danger", "explain", "guides", "sops", "gold", "card", "mcpcard", "medscan", "saved", "practice", "setting", "aitable", "beforeafter"),
+        "all 18 scenes in order: ${ids.joinToString(",")}")
     d(ArogyaDemoScript.scenes.all { it.narration.size == it.narrationHi.size }, "EN and HI sentence counts match")
+    d(ArogyaDemoScript.GOLD_EN.contains("gaadha doodh") && ArogyaDemoScript.GOLD_HI.contains("गाढ़ा दूध"), "gold scene asks in her own words")
+    d(ArogyaDemoScript.scenes.first { it.id == "mcpcard" }.narration.any { it.contains("Mother and Child Protection Card") },
+        "MCP scene names the official card")
+    d(ArogyaDemoScript.scenes.first { it.id == "mcpcard" }.narration.any { it.contains("Neha") }, "MCP scene keeps the hero")
     d(ArogyaDemoScript.QUESTION_EN.contains("cord stump") && ArogyaDemoScript.QUESTION_HI.contains("नाल"),
         "Ask SOP scene uses the slide example")
     // 3. AI table is built only from recorded ticks.
@@ -44,6 +48,8 @@ fun main() {
     val nr = ArogyaDemoTicks.rows(nt, false, false)
     d(nr.size == 2 && nr[0].benefit == "The family understands in Hindi" && nr[1].benefit == "A photo registers the newcomer",
         "new scenes have their own benefit lines")
+    val gr = ArogyaDemoTicks.rows(listOf(ArogyaAiTick("gold-layer answer", "गोल्ड उत्तर", "M", 3000, false)), false, false)
+    d(gr.size == 1 && gr[0].benefit == "Ask in her own words, get a cited answer", "gold scene has its own benefit line")
     val nba = ArogyaDemoTicks.beforeAfter(nt, false)
     d(nba.size == 2 && nba[0].afterMs == 1000L && nba[1].afterMs == 2000L, "new scenes measured in before/after")
     // 4. Before/after uses measured times only.

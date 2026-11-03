@@ -5,7 +5,7 @@ package com.example.arfas
  * helpers the host tests check — navigation bounds, the AI-steps table and the
  * before/after table. No Android or Compose imports.
  *
- * 16 scenes, each with 3-6 short sentences in English and Hindi. One hero
+ * 18 scenes, each with 3-6 short sentences in English and Hindi. One hero
  * everywhere: Baby of Neha (नेहा का बच्चा).
  */
 object ArogyaDemoScript {
@@ -27,6 +27,9 @@ object ArogyaDemoScript {
     /** The one follow-up on the Ask SOP scene; the runtime session remembers the first question. */
     const val FOLLOWUP_EN = "How often should the cord be checked?"
     const val FOLLOWUP_HI = "नाल की जाँच कितनी बार करनी चाहिए?"
+    /** Part D3 gold scene: Hinglish + Hindi paraphrases, answered live (designed for VA-005, Part B p.19). */
+    const val GOLD_EN = "baby ko pehla gaadha doodh dena chahiye?"
+    const val GOLD_HI = "क्या बच्चे को पहला गाढ़ा दूध देना चाहिए?"
 
     data class Scene(val id: String, val title: String, val hi: String, val narration: List<String>, val narrationHi: List<String>)
     val scenes = listOf(
@@ -133,6 +136,19 @@ object ArogyaDemoScript {
                 "हर वाक्य के साथ उसका हवाला है, और एक दबाने पर आधिकारिक दस्तावेज़ खुलता है।",
                 "फिर वे दोबारा पूछती हैं, और ऐप पहला सवाल याद रखता है।",
                 "फ़ोन ऑनलाइन हो तो वे ऑनलाइन जाँच भी दबाती हैं और दोनों उत्तर मिलाती हैं।")),
+        Scene("gold", "The 100 questions that steer the AI", "AI को राह दिखाने वाले 100 सवाल",
+            listOf(
+                "One hundred of the most common ASHA questions were prepared word for word from the official guides.",
+                "They steer the AI to the right pages and let us measure its accuracy.",
+                "Sunita asks in her own words: baby ko pehla gaadha doodh dena chahiye?",
+                "The answer itself is always generated live and cited to its guide page.",
+                "She taps the citation to read the printed sentence, then hears it in Hindi."),
+            listOf(
+                "आशा के 100 सबसे आम सवाल आधिकारिक गाइड से शब्द-शब्द तैयार किए गए।",
+                "वे AI को सही पन्नों तक पहुँचाते हैं और सटीकता नापने देते हैं।",
+                "सुनीता अपने शब्दों में पूछती हैं: क्या बच्चे को पहला गाढ़ा दूध देना चाहिए?",
+                "उत्तर हमेशा ताज़ा बनता है और गाइड के पेज का हवाला देता है।",
+                "वे हवाला दबाकर छपी पंक्ति पढ़ती हैं, फिर इसे हिंदी में सुनती हैं।")),
         Scene("card", "MCP card photo becomes the card", "MCP कार्ड की फ़ोटो बनती है कार्ड",
             listOf(
                 "Sunita photographs the family's MCP card. No typing.",
@@ -144,6 +160,17 @@ object ArogyaDemoScript {
                 "फ़ोन छपा अक्षर पढ़ता है और टीके, वज़न और तारीख़ें निकालता है।",
                 "सिर्फ़ कार्ड पर छपी जानकारी रखी जाती है, और वे हर मान पर निशान लगाती हैं।",
                 "पक्के टीके बाकी सूची से हट जाते हैं, और वज़न कार्ड में जुड़ जाता है।")),
+        Scene("mcpcard", "The official MCP card, filled itself", "आधिकारिक MCP कार्ड, खुद भरा",
+            listOf(
+                "This is the official Mother and Child Protection Card, field for field.",
+                "Neha's card fills itself automatically from the visit — no copying by hand.",
+                "ANC visits, vaccines, and the growth chart all sit where the printed card puts them.",
+                "Sunita checks every value before it is saved."),
+            listOf(
+                "ये आधिकारिक मदर एंड चाइल्ड प्रोटेक्शन कार्ड है, हर खाना वैसा ही।",
+                "नेहा का कार्ड विज़िट से खुद भर जाता है — हाथ से नकल नहीं।",
+                "ANC विज़िट, टीके और विकास चार्ट सब छपे कार्ड वाली जगह पर हैं।",
+                "सेव होने से पहले सुनीता हर मान देखती हैं।")),
         Scene("medscan", "Scan a medicine, count the kit", "दवा स्कैन करिए, किट गिनिए",
             listOf(
                 "To record new stock, Sunita photographs a strip. Name, batch, and expiry are read offline.",
@@ -236,6 +263,7 @@ object ArogyaDemoTicks {
         "form filling + evidence check" -> if (hindi) "एक नोट से पूरा फ़ॉर्म" else "One note fills the whole form"
         "guide search + grounded answer" -> if (hindi) "सही SOP तुरंत, स्रोत के साथ" else "The right SOP at once, with its source"
         "guide follow-up" -> if (hindi) "दोबारा पूछने पर भी जवाब" else "Follow-ups work too"
+        "gold-layer answer" -> if (hindi) "अपने शब्दों में पूछो, हवाले वाला जवाब" else "Ask in her own words, get a cited answer"
         "online check" -> if (hindi) "आधिकारिक वेबसाइट से दोबारा जाँच" else "Official websites double-check"
         "card text reading + extraction" -> if (hindi) "कार्ड नकल नहीं करना पड़ता" else "No copying the card by hand"
         "medicine scan" -> if (hindi) "पत्ता फ़ोटो से स्टॉक में" else "A strip photo becomes stock"

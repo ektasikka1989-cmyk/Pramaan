@@ -164,6 +164,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
     var sopFollow by remember { mutableStateOf<ArogyaAiResult?>(null) }
     var sopOnline by remember { mutableStateOf<ArogyaAiResult?>(null) }
     var sopOnlineSkip by remember { mutableStateOf(false) }
+    var sopGold by remember { mutableStateOf<ArogyaAiResult?>(null) }
     var anm by remember { mutableStateOf("") }
     var anmModel by remember { mutableStateOf("") }
     var demoMsg by remember { mutableStateOf("") }
@@ -365,7 +366,22 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         sopOnline = o
                         ticks += ArogyaAiTick("online check", "ऑनलाइन जाँच", o.provider, o.elapsedMs, true)
                     } else sopOnlineSkip = true }
-                11 -> {
+                // Part D3: the gold scene asks in Sunita's own words; the answer is live + cited.
+                9 -> { status = tr("Asking in Sunita's own words…", "सुनीता के शब्दों में पूछ रहे हैं…")
+                    val engine = ai ?: error("AI is not ready")
+                    val g = engine.run(ArogyaAiRequest(ArogyaAiTask.EXPLAIN,
+                        ArogyaVisit(id = SOP_VISIT_ID, personId = SOP_VISIT_ID, name = "", kind = ArogyaKind.FOLLOW_UP),
+                        question = if (demoHindi) ArogyaDemoScript.GOLD_HI else ArogyaDemoScript.GOLD_EN,
+                        hindi = demoHindi))
+                    sopGold = g
+                    ticks += ArogyaAiTick("gold-layer answer", "गोल्ड उत्तर", g.provider, g.elapsedMs, g.online) }
+                // Part D3: the MCP scene opens Neha's official card, filled from the visit.
+                11 -> { status = tr("Opening the official card…", "आधिकारिक कार्ड खोल रहे हैं…")
+                    runCatching {
+                        val cur = store.state.value.beneficiaries.firstOrNull { it.id == b.id }
+                        if (cur != null) cardDoc = store.mcpDoc(cur, store.state.value.beneficiaries, LocalDate.now())
+                    } }
+                13 -> {
                     if (!saved) {
                         val vals = filled.mapValues { it.value.value }
                         val cur = store.state.value.beneficiaries.first { it.id == b.id }
@@ -379,7 +395,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         Log.i("ArogyaDemo", "AROGYA_DEMO_SAVED form=${sp.id} col=$column filled=${vals.size} dangers=${dangers.size}")
                     }
                 }
-                12 -> { status = tr("Making 3 questions from the guides…", "गाइड से 3 सवाल बना रहे हैं…")
+                14 -> { status = tr("Making 3 questions from the guides…", "गाइड से 3 सवाल बना रहे हैं…")
                     val got = (ai ?: error("AI is not ready")).refresherDetailed(3)
                     quizItems = got.first; quizModel = got.second; quizMs = got.third
                     ticks += ArogyaAiTick("daily practice", "रोज़ अभ्यास", got.second, got.third, !got.second.startsWith("On-phone")) }
@@ -648,6 +664,15 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         filled = filled, formModel = formModel, formMs = formMs, formConfirmed = formConfirmed, onConfirmForm = { formConfirmed = true },
                         transcript = transcript, transcriptEngine = transcriptEngine, transcriptLive = transcriptLive,
                         dangers = dangers, sop = sop, sopFollow = sopFollow, sopOnline = sopOnline, sopOnlineSkip = sopOnlineSkip,
+                        sopGold = sopGold, onReadGold = {
+                            val txt = sopGold?.text.orEmpty()
+                            if (txt.isBlank()) return@DemoSceneBody
+                            val (hiVoice, enVoice) = speech.offlineVoices()
+                            if ((if (demoHindi) hiVoice else enVoice)) {
+                                val sents = txt.split(if (demoHindi) "।" else ".").map { it.trim() }.filter { it.isNotBlank() }
+                                speech.speakAll(context, sents.ifEmpty { listOf(txt) }, demoHindi, onSentence = {}, onDone = {})
+                            } else status = tr("Offline voice missing — install it from the start screen.", "ऑफ़लाइन आवाज़ नहीं है — शुरू वाली स्क्रीन से इंस्टॉल करें।")
+                        },
                         onOpenSource = { openSource = it }, secs = { secs(it) },
                         demoMsg = demoMsg, onDemoMsg = { demoMsg = it }, anm = anm, anmModel = anmModel,
                         guideDocs = guideDocs, onOpenLibrary = { libraryOpen = true },
@@ -825,6 +850,7 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
     filled: Map<String, FilledValue>, formModel: String, formMs: Long, formConfirmed: Boolean, onConfirmForm: () -> Unit,
     transcript: String, transcriptEngine: String, transcriptLive: Boolean,
     dangers: List<String>, sop: ArogyaAiResult?, sopFollow: ArogyaAiResult?, sopOnline: ArogyaAiResult?, sopOnlineSkip: Boolean,
+    sopGold: ArogyaAiResult?, onReadGold: () -> Unit,
     onOpenSource: (ArogyaSource) -> Unit, secs: (Long) -> String,
     demoMsg: String, onDemoMsg: (String) -> Unit, anm: String, anmModel: String,
     guideDocs: List<GuideDoc>?, onOpenLibrary: () -> Unit,
@@ -972,6 +998,13 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                 }
             }
             9 -> {
+                DemoCard("❓ " + (if (hindi) ArogyaDemoScript.GOLD_HI else ArogyaDemoScript.GOLD_EN)) {}
+                if (sopGold == null) Text(tr("Asking…", "पूछ रहे हैं…"))
+                sopGold?.let { DemoSopAnswer(it, hindi, tr, onOpenSource, secs) }
+                if (sopGold != null) Button(onClick = onReadGold) {
+                    Text(tr("🔊 Read aloud", "🔊 पढ़कर सुनाएँ")) }
+            }
+            10 -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { onTakePhoto("card") }) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
                     OutlinedButton(onClick = { onChoosePhoto("card") }) { Text(tr("Choose MCP card photo", "MCP कार्ड फ़ोटो चुनें")) }
@@ -994,7 +1027,15 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                     }
                 } }
             }
-            10 -> {
+            11 -> {
+                Text(tr("Neha's official card, filled from the visit. Every section sits where the printed card puts it.",
+                    "नेहा का आधिकारिक कार्ड, विज़िट से भरा। हर हिस्सा छपे कार्ड वाली जगह पर है।"),
+                    style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = onViewCard) { Text(tr("View official card", "आधिकारिक कार्ड देखें")) }
+                cardDoc?.let { d -> ArogyaDocPdf.Viewer(d, tr("MCP card — ", "MCP कार्ड — ") + b.name,
+                    cardShareBusy, hindi, onCloseCard, onShareCard, onPrintCard) }
+            }
+            12 -> {
                 DemoCard("🔍 " + tr("Medicine scan (offline)", "दवा स्कैन (ऑफ़लाइन)")) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { onTakePhoto("med") }) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
@@ -1023,7 +1064,7 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                     if (samMsg.isNotBlank()) Text(samMsg, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            11 -> {
+            13 -> {
                 if (savedSummary.isNotBlank()) DemoCard(tr("What changed", "क्या बदला")) {
                     Text(savedSummary, style = MaterialTheme.typography.bodySmall) }
                 val nextDue = remember(saved) { ArogyaOfficialForms.nextDue(sp, b, column, LocalDate.now()) }
@@ -1042,7 +1083,7 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                     OutlinedButton(onClick = { onDeepLink("diary") }) { Text(tr("Open diary ↗", "डायरी खोलें ↗")) }
                 }
             }
-            12 -> {
+            14 -> {
                 if (quizModel.isNotBlank()) AiResultChip(quizModel, !quizModel.startsWith("On-phone"), quizMs, hindi)
                 if (quizItems.isEmpty()) Text(tr("Making questions…", "सवाल बन रहे हैं…"))
                 quizItems.forEachIndexed { qi, item ->
@@ -1060,14 +1101,14 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
                     }
                 }
             }
-            13 -> {
+            15 -> {
                 DemoCard(tr("One setting — the same switch as Home", "एक सेटिंग — होम वाला ही बटन")) {
                     // The Home Offline | Online control itself (flipping here flips Home too).
                     ArogyaModeSwitch(hindi, LocalContext.current) { }
                     Text(tr("Everything works offline either way — the phone is the fallback.", "दोनों में सब ऑफ़लाइन चलता है — फ़ोन बैकअप है।"), style = MaterialTheme.typography.bodySmall)
                 }
             }
-            14 -> {
+            16 -> {
                 DemoCard(tr("What AI did in this visit", "इस विज़िट में AI ने क्या किया")) {
                     val rows = ArogyaDemoTicks.rows(ticks, dangersRan, hindi)
                     if (rows.isEmpty()) Text(tr("Run the earlier scenes first — skipped steps stay out of this table.", "पहले पिछले सीन चलाएँ — छूटे चरण इस तालिका में नहीं आते।"))

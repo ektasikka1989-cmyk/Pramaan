@@ -242,3 +242,10 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Files: tools/gold100_eval.py (new), docs/benchmark/gold100.md (new), docs/benchmark/final.md (new).
 - Tests: script run EXIT=0; outputs contain measured numbers only.
 - To be checked manually: phone retrieval off-vs-on; offline answer quality/timings; cloud numbers if a key is provided later (rerun the script).
+
+### D3. Demo scenes (MCP card + gold layer)
+- Changed (Final D.3): 16 → 18 scenes. New "gold" scene after Ask SOP (live EXPLAIN run of GOLD_EN "baby ko pehla gaadha doodh dena chahiye?" / GOLD_HI Devanagari paraphrase — designed for VA-005, Integrated ASHA Module Part B p.19 — shown in the live DemoSopAnswer layout with tap-to-open citations, plus an offline-voice Read-aloud button; records a "gold-layer answer" tick with its own benefit line). New "mcpcard" scene after the card-photo scene (Neha's official MCP card via the existing store.mcpDoc viewer + share/print, auto-opened by the scene's live step; no AI tick — it shows fixed content). Script: both scenes 4–5 sentences EN+HI with matching counts, hero kept (Neha), 100-questions narration as specified. Renumbered live runner (saved 11→13, practice 12→14) and bodies (card 9→10, medscan 10→12, saved 11→13, practice 12→14, setting 13→15, aitable 14→16, beforeafter stays the else); ruleScene (1,3,5) untouched; progress/end auto from scenes.size.
+- Files: ArogyaDemoScript.kt, ArogyaDemoTour.kt, DemoTourTest.kt.
+- Tests (speed mode): DemoTourTest 33/33 (new: 18 ids in order, gold constants, MCP title + hero, gold benefit row); BUILD SUCCESSFUL (5m45s, d3build.log).
+- Verified on host: order, narration counts/blank rules, tick benefit, nav bounds.
+- To be checked manually: both scenes on phone (checklist E3/E4) — gold answer cites Part B p.19 via the live pin (Hinglish match is semantic; falls back honestly to whatever the live answer cites); MCP viewer content; TTS read-aloud; manual Next through 18 scenes.
