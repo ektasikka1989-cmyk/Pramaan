@@ -260,3 +260,20 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Install (user runs it; the agent never touches the phone): adb install -r "C:\Pramaan - Copy\app\build\outputs\apk\debug\app-debug.apk"
 - Verified on host: all 46 suites; the debug build compiles and packages.
 - To be checked manually (docs/manual_phone_test.md): everything A–G, especially A/B answers offline + cloud in EN/HI and time to first word; C Explain-to-family + ANM escalation + WhatsApp; D MCP card views/PDF/photo reads; E airplane mode + guided demo EN/HI through all 18 scenes (E3 gold scene cites Part B p.19, E4 MCP card scene); C3 stored-copy fallback on a real model failure; G send app_log.txt. Cloud gold100 numbers are still not measured (no key).
+
+## PART F — Post-freeze fixes
+
+### F1. Gold-match false-positive fix (ArogyaVerifiedAnswers)
+- Changed (Final F1):
+  - Stop-words (EN, Hinglish, Hindi) and 1-letter tokens are dropped from the query before keyword overlap (new contentTokens/STOP_WORDS). Overlap = shared content words / query content words.
+  - A keyword-only match (no vectors yet) needs at least 2 shared content words (MIN_SHARED_KW), otherwise it scores 0.
+  - Cosine is rescaled: cosAdj = clamp((cos − 0.75)/0.20, 0, 1); score = 0.7·cosAdj + 0.3·kw.
+  - Pin (strong/medium) only if top1 − top2 ≥ 0.03 (MARGIN, new classify()). Scored carries the runner-up score, and the AROGYA_GOLD match log now prints second= and pin=. The C3 stored-copy fallback uses the same strong flag, so it is gated by the margin too.
+  - The tokenizer now keeps combining marks (\p{M}). Before this, Devanagari words were split at every matra/virama, so Hindi stop-words could never match. This also changes Hindi keyword overlap in general.
+  - STRONG 0.80 / MEDIUM 0.65 are unchanged (not retuned for the rescaled cosine).
+- Files: ArogyaVerifiedAnswers.kt, GoldMatchTest.kt.
+- Tests (speed mode): GoldMatchTest 45/45 (was 21; new checks: EN/Hinglish/Hindi stop-words, Hindi tokens, 1-word vs 2-word keyword rule, cosAdj points, unrelated-vector score < MEDIUM, margin tie/strong/medium/none, the 10 unrelated questions — tea, cricket, capital of India, battery, rice, train ticket, weather, bank account, movie, wifi — none pin, self-pin floors). GoldPinTest 19/19. BUILD SUCCESSFUL (1m58s). APK rebuilt: app/build/outputs/apk/debug/app-debug.apk, 804,299,278 bytes.
+- Measured on host (keyword-only mode, no vectors): the verified questions pin themselves EN 92/100, HI 96/100. Of the 8 EN misses, 3 have one content word (VA-073 SAANS, VA-085 deworming, VA-091 PPIUCD → blocked by the 2-word rule) and 5 tie at kw 1.0 with a sibling item (VA-016, VA-027, VA-048, VA-053, VA-062 → blocked by the margin). Expected by design; on the phone E5 cosine should separate them. The test floors are 90/90.
+- Not verified on host: real E5 cosines. The host has no E5 model, so semantic behaviour was tested only through pure-function checks with controlled vectors.
+- Known gap: tools/gold100_eval.py still mirrors the OLD keyword overlap. The D2 keyword numbers in docs/benchmark/gold100.md describe the pre-F1 matcher until the script is updated and rerun.
+- To be checked manually: AROGYA_GOLD lines in app_log.txt (score/second/pin) for the checklist A/B questions and the demo gold scene (E3, Hinglish "baby ko pehla gaadha doodh…" should still pin VA-005 via E5). Ask 2–3 off-topic questions (e.g. "how to make tea") and confirm pin=false. Confirm medium pins still happen for reworded questions (thresholds not retuned).

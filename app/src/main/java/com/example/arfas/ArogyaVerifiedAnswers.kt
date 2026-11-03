@@ -21,6 +21,13 @@ object ArogyaVerifiedAnswers {
     const val STRONG = 0.80
     /** Medium match: pin passages only. Below this: no change. */
     const val MEDIUM = 0.65
+    /** Final F1: pin only when the best item beats the runner-up by at least this. */
+    const val MARGIN = 0.03
+    /** Final F1: cosine rescale window. E5 puts unrelated text near 0.75-0.80. */
+    const val COS_FLOOR = 0.75
+    const val COS_SPAN = 0.20
+    /** Final F1: a keyword-only match needs at least this many shared content words. */
+    const val MIN_SHARED_KW = 2
     const val CACHE_NAME = "verified_q_emb.bin"
     const val QUERY_PREFIX = "query: "
 
@@ -36,7 +43,11 @@ object ArogyaVerifiedAnswers {
         val aHi: String = ""
     )
 
-    data class Scored(val item: VerifiedItem, val score: Double, val strong: Boolean, val medium: Boolean)
+    data class Scored(
+        val item: VerifiedItem, val score: Double, val strong: Boolean, val medium: Boolean,
+        /** Final F1: runner-up score (-1 when only one item). */
+        val second: Double = -1.0
+    )
 
     /** Roman-Hindi words mapped to English before keyword overlap (spec C1). */
     val HINGLISH = mapOf(
@@ -45,18 +56,68 @@ object ArogyaVerifiedAnswers {
         "saans" to "breathing", "peeliya" to "jaundice"
     )
 
+    /**
+     * Final F1: function words dropped before keyword overlap (EN, Hinglish, Hindi), so
+     * "what is the ..." can no longer match an item on grammar alone.
+     */
+    val STOP_WORDS: Set<String> = setOf(
+        // English
+        "a", "an", "the", "is", "are", "am", "was", "were", "be", "been", "being", "do", "does", "did",
+        "done", "what", "which", "who", "whom", "whose", "when", "where", "why", "how", "should", "would",
+        "could", "can", "will", "shall", "may", "might", "must", "i", "me", "my", "mine", "we", "us", "our",
+        "you", "your", "he", "him", "his", "she", "her", "it", "its", "they", "them", "their", "this",
+        "that", "these", "those", "of", "in", "on", "at", "to", "for", "from", "by", "with", "about", "as",
+        "into", "and", "or", "but", "if", "not", "no", "so", "than", "then", "there", "here", "any", "some",
+        "all", "much", "many", "very", "have", "has", "had", "get", "got", "make", "tell", "please", "know",
+        "today", "now", "up", "out", "best", "good",
+        // Hinglish (Roman Hindi)
+        "hai", "hain", "kya", "ki", "ka", "ke", "ko", "mein", "me", "mai", "se", "par", "pe", "aur", "ya",
+        "ek", "yeh", "ye", "woh", "wo", "toh", "bhi", "hi", "ne", "kar", "kare", "karein", "karen", "karna",
+        "karni", "chahiye", "kaise", "kab", "kaun", "kahan", "kitna", "kitni", "kitne", "kyon", "kyu",
+        "kyun", "jab", "tak", "liye", "ho", "tha", "thi", "nahi", "nahin", "main", "hum", "aap", "mujhe",
+        "apne", "apna", "apni", "is", "us", "koi", "kuch", "saath", "raha", "rahi", "rahe", "sakta",
+        "sakti", "sakte", "hota", "hoti", "hote", "wala", "wali", "de", "dena", "dein", "lena", "batao",
+        "bataye", "aaj",
+        // Hindi (Devanagari)
+        "है", "हैं", "क्या", "की", "का", "के", "को", "में", "से", "पर", "और", "या", "एक", "यह", "वह",
+        "ये", "वो", "तो", "भी", "ही", "ने", "कर", "करें", "करना", "करनी", "चाहिए", "कैसे", "कब", "कौन",
+        "कहाँ", "कहां", "कितना", "कितनी", "कितने", "क्यों", "जब", "तक", "लिए", "हो", "था", "थी", "थे",
+        "नहीं", "मैं", "हम", "आप", "मुझे", "अपने", "अपना", "अपनी", "इस", "उस", "कोई", "कुछ", "साथ",
+        "रहा", "रही", "रहे", "सकता", "सकती", "सकते", "होता", "होती", "होते", "वाला", "वाली", "दें",
+        "देना", "लेना", "बताएं", "बताइए", "आज"
+    )
+
+    /** Letters, digits and combining marks (Devanagari matras/virama stay inside the word). */
     fun tokens(text: String): Set<String> =
-        text.lowercase(java.util.Locale.ROOT).split(Regex("[^\\p{L}\\p{N}]+"))
+        text.lowercase(java.util.Locale.ROOT).split(Regex("[^\\p{L}\\p{M}\\p{N}]+"))
             .filter { it.isNotEmpty() }.toSet()
 
     fun applyHinglish(tokens: Set<String>): Set<String> = tokens.map { HINGLISH[it] ?: it }.toSet()
 
-    /** Lowercase query tokens vs the item's questions + keywords, after the Hinglish map. */
+    /** Final F1: query tokens after the Hinglish map, minus stop-words and 1-letter tokens. */
+    fun contentTokens(text: String): Set<String> =
+        applyHinglish(tokens(text)).filter { it.length > 1 && it !in STOP_WORDS }.toSet()
+
+    private fun pool(item: VerifiedItem): Set<String> =
+        tokens(item.qEn) + tokens(item.qHi) + item.keywords.map { it.lowercase(java.util.Locale.ROOT) }
+
+    /** Final F1: content words the query shares with the item's questions + keywords. */
+    fun sharedContent(query: String, item: VerifiedItem): Int = contentTokens(query).intersect(pool(item)).size
+
+    /** Shared content words / query content words (stop-words removed, Hinglish mapped). */
     fun keywordOverlap(query: String, item: VerifiedItem): Double {
-        val q = applyHinglish(tokens(query))
+        val q = contentTokens(query)
         if (q.isEmpty()) return 0.0
-        val pool = tokens(item.qEn) + tokens(item.qHi) + item.keywords.map { it.lowercase(java.util.Locale.ROOT) }
-        return q.intersect(pool).size.toDouble() / q.size
+        return q.intersect(pool(item)).size.toDouble() / q.size
+    }
+
+    /** Final F1: cosAdj = clamp((cos - 0.75) / 0.20, 0, 1). */
+    fun cosAdj(cos: Double): Double = ((cos - COS_FLOOR) / COS_SPAN).coerceIn(0.0, 1.0)
+
+    /** Final F1: strong/medium only when top1 clears its threshold AND beats top2 by MARGIN. */
+    fun classify(top1: Double, top2: Double): Pair<Boolean, Boolean> {
+        val clear = top1 - top2 >= MARGIN - 1e-9
+        return (clear && top1 >= STRONG) to (clear && top1 >= MEDIUM && top1 < STRONG)
     }
 
     fun cosine(a: FloatArray, b: FloatArray): Double {
@@ -73,15 +134,19 @@ object ArogyaVerifiedAnswers {
         return dot / Math.sqrt(na * nb)
     }
 
-    /** 0.7 x cosine (best of EN/HI) + 0.3 x keyword overlap; keyword-only until vectors exist. */
+    /**
+     * 0.7 x cosAdj (best of EN/HI, rescaled) + 0.3 x keyword overlap. Keyword-only until
+     * vectors exist, and then only with at least [MIN_SHARED_KW] shared content words.
+     */
     fun score(query: String, item: VerifiedItem, queryVec: FloatArray?, vecEn: FloatArray?, vecHi: FloatArray?): Double {
         val kw = keywordOverlap(query, item)
-        if (queryVec == null || (vecEn == null && vecHi == null)) return kw
+        if (queryVec == null || (vecEn == null && vecHi == null))
+            return if (sharedContent(query, item) >= MIN_SHARED_KW) kw else 0.0
         val cos = maxOf(
             if (vecEn != null) cosine(queryVec, vecEn) else 0.0,
             if (vecHi != null) cosine(queryVec, vecHi) else 0.0
         )
-        return 0.7 * cos + 0.3 * kw
+        return 0.7 * cosAdj(cos) + 0.3 * kw
     }
 
     fun parseJson(text: String): List<VerifiedItem> {
@@ -242,16 +307,22 @@ object ArogyaVerifiedAnswers {
         val v = vecs
         var best: VerifiedItem? = null
         var bestScore = -1.0
+        var secondScore = -1.0
         for (it in all) {
             val s = score(query, it, qv, v[it.id]?.first, v[it.id]?.second)
             if (s > bestScore) {
+                secondScore = bestScore
                 bestScore = s
                 best = it
+            } else if (s > secondScore) {
+                secondScore = s
             }
         }
         val top = best ?: return null
-        val out = Scored(top, bestScore, bestScore >= STRONG, bestScore >= MEDIUM && bestScore < STRONG)
-        Log.i(TAG, "AROGYA_GOLD match top=${top.id} score=${"%.3f".format(java.util.Locale.US, bestScore)} semantic=${qv != null && v.isNotEmpty()}")
+        val (strong, medium) = classify(bestScore, secondScore)
+        val out = Scored(top, bestScore, strong, medium, secondScore)
+        Log.i(TAG, "AROGYA_GOLD match top=${top.id} score=${"%.3f".format(java.util.Locale.US, bestScore)} " +
+            "second=${"%.3f".format(java.util.Locale.US, secondScore)} pin=${strong || medium} semantic=${qv != null && v.isNotEmpty()}")
         return out
     }
 }
