@@ -60,13 +60,16 @@ object ArogyaQuestionType {
     }
 
     /**
-     * R11 output ceiling per question part: procedures and lists must fit every step/item
-     * (~320 words); facts and urgent answers keep the 400-token ceiling (~230 words).
+     * Part B2 output ceiling per question part, routed through ArogyaBudget:
+     * phone FACT 600, PROCEDURE/LIST/URGENT 800 (English); cloud 1200/1600;
+     * Hindi x2.5, Hinglish x1.3. Procedures and lists must fit every step/item.
      */
-    fun ceilingPerPart(kind: Kind): Int = when (kind) {
-        Kind.PROCEDURE, Kind.LIST -> 560
-        Kind.FACT, Kind.URGENT -> 400
-    }
+    fun ceilingPerPart(kind: Kind): Int = ArogyaBudget.askSop(kind, "", cloud = false)
+
+    /** Same, with the query's language and the engine that will write the answer. */
+    fun ceilingPerPart(kind: Kind, query: String, cloud: Boolean, promptTokens: Int = 0,
+                       contextWindow: Int = if (cloud) ArogyaBudget.CLOUD_CONTEXT else ArogyaBudget.PHONE_CONTEXT): Int =
+        ArogyaBudget.askSop(kind, query, cloud, promptTokens, contextWindow)
 
     /**
      * The last line the model reads (replaces COMPLETE_ANSWER when r2LengthPrompt is on).

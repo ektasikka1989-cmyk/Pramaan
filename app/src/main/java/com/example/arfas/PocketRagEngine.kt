@@ -130,11 +130,11 @@ class PocketRagEngine(
     ): PocketRagResult {
         val key = packet.selection.sessionKey
         val memory = sessions.context(key)
-        val maxOutput = outputBudget(packet)
+        val maxOutput = outputBudget(packet, cloud = false)
         // The cloud reads the wide packet when there is one (Cloud First); the phone always
         // reads the narrow one. "Check online" keeps its own already-wide packet.
         val cpacket = if (cloudMode == CloudMode.CLOUD_FIRST) (cloudPacket ?: packet) else packet
-        val maxCloudOutput = outputBudget(cpacket)
+        val maxCloudOutput = outputBudget(cpacket, cloud = cloudMode != CloudMode.NONE)
 
         if (cloudMode != CloudMode.NONE) {
             if (canUseCloud()) {
@@ -615,7 +615,7 @@ class PocketRagEngine(
     }
 
     /** Evidence-driven token budget; no topic/keyword routing. */
-    private fun outputBudget(packet: PocketRagPacket): Int {
+    private fun outputBudget(packet: PocketRagPacket, cloud: Boolean = false): Int {
         val blockCount = packet.evidenceBlocks.size
         val chars = packet.evidenceText.length
         val desired = GenericKbTokenBudget.desiredOutputTokens(
@@ -623,19 +623,19 @@ class PocketRagEngine(
             clauses = packet.clauseCoverage.size.coerceAtLeast(GenericKbQueryPlanner.plan(packet.query, packet.query).clauses.size),
             evidence = chars + blockCount * 64
         )
-        val context = contextWindowTokens().coerceAtLeast(1_024)
+        val context = if (cloud) ArogyaBudget.CLOUD_CONTEXT else contextWindowTokens().coerceAtLeast(1_024)
         val inputEstimate = GenericKbTokenBudget.estimateTokens(chars + packet.query.length) + 620
         val availableOutput = (context - inputEstimate).coerceAtLeast(256)
         // The answer model picks the length from the question (PocketRagPromptBuilder.LENGTH); this
         // is the hard ceiling behind its largest tier, per independently asked question part.
-        // R11: procedures and lists get room for every step/item; facts keep 400.
+        // Part B2: ceilings come from ArogyaBudget (kind base x query language), per engine.
         val parts = packet.clauseCoverage.size.coerceAtLeast(1)
         // Item 4 "More detail": PROCEDURE-style ceiling, and the full ceiling (not the estimate).
         val perPart = if (packet.detailMode) {
-            runCatching { ArogyaQuestionType.ceilingPerPart(ArogyaQuestionType.Kind.PROCEDURE) }
+            runCatching { ArogyaBudget.askSopDetail(packet.query, cloud, inputEstimate, context) }
                 .getOrDefault(MAX_ANSWER_TOKENS_PER_PART)
         } else if (ArogyaFlags.r11LowReasoning) {
-            runCatching { ArogyaQuestionType.ceilingPerPart(ArogyaQuestionType.kindOf(packet.query)) }
+            runCatching { ArogyaQuestionType.ceilingPerPart(ArogyaQuestionType.kindOf(packet.query), packet.query, cloud, inputEstimate, context) }
                 .getOrDefault(MAX_ANSWER_TOKENS_PER_PART)
         } else MAX_ANSWER_TOKENS_PER_PART
         val ceiling = perPart * parts

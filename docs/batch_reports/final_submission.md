@@ -149,3 +149,12 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Files: docs/batch_reports/final_submission.md.
 - Tests: code unchanged from Final A.5 gate (41 suites green); no re-run needed.
 - Verified on host: every table row confirmed in code 2-3 Nov.
+
+### B2. ArogyaBudget helper + wired routes
+- Correction to A5: the A5 gate (gatea5.log) did NOT finish green -- it stopped at CountDotsTest with an "unresolved reference ArogyaBudget" compile error because the B2 edit to ArogyaQuestionType.kt landed mid-run. Every A5 suite before that point passed (0 failures). The clean B2 full gate below re-covers all A5 files (unchanged since) plus B2, and is the verified record for both.
+- Changed (Final B.2): new ArogyaBudget.kt -- per-feature phone/cloud bases (Ask SOP FACT 600/1200, PROCEDURE/LIST/URGENT 800/1600, detail 1000/2400, check-online 1600 cloud; family 450/900; ANM 450/900; card/person 900/1500; voice-stock/medicine 400/900; notes 700/1500; finish-visit 900/1500), language multipliers x2.5 Hindi/Devanagari, x1.3 Hinglish, x1 English, context-window cap, AROGYA_BUDGET log on every call. route() takes cloudTokens + lang and budgets each engine; all 8 route sites updated (daily_practice keeps 200). ceilingPerPart routes through the budget (new values 600/800; Batch3Test updated). PocketRagEngine.outputBudget takes cloud flag (cloud context 32000).
+- Decision: medicine_scan uses the voice-stock base (400/900); it is the same extraction shape and the spec lists no base for it.
+- Files: ArogyaBudget.kt (new), ArogyaQuestionType.kt, PocketRagEngine.kt, ArogyaVisitAi.kt, BudgetTest.kt (new), Batch3Test.kt, run.ps1, run.sh, run_some.ps1.
+- Tests: full host gate 42 suites green, EXIT=0 (gateb2.log); BudgetTest 30/30; BUILD SUCCESSFUL (3m51s).
+- Verified on host: multipliers, caps, all bases, lang detection, ceiling parity.
+- To be checked manually: AROGYA_BUDGET lines on phone; Hindi answers visibly fuller.

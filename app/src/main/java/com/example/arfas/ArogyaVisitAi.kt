@@ -67,19 +67,22 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
      */
     private suspend fun <T> route(feature: String, prompt: String, maxTokens: Int, cloudPrompt: String = prompt,
                                   system: String = "Follow the instructions exactly.", cloud: Boolean = true,
+                                  cloudTokens: Int = maxTokens, lang: String = "en",
                                   accept: (String) -> T?): Pair<T?, String> {
         val c = runCatching { withContext(Dispatchers.IO) { cloudChoice?.invoke() } }.getOrNull()
         val ep = c?.endpoint; val key = c?.key.orEmpty()
         suspend fun cloud(): Pair<T?, String>? {
             if (!cloud || ep == null || key.isBlank()) return null
             val t = System.currentTimeMillis()
-            val raw = ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS, feature) { OpenAiCompatibleClient(ep, { key }, CLOUD_DEADLINE_MS.toInt()).complete(system, cloudPrompt, maxTokens) }
+            val budget = ArogyaBudget.tokens(cloudTokens, lang, ArogyaBudget.estimatePromptTokens(cloudPrompt.length), ArogyaBudget.CLOUD_CONTEXT, feature, "cloud")
+            val raw = ArogyaCloud.withDeadline(CLOUD_DEADLINE_MS, feature) { OpenAiCompatibleClient(ep, { key }, CLOUD_DEADLINE_MS.toInt()).complete(system, cloudPrompt, budget) }
             Log.i(TAG, "AROGYA_ROUTE feature=$feature engine=cloud model=${ep.model} ok=${raw != null} ms=${System.currentTimeMillis() - t}")
             return raw?.let { r -> accept(r)?.let { it to ep.label } }
         }
         suspend fun phone(): Pair<T?, String>? = try {
             val model = readyModel(); val t = System.currentTimeMillis()
-            val raw = generate(prompt, model, maxTokens).orEmpty()
+            val budget = ArogyaBudget.tokens(maxTokens, lang, ArogyaBudget.estimatePromptTokens(prompt.length), ArogyaBudget.PHONE_CONTEXT, feature, "phone")
+            val raw = generate(prompt, model, budget).orEmpty()
             Log.i(TAG, "AROGYA_ROUTE feature=$feature engine=phone ms=${System.currentTimeMillis() - t} chars=${raw.length}")
             accept(raw)?.let { it to "On-phone model (offline): " + (model.loadedModelFileName?.substringBeforeLast('.') ?: "local") }
         } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.w(TAG, "AROGYA_ROUTE feature=$feature engine=phone failed ${e.message?.take(120)}"); null }
@@ -456,7 +459,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val notes = (if (request.task == ArogyaAiTask.HANDOVER) request.visit.notes + "\n" + request.visit.referralNote else request.visit.notes).trim()
         check(notes.isNotBlank()) { "Speak or type your visit observations first." }
         check(notes.length <= 6500) { "This recording is too long for one AI review. Keep the original notes and review them manually." }
-        val (items, by) = route("organise_notes", ArogyaCapture.prompt(notes), 420, ArogyaCapture.prompt(ArogyaOnlinePolicy.scrub(notes, request.visit))) { ArogyaCapture.parse(it, notes) }
+        val (items, by) = route("organise_notes", ArogyaCapture.prompt(notes), 700, ArogyaCapture.prompt(ArogyaOnlinePolicy.scrub(notes, request.visit)), cloudTokens = 1500, lang = ArogyaBudget.langOf(notes)) { ArogyaCapture.parse(it, notes) }
         items ?: error("The AI could not organise this recording. Your original words are saved; edit them or retry.")
         return ArogyaAiResult(ArogyaCapture.render(items), "ArogyaDoot • $by", System.currentTimeMillis() - start, canCopyToNotes = true, captureItems = items)
     }
@@ -485,8 +488,9 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     /** Same, plus the engine label + time for the A5 result chip. */
     suspend fun familyExplainDetailed(answer: String, quote: String, hindi: Boolean): Triple<String, String, Long> = mutex.withLock {
         val t = System.currentTimeMillis()
-        val (opt, by) = route("family_explain", ArogyaAiExtras.familyPrompt(answer, quote, hindi), 220,
-            ArogyaAiExtras.familyPrompt(ArogyaOnlinePolicy.scrubGeneric(answer), ArogyaOnlinePolicy.scrubGeneric(quote), hindi)) { out ->
+        val (opt, by) = route("family_explain", ArogyaAiExtras.familyPrompt(answer, quote, hindi), 450,
+            ArogyaAiExtras.familyPrompt(ArogyaOnlinePolicy.scrubGeneric(answer), ArogyaOnlinePolicy.scrubGeneric(quote), hindi),
+            cloudTokens = 900, lang = if (hindi) "hi" else "en") { out ->
             ArogyaAiExtras.groundedSentences(out, answer + "\n" + quote, max = 4).takeIf { it.isNotBlank() } }
         val clean = opt.orEmpty()
         Log.i(TAG, "AROGYA_TIMING event=family_explain ms=${System.currentTimeMillis() - t} chars=${clean.length}")
@@ -501,7 +505,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
     suspend fun anmMessageDetailed(facts: String, visit: ArogyaVisit? = null): Pair<String, String> = mutex.withLock {
         val t = System.currentTimeMillis()
         val scrubbed = if (visit != null) ArogyaOnlinePolicy.scrub(facts, visit) else ArogyaOnlinePolicy.scrubGeneric(facts)
-        val (opt, by) = route("anm_message", ArogyaAiExtras.anmPrompt(facts), 200, ArogyaAiExtras.anmPrompt(scrubbed)) { out ->
+        val (opt, by) = route("anm_message", ArogyaAiExtras.anmPrompt(facts), 450, ArogyaAiExtras.anmPrompt(scrubbed), cloudTokens = 900, lang = ArogyaBudget.langOf(facts)) { out ->
             ArogyaAiExtras.groundedSentences(out, facts, max = 8, lineMode = true).takeIf { it.length >= 30 } }
         val clean = opt.orEmpty()
         Log.i(TAG, "AROGYA_TIMING event=anm_message ms=${System.currentTimeMillis() - t} chars=${clean.length}")
@@ -545,7 +549,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             check(text.length >= 15) { "No readable text was found. Take a closer photo in good light, card flat." }
             // Only values found in the card's own text are kept. Local-only: a card photo
             // is identifiers by design, and names must never reach a cloud prompt.
-            val (opt, by) = route("card_read", ArogyaAiExtras.cardPrompt(text.take(3500)), 380, cloud = false) { out ->
+            val (opt, by) = route("card_read", ArogyaAiExtras.cardPrompt(text.take(3500)), 900, cloud = false, cloudTokens = 1500, lang = ArogyaBudget.langOf(text)) { out ->
                 ArogyaAiExtras.parseCard(out, text).takeIf { it.isNotEmpty() } }
             val fields = opt.orEmpty()
             Log.i(TAG, "AROGYA_TIMING event=card_read ms=${System.currentTimeMillis() - t} ocrChars=${text.length} fields=${fields.size}")
@@ -572,7 +576,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         Regex("""(?<!\d)(\d{10})(?!\d)""").find(clean)?.let { det["phone"] = it.groupValues[1] }
         var by = "On-phone rules (offline): patterns"
         // Local-only: the OCR is identifiers by design, and names must never reach a cloud prompt.
-        val (opt, label) = route("person_extract", ArogyaPersonExtract.prompt(clean), 300, cloud = false) { out ->
+        val (opt, label) = route("person_extract", ArogyaPersonExtract.prompt(clean), 900, cloud = false, cloudTokens = 1500, lang = ArogyaBudget.langOf(clean)) { out ->
             ArogyaPersonExtract.ground(ArogyaPersonExtract.parse(out), clean)
         }
         opt?.let { by = label }
@@ -587,7 +591,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         var scan = ArogyaMedScan.parse(ocr)
         var by = "On-phone rules (offline): regex"
         if (scan.name.isBlank() || scan.batch.isBlank() || scan.expiry.isBlank()) {
-            val (opt, label) = route("medicine_scan", ArogyaMedScan.prompt(ocr), 120, ArogyaMedScan.prompt(ArogyaOnlinePolicy.scrubGeneric(ocr))) { out ->
+            val (opt, label) = route("medicine_scan", ArogyaMedScan.prompt(ocr), 400, ArogyaMedScan.prompt(ArogyaOnlinePolicy.scrubGeneric(ocr)), cloudTokens = 900, lang = ArogyaBudget.langOf(ocr)) { out ->
                 ArogyaMedScan.ground(ArogyaMedScan.parse(out), ocr)
             }
             opt?.let {
@@ -613,8 +617,8 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         var lines = ArogyaVoiceStock.ground(ArogyaVoiceStock.parseRules(transcript, catalog), transcript, catalog)
         var by = "On-phone rules (offline): patterns"
         if (lines.isEmpty()) {
-            val (opt, label) = route("voice_stock", ArogyaVoiceStock.prompt(transcript, catalog), 200,
-                ArogyaVoiceStock.prompt(ArogyaOnlinePolicy.scrubGeneric(transcript), catalog)) { out ->
+            val (opt, label) = route("voice_stock", ArogyaVoiceStock.prompt(transcript, catalog), 400,
+                ArogyaVoiceStock.prompt(ArogyaOnlinePolicy.scrubGeneric(transcript), catalog), cloudTokens = 900, lang = ArogyaBudget.langOf(transcript)) { out ->
                 ArogyaVoiceStock.ground(ArogyaVoiceStock.parseModel(out), transcript, catalog).takeIf { it.isNotEmpty() }
             }
             opt?.let { lines = it; by = label }
@@ -634,8 +638,8 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         check(notes.isNotBlank()) { "Speak or type your visit observations first." }
         check(notes.length <= 6000) { "These notes are too long for one review. Shorten them first." }
         val t = System.currentTimeMillis()
-        val (ai, by) = route("finish_visit", ArogyaFinishVisit.extractionPrompt(notes), 600, ArogyaFinishVisit.extractionPrompt(ArogyaOnlinePolicy.scrub(notes, visit)),
-            system = "You extract structured fields from health-worker notes. Reply with JSON only.") { raw -> ArogyaFinishVisit.parseExtraction(raw, notes).takeIf { it.isNotEmpty() } }
+        val (ai, by) = route("finish_visit", ArogyaFinishVisit.extractionPrompt(notes), 900, ArogyaFinishVisit.extractionPrompt(ArogyaOnlinePolicy.scrub(notes, visit)),
+            system = "You extract structured fields from health-worker notes. Reply with JSON only.", cloudTokens = 1500, lang = ArogyaBudget.langOf(notes)) { raw -> ArogyaFinishVisit.parseExtraction(raw, notes).takeIf { it.isNotEmpty() } }
         val fields = ai.orEmpty()
         val rules = ArogyaFinishVisit.ruleFallback(notes).filter { r -> fields.none { it.key == r.key } }
         val ms = System.currentTimeMillis() - t
