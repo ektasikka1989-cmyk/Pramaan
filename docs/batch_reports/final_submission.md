@@ -362,3 +362,14 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Files: ArogyaDemoTour.kt, ArogyaDemoScript.kt (latest tick per feature), ArogyaDocRender.kt (demoMark), DocRenderTest.kt.
 - Tests: DocRenderTest 46/46 (new: changed cell highlighted, × → NA, blank → Not recorded, unchanged kept, no Yes/No written, legend + count, no false highlight when the card shape differs, Hindi labels); DemoTourTest 51/51. Brace balance checked. The build is held until the user asks, so these Compose changes are NOT compiled yet.
 - To be checked manually: the whole demo in EN and HI; the Phone | Cloud flip re-runs voice / explain / sops and the times differ; the MCP scene shows yellow changes + NA / Not recorded; a second demo run starts from the same card and stock; button labels on one line on the phone; both tables are readable at phone width.
+
+### DUI3. Sample demo photos (item 5)
+- Made (Final DUI3): tools/demo_samples/make_samples.py (Pillow; run `python make_samples.py <out_dir> <yyyy-mm-dd>`) draws six synthetic photos. Every person, phone and ID is fictional; the "Aadhaar" 0000 1111 2222 is deliberately invalid (real ones never start with 0/1) and only shows the masking.
+  1. 01_new_family_slip.jpg: one new family (Kavita Yadav, pregnant, H-051) — the photo for the "Add person from a photo" step (the reader takes one person per photo).
+  2. 02_register_10_people.jpg: household register page with 10 people (the user asked for 10). The add-person reader takes one person per photo, so the slip (1) is the one to use for the live step.
+  3. 03_mcp_card_baby_of_neha.jpg: MCP immunization page for the demo hero (Baby of Neha, home birth, 2.8 kg, DOB today−6). BCG, OPV-0 and Hep B dated day 1, so applying it adds vaccines and changes the card (highlighted in the MCP scene).
+  4. 04_medicine_paracetamol_on_cloth.jpg and 05_medicine_IFA_on_cloth.jpg: strips on white cloth with name, batch, Mfg, Exp and "10 Tablets", matching kit items Paracetamol and IFA.
+  5. 06_drug_kit_6_ORS_sachets.jpg: six separated ORS sachets on cloth for the SAM 3.1 count ("ORS sachet").
+- Copied to the phone (user asked) with adb push to /sdcard/Pictures/Demo_samples/ and registered with the media scanner, so the in-app photo picker shows them. Images are not in the repo (only the generator).
+- Verified on host: all six images rendered and visually checked for legibility.
+- To be checked manually: each photo through its demo step (person, card, medicine, kit count online). Dates on the card match the hero only on 4 Nov; on another day, regenerate with that date.
