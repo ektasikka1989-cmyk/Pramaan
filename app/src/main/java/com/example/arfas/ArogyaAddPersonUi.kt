@@ -84,7 +84,7 @@ fun AddPersonSheet(hindi: Boolean, ai: ArogyaVisitAi?, data: RegistryData, visit
                 when (step) {
                     "manual" -> ManualPersonStep(hindi, villages, { dictateTarget = it }) { b -> toReview(listOf(b), "manual", { tr("typed in", "लिखा हुआ") }) }
                     "photo" -> PhotoPersonStep(hindi, ai)
-                        { toReview(listOf(it), "photo", { tr("from photo", "फ़ोटो से") }) }
+                        { toReview(it, "photo", { i -> tr("person ${i + 1} from photo", "फ़ोटो से व्यक्ति ${i + 1}") }) }
                     "csv" -> CsvPersonStep(hindi)
                         { list, note -> toReview(list, "csv", { i -> tr("row ${i + 1} of file", "फ़ाइल की पंक्ति ${i + 1}") }, note) }
                     "pdf" -> PdfPersonStep(hindi, ai,
@@ -114,7 +114,7 @@ private fun ManualPersonStep(hindi: Boolean, villages: List<String>, dictate: ((
 
 /** Photo path: camera/gallery → ML Kit OCR → grounded extraction → review. */
 @Composable
-private fun PhotoPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (Beneficiary) -> Unit) {
+private fun PhotoPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (List<Beneficiary>) -> Unit) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -138,9 +138,19 @@ private fun PhotoPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (Benefic
                 if (ocr.isBlank()) throw IllegalStateException(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
                 if (ArogyaPersonExtract.hasAadhaar(ocr)) msg = tr("Aadhaar number found and removed — it is never stored.", "आधार नंबर मिला और हटाया — वो कभी सेव नहीं होता।") + " "
                 msg += tr("Copying the details…", "जानकारी उतार रहे हैं…")
-                val (fields, _, _) = ai.extractPersonFields(ocr)
-                if (fields.isEmpty()) throw IllegalStateException(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
-                onDone(ArogyaPersonCsv.toBeneficiary(fields))
+                val blocks = ArogyaExtractSplit.splitBlocks(ArogyaPersonExtract.maskAadhaar(ocr))
+                val found = if (blocks.size > 1) {
+                    msg = tr("Reading ${blocks.size} people…", "${blocks.size} लोगों को पढ़ रहे हैं…")
+                    ai.extractPersonList(ocr).first
+                        .filter { !it["name"].isNullOrBlank() }
+                        .map { ArogyaPersonCsv.toBeneficiary(it) }
+                } else {
+                    val (fields, _, _) = ai.extractPersonFields(ocr)
+                    if (fields.isEmpty()) throw IllegalStateException(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
+                    listOf(ArogyaPersonCsv.toBeneficiary(fields))
+                }
+                if (found.isEmpty()) throw IllegalStateException(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
+                onDone(found)
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
                 busy = false; msg = (e.message ?: "").take(200)
             } finally { if (temp) runCatching { context.contentResolver.delete(uri, null, null) } }

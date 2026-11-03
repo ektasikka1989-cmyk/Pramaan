@@ -216,7 +216,7 @@ DELIVERYPLACE:
 WEIGHT:
 FP:
 TEXT:
-$ocr""".take(4000)
+$ocr"""
 
     private val KEYMAP = mapOf("name" to "name", "relative" to "relative", "age" to "age", "dob" to "dob",
         "sex" to "sex", "village" to "village", "household" to "household", "phone" to "phone", "rch" to "rch",

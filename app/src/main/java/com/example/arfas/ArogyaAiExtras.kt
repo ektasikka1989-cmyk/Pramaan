@@ -93,7 +93,7 @@ object ArogyaMedScan {
         "Read this medicine strip OCR text and output exactly 4 lines, nothing else:\n" +
             "NAME: <medicine name as printed, or blank>\nBATCH: <batch/lot code, or blank>\n" +
             "EXPIRY: <expiry as printed, or blank>\nQTY: <number only, or blank>\n" +
-            "Copy values exactly as printed. Never invent a value.\n---\n" + ocr.take(1200)
+            "Copy values exactly as printed. Never invent a value.\n---\n" + ocr
 
     fun parse(text: String): MedScan {
         // LLM 4-line answer first.
@@ -354,7 +354,7 @@ object ArogyaAiExtras {
         str("birth_date").takeIf { it.isNotBlank() }?.let { v -> dateEvidence(ocr, v)?.let { e -> isoDate(v).takeIf { it.isNotBlank() }?.let { out += ArogyaCardField("birth_date", "Date of birth", it, e) } } }
         str("birth_weight_kg").takeIf { it.isNotBlank() }?.let { v -> weightEvidence(ocr, v)?.let { out += ArogyaCardField("birth_weight", "Birth weight", numbers(v).first() + " kg", it) } }
         (o.optJSONArray("vaccines") ?: JSONArray()).let { a ->
-            for (i in 0 until minOf(a.length(), 12)) {
+            for (i in 0 until minOf(a.length(), 40)) {
                 val v = a.optJSONObject(i) ?: continue
                 val name = v.optString("name", "").trim(); val date = v.optString("date", "").trim()
                 if (name.length < 2) continue
@@ -366,7 +366,7 @@ object ArogyaAiExtras {
             }
         }
         (o.optJSONArray("weights") ?: JSONArray()).let { a ->
-            for (i in 0 until minOf(a.length(), 12)) {
+            for (i in 0 until minOf(a.length(), 40)) {
                 val w = a.optJSONObject(i) ?: continue
                 val kg = w.optString("kg", "").trim(); val date = w.optString("date", "").trim()
                 val e = weightEvidence(ocr, kg) ?: continue
@@ -396,8 +396,8 @@ object ArogyaAiCatalog {
         ArogyaAiFeature("Read MCP card photo — fields", "Turns the card text into dates, vaccines and weights; only values found on the card are kept", LLAMA, "Meta (open weights)", true, "On phone, offline"),
         ArogyaAiFeature("Photo / PDF with a question", "Reads text from the attached photo or PDF and uses it with the question", "ML Kit OCR + PDF text, then $LLAMA", "Google + Meta", true, "On phone, offline"),
         ArogyaAiFeature("Speak instead of typing", "Turns Hindi/English speech into text", "Whisper (on-device)", "OpenAI (open)", false, "On phone, offline"),
-        ArogyaAiFeature("Explain to family", "Rewrites the guideline answer in 3 simple Hindi sentences; new numbers are removed", LLAMA, "Meta (open weights)", true, "On phone, offline"),
-        ArogyaAiFeature("Message to ANM", "Drafts a short referral message from the visit notes", LLAMA, "Meta (open weights)", true, "On phone, offline"),
+        ArogyaAiFeature("Explain to family", "Rewrites the guideline answer in 5 to 8 simple sentences (Hindi or English); new numbers are removed", LLAMA, "Meta (open weights)", true, "On phone, offline"),
+        ArogyaAiFeature("Message to ANM", "Polishes the fixed record-based message; every number and danger sign must survive or the template is shown", LLAMA, "Meta (open weights)", true, "On phone, offline"),
         ArogyaAiFeature("Daily practice", "Makes questions from guide passages; the answer must be in the passage", LLAMA, "Meta (open weights)", true, "On phone, offline"),
         ArogyaAiFeature("Organise notes", "Sorts spoken notes into observations, family report, action, pending question", LLAMA, "Meta (open weights)", true, "On phone, offline"),
         ArogyaAiFeature("Finish visit — online", "With signal and a key, a larger Meta model fills the official form from the voice note instead (identifiers removed first); the phone model takes over if the call fails",

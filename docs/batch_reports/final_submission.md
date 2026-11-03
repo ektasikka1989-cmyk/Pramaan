@@ -180,3 +180,10 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Tests: full host gate 43 suites green, EXIT=0 (gateb5.log); AnmTemplateTest 22/22 (sections EN/HI, omit-empty, verify pass/fail, tokenize round-trip, refill, polish prompt); BUILD SUCCESSFUL (3m29s).
 - Verified on host: template content, verification logic, token privacy round-trip.
 - To be checked manually: full-screen editor on phone; EN/HI toggle; polish accept/reject; WhatsApp/SMS/Copy sends.
+
+### B6. Extraction never truncated
+- Changed (Final B.6): new ArogyaExtractSplit (cut JSON / cut last-line detection, halves, register-page block splitter, card/person/voice/med merges). parseCard caps 12 -> 40 (vaccines + weights). Input takes removed (card 3500, person prompt 4000, med prompt 1200). Second-chance split-read with AROGYA_EXTRACT_SPLIT in readCard / extractPersonFields / scanMedicine / voiceStock. New extractPersonList (per-block grounded extract, max 10); photo add-person flow uses it when the page holds several people, ending on the same shared list review. AI catalog text corrected to the B4/B5 behavior (5-8 sentences; template + polish).
+- Files: ArogyaExtractSplit.kt (new), ArogyaAiExtras.kt, ArogyaAddPerson.kt, ArogyaVisitAi.kt, ArogyaAddPersonUi.kt, ExtractSplitTest.kt (new), run.ps1, run.sh, run_some.ps1.
+- Tests: full host gate 44 suites green, EXIT=0 (gateb6.log); ExtractSplitTest 18/18 (cut detection, halves, 8-person page -> 8 grounded names, full 28-antigen immunization page -> 28 rows, Hindi 4-item receipt -> 4 lines, merges, full prompts); BUILD SUCCESSFUL (1m6s after fixing MedScan orEmpty).
+- Verified on host: split/merge logic, full-page extraction, Hindi voice rules.
+- To be checked manually: split-read on a real long card photo; multi-person photo review; Hindi voice receipt end to end.

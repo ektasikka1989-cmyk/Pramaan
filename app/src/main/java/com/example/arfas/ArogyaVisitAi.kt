@@ -568,9 +568,27 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             check(text.length >= 15) { "No readable text was found. Take a closer photo in good light, card flat." }
             // Only values found in the card's own text are kept. Local-only: a card photo
             // is identifiers by design, and names must never reach a cloud prompt.
-            val (opt, by) = route("card_read", ArogyaAiExtras.cardPrompt(text.take(3500)), 900, cloud = false, cloudTokens = 1500, lang = ArogyaBudget.langOf(text)) { out ->
+            var lastRaw = ""
+            val lang = ArogyaBudget.langOf(text)
+            suspend fun readHalf(half: String): List<ArogyaCardField> {
+                val (o, _) = route("card_read", ArogyaAiExtras.cardPrompt(half), 900, cloud = false, cloudTokens = 1500, lang = ArogyaBudget.langOf(half)) { out ->
+                    ArogyaAiExtras.parseCard(out, half).takeIf { it.isNotEmpty() } }
+                return o.orEmpty()
+            }
+            val (opt, by0) = route("card_read", ArogyaAiExtras.cardPrompt(text), 900, cloud = false, cloudTokens = 1500, lang = lang) { out ->
+                lastRaw = out
                 ArogyaAiExtras.parseCard(out, text).takeIf { it.isNotEmpty() } }
-            val fields = opt.orEmpty()
+            var fields = opt.orEmpty()
+            var by = by0
+            // Part B6: cut JSON (unclosed brackets) → read each half and merge, so no row is lost.
+            if (fields.isEmpty() && lastRaw.isNotBlank() && !ArogyaExtractSplit.jsonComplete(lastRaw)) {
+                val (h1, h2) = ArogyaExtractSplit.halves(text)
+                if (h2.isNotBlank()) {
+                    fields = ArogyaExtractSplit.mergeCard(readHalf(h1), readHalf(h2))
+                    by = (by + " + split-read").trim(' ', '+')
+                    Log.i(TAG, "AROGYA_EXTRACT_SPLIT feature=card_read parts=2 fields=${fields.size}")
+                }
+            }
             Log.i(TAG, "AROGYA_TIMING event=card_read ms=${System.currentTimeMillis() - t} ocrChars=${text.length} fields=${fields.size}")
             ArogyaCardReading(text, fields) to by
         } finally { mgr.releaseTurnAttachments(claimed.map { it.id }, consumed = true) }
@@ -594,14 +612,60 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val det = mutableMapOf<String, String>()
         Regex("""(?<!\d)(\d{10})(?!\d)""").find(clean)?.let { det["phone"] = it.groupValues[1] }
         var by = "On-phone rules (offline): patterns"
+        var lastRaw = ""
+        suspend fun readHalf(half: String): Map<String, String> {
+            val (o, _) = route("person_extract", ArogyaPersonExtract.prompt(half), 900, cloud = false, cloudTokens = 1500, lang = ArogyaBudget.langOf(half)) { out ->
+                ArogyaPersonExtract.ground(ArogyaPersonExtract.parse(out), half)
+            }
+            return o.orEmpty()
+        }
         // Local-only: the OCR is identifiers by design, and names must never reach a cloud prompt.
         val (opt, label) = route("person_extract", ArogyaPersonExtract.prompt(clean), 900, cloud = false, cloudTokens = 1500, lang = ArogyaBudget.langOf(clean)) { out ->
+            lastRaw = out
             ArogyaPersonExtract.ground(ArogyaPersonExtract.parse(out), clean)
         }
         opt?.let { by = label }
-        val fields = ArogyaPersonExtract.ground(det + (opt ?: emptyMap()), clean)
+        var model = opt.orEmpty()
+        // Part B6: a cut last line (or almost nothing from a long page) → read each half and merge.
+        if ((ArogyaExtractSplit.lastLineCut(lastRaw) || (model.size < 2 && clean.length > 800)) && lastRaw.isNotBlank()) {
+            val (h1, h2) = ArogyaExtractSplit.halves(clean)
+            if (h2.isNotBlank()) {
+                model = ArogyaExtractSplit.mergePerson(ArogyaExtractSplit.mergePerson(model, readHalf(h1)), readHalf(h2))
+                by = (by + " + split-read").trim(' ', '+')
+                Log.i(TAG, "AROGYA_EXTRACT_SPLIT feature=person_extract parts=2 fields=${model.size}")
+            }
+        }
+        val fields = ArogyaPersonExtract.ground(det + model, clean)
         Log.i(TAG, "AROGYA_TIMING event=person_extract ms=${System.currentTimeMillis() - t} fields=${fields.size}")
         Triple(fields, by, System.currentTimeMillis() - t)
+    }
+
+    /**
+     * Part B6: a register page with several people → one field map per block, each
+     * grounded in its own block. Phone-only (identifiers); at most 10 blocks.
+     */
+    suspend fun extractPersonList(ocr: String): Triple<List<Map<String, String>>, String, Long> = mutex.withLock {
+        val t = System.currentTimeMillis()
+        val clean = ArogyaPersonExtract.maskAadhaar(ocr)
+        check(clean.trim().length >= 4) { "No readable text was found. Take a closer photo in good light." }
+        val blocks = ArogyaExtractSplit.splitBlocks(clean).ifEmpty { listOf(clean) }
+        var by = "On-phone rules (offline): patterns"
+        val out = ArrayList<Map<String, String>>()
+        blocks.forEach { block ->
+            val det = mutableMapOf<String, String>()
+            Regex("""(?<!\d)(\d{10})(?!\d)""").find(block)?.let { det["phone"] = it.groupValues[1] }
+            val (opt, label) = route("person_extract", ArogyaPersonExtract.prompt(block), 900, cloud = false, cloudTokens = 1500, lang = ArogyaBudget.langOf(block)) { raw ->
+                ArogyaPersonExtract.ground(ArogyaPersonExtract.parse(raw), block).takeIf { it.isNotEmpty() }
+            }
+            val fields = ArogyaPersonExtract.ground(det + (opt ?: emptyMap()), block)
+            if (fields.isNotEmpty()) {
+                out += fields
+                if (opt != null) by = label
+            }
+        }
+        Log.i(TAG, "AROGYA_EXTRACT_SPLIT feature=person_extract parts=${blocks.size} people=${out.size}")
+        Log.i(TAG, "AROGYA_TIMING event=person_extract_list ms=${System.currentTimeMillis() - t} people=${out.size}")
+        Triple(out, by, System.currentTimeMillis() - t)
     }
 
     suspend fun scanMedicine(ocr: String): Triple<MedScan, String, Long> = mutex.withLock {
@@ -610,14 +674,29 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         var scan = ArogyaMedScan.parse(ocr)
         var by = "On-phone rules (offline): regex"
         if (scan.name.isBlank() || scan.batch.isBlank() || scan.expiry.isBlank()) {
+            var lastRaw = ""
             val (opt, label) = route("medicine_scan", ArogyaMedScan.prompt(ocr), 400, ArogyaMedScan.prompt(ArogyaOnlinePolicy.scrubGeneric(ocr)), cloudTokens = 900, lang = ArogyaBudget.langOf(ocr)) { out ->
+                lastRaw = out
                 ArogyaMedScan.ground(ArogyaMedScan.parse(out), ocr)
             }
-            opt?.let {
-                scan = MedScan(
-                    it.name.ifBlank { scan.name }, it.batch.ifBlank { scan.batch },
-                    it.expiry.ifBlank { scan.expiry }, if (it.qty > 0) it.qty else scan.qty)
-                by = label
+            var model = opt ?: MedScan()
+            // Part B6: a cut last line → read each half and merge.
+            if (lastRaw.isNotBlank() && ArogyaExtractSplit.lastLineCut(lastRaw)) {
+                val (h1, h2) = ArogyaExtractSplit.halves(ocr)
+                if (h2.isNotBlank()) {
+                    suspend fun readHalf(half: String): MedScan {
+                        val (o, _) = route("medicine_scan", ArogyaMedScan.prompt(half), 400, ArogyaMedScan.prompt(ArogyaOnlinePolicy.scrubGeneric(half)), cloudTokens = 900, lang = ArogyaBudget.langOf(half)) { out ->
+                            ArogyaMedScan.ground(ArogyaMedScan.parse(out), half)
+                        }
+                        return o ?: MedScan()
+                    }
+                    model = ArogyaExtractSplit.mergeMed(ArogyaExtractSplit.mergeMed(model, readHalf(h1)), readHalf(h2))
+                    Log.i(TAG, "AROGYA_EXTRACT_SPLIT feature=medicine_scan parts=2")
+                }
+            }
+            if (opt != null || model != MedScan()) {
+                scan = ArogyaExtractSplit.mergeMed(scan, model)
+                if (opt != null) by = label
             }
         }
         scan = ArogyaMedScan.ground(scan, ocr)
@@ -636,11 +715,29 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         var lines = ArogyaVoiceStock.ground(ArogyaVoiceStock.parseRules(transcript, catalog), transcript, catalog)
         var by = "On-phone rules (offline): patterns"
         if (lines.isEmpty()) {
+            var lastRaw = ""
             val (opt, label) = route("voice_stock", ArogyaVoiceStock.prompt(transcript, catalog), 400,
                 ArogyaVoiceStock.prompt(ArogyaOnlinePolicy.scrubGeneric(transcript), catalog), cloudTokens = 900, lang = ArogyaBudget.langOf(transcript)) { out ->
+                lastRaw = out
                 ArogyaVoiceStock.ground(ArogyaVoiceStock.parseModel(out), transcript, catalog).takeIf { it.isNotEmpty() }
             }
             opt?.let { lines = it; by = label }
+            // Part B6: nothing parsed from a long note (the model answer was cut) → read each half and merge.
+            if (lines.isEmpty() && lastRaw.isNotBlank() && transcript.length > 400) {
+                val (h1, h2) = ArogyaExtractSplit.halves(transcript)
+                if (h2.isNotBlank()) {
+                    suspend fun readHalf(half: String): List<VoiceStockLine> {
+                        val (o, _) = route("voice_stock", ArogyaVoiceStock.prompt(half, catalog), 400,
+                            ArogyaVoiceStock.prompt(ArogyaOnlinePolicy.scrubGeneric(half), catalog), cloudTokens = 900, lang = ArogyaBudget.langOf(half)) { out ->
+                            ArogyaVoiceStock.ground(ArogyaVoiceStock.parseModel(out), half, catalog).takeIf { it.isNotEmpty() }
+                        }
+                        return o.orEmpty()
+                    }
+                    lines = ArogyaExtractSplit.mergeVoice(readHalf(h1), readHalf(h2))
+                    if (lines.isNotEmpty()) by = (by + " + split-read").trim(' ', '+')
+                    Log.i(TAG, "AROGYA_EXTRACT_SPLIT feature=voice_stock parts=2 lines=${lines.size}")
+                }
+            }
         }
         Log.i(TAG, "AROGYA_TIMING event=voice_stock ms=${System.currentTimeMillis() - t} lines=${lines.size}")
         Triple(lines, by, System.currentTimeMillis() - t)
