@@ -87,19 +87,26 @@ private fun SopSectionBody(
     val primary = MaterialTheme.colorScheme.primary
     val newsBg = MaterialTheme.colorScheme.secondaryContainer
     val ann = remember(body, news) {
+        // UI6: one superscript per run of sentences from the same source(s), ids joined "¹,³".
+        val ids = sentences.map { idsFor(it) }
+        val show = ArogyaAnswerFormat.citeAt(ids)
+        val supStyle = SpanStyle(color = primary, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+            baselineShift = BaselineShift.Superscript)
         buildAnnotatedString {
             sentences.forEachIndexed { i, sentence ->
                 if (i > 0) append(if (ArogyaAnswerFormat.needsNewLine(sentence)) "\n" else " ")
                 val start = length
                 append(sentence)
                 if (sentence in news) addStyle(SpanStyle(background = newsBg), start, length)
-                idsFor(sentence).forEach { id ->
-                    append(" ")
-                    val c0 = length
-                    append(ArogyaAnswerFormat.supDigits(id))
-                    addStyle(SpanStyle(color = primary, fontWeight = FontWeight.Bold, fontSize = 12.sp,
-                        baselineShift = BaselineShift.Superscript), c0, length)
-                    addStringAnnotation("cite", id, c0, length)
+                if (show[i]) {
+                    append(" ")
+                    ids[i].forEachIndexed { k, id ->
+                        if (k > 0) { val sep = length; append(","); addStyle(supStyle, sep, length) }
+                        val c0 = length
+                        append(ArogyaAnswerFormat.supDigits(id))
+                        addStyle(supStyle, c0, length)
+                        addStringAnnotation("cite", id, c0, length)
+                    }
                 }
             }
         }
@@ -209,7 +216,7 @@ fun SopStreamingCard(
                 style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 25.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
-            else SopAnswerText(draft, emptyList(), emptySet()) {}
+            else SopAnswerText(ArogyaAnswerFormat.stripCitationMarkers(draft), emptyList(), emptySet()) {}
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (draft.isNotBlank() && !checking) TextButton(onClick = { onSpeakSoFar(draft) }) {

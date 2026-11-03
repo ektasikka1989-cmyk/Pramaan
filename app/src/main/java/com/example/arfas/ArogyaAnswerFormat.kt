@@ -116,6 +116,30 @@ object ArogyaAnswerFormat {
     /** Part B7: a citation id as inline superscript ("10" → "¹⁰"; other chars unchanged). */
     fun supDigits(id: String): String = buildString(id.length) { id.forEach { append(SUP[it] ?: it) } }
 
+    /**
+     * UI6: the model's own source tags ([S1], [S1, S2], [1], [1][2], 【1】, (S1), [W2], [Source: S1])
+     * are removed from the shown text. The app shows its own tappable superscripts from the
+     * checked citations instead, so the tags only duplicated them ("[S1] ¹"). Markdown links
+     * ("[text](url)") and other bracketed text stay.
+     */
+    fun stripCitationMarkers(text: String): String {
+        if (text.isBlank()) return text
+        val id = "(?:[SW]?\\d{1,2})"
+        val list = "\\s*(?:(?:sources?|src)\\s*:?\\s*)?$id(?:\\s*(?:,|;|–|-|and|&)\\s*$id)*\\s*"
+        var out = Regex("(?i)[\\[【]$list[\\]】](?!\\()").replace(text, "")
+        out = Regex("(?i)\\((?:(?:sources?|src)\\s*:?\\s*)?[SW]\\d{1,2}(?:\\s*(?:,|;|and|&)\\s*[SW]\\d{1,2})*\\)").replace(out, "")
+        // Tidy what the tags leave behind: "word ." → "word.", doubled spaces.
+        out = out.replace(Regex("[ \\t]+([.,;:!?।])"), "$1").replace(Regex("[ \\t]{2,}"), " ")
+        return out.lines().joinToString("\n") { it.trimEnd() }.trim()
+    }
+
+    /**
+     * UI6: where a citation superscript is shown. A run of sentences from the same source(s)
+     * gets one superscript at its end (like a footnote per paragraph), not one after every sentence.
+     */
+    fun citeAt(idsPerSentence: List<List<String>>): List<Boolean> =
+        idsPerSentence.mapIndexed { i, ids -> ids.isNotEmpty() && (i == idsPerSentence.lastIndex || idsPerSentence[i + 1] != ids) }
+
     /** Part B7: a numbered step or bullet starts its own line; plain sentences flow together. */
     fun needsNewLine(sentence: String): Boolean =
         Regex("^([•\\-*–]|\\d+[.)])\\s+").containsMatchIn(sentence.trimStart())

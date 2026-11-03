@@ -113,6 +113,9 @@ fun ArogyaVisitScreen(
     var savedReady by remember { mutableStateOf(0) }
     var savedBusy by remember { mutableStateOf(false) }
     var aiJob by remember { mutableStateOf<Job?>(null) }
+    // UI6: every Ask/More-detail run gets a number; Stop bumps it so the old job, which may still be
+    // finishing a blocking step (re-ranker batch, model call), can no longer touch the screen.
+    var aiRunId by remember { mutableStateOf(0) }
     var questionDictation by remember { mutableStateOf(false) }
     var aiCopy by remember { mutableStateOf("") }
     var aiCapture by remember { mutableStateOf<List<ArogyaCaptureItem>>(emptyList()) }
@@ -775,17 +778,25 @@ fun ArogyaVisitScreen(
                 }
                 // Warning appears after "Ask", not while typing (it used to push the text out of view).
                 val warningNow = if(aiTask==ArogyaAiTask.EXPLAIN && askedQuestionForWarning.isNotBlank()) ArogyaUrgentTriage.assess(askedQuestionForWarning,gv) else null
+                // UI6: Stop frees the screen at once (the old job winds down in the background and is ignored).
+                fun stopAi() {
+                    onCancelAi();aiJob?.cancel()
+                    if(aiBusy) { aiRunId++;aiBusy=false;aiDraft="";aiChecking=false
+                        aiError=tr("Stopped. Ask again whenever you are ready.","रोका गया। जब चाहें फिर से पूछें।") }
+                }
                 fun runVisitAi(forceOnline:Boolean,afterSafety:Boolean=false,questionOverride:String?=null) {
                     val snapshot=gv
                     val qNow=questionOverride ?: aiQuestion
                     val askedQuestion=qNow.ifBlank { tr("About the attached file","अटैच की गई फ़ाइल के बारे में") }+(if(qFiles.isNotEmpty()) "  [📎 ${qFiles.joinToString(", ")}]" else "")
                     aiOnline=forceOnline
                     aiBusy=true;aiError="";aiDraft="";aiChecking=false;familyText="";familyModel="";familyMs=0L;aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L;streamQ=askedQuestion
+                    val run=++aiRunId
                     aiJob=scope.launch {
                         try {
                             val result=onRunAi(ArogyaAiRequest(aiTask,snapshot,qNow,hindi,aiTopic,aiPrevious,forceOnline,afterSafetyPrompt=afterSafety,
-                                onProgress={ p -> val u=ArogyaDraftUiReduce.reduce(ArogyaDraftUi(aiDraft,aiChecking),p); aiDraft=u.text; aiChecking=u.checking
-                                    if(u.text.isNotBlank()) lastDeltaAt=System.currentTimeMillis() }))
+                                onProgress={ p -> if(aiRunId==run) { val u=ArogyaDraftUiReduce.reduce(ArogyaDraftUi(aiDraft,aiChecking),p); aiDraft=u.text; aiChecking=u.checking
+                                    if(u.text.isNotBlank()) lastDeltaAt=System.currentTimeMillis() } }))
+                            if(aiRunId!=run) return@launch
                             aiChecking=false
                             qFiles=ai?.attachedNames().orEmpty()
                             aiResult=result;aiCopy=result.text;aiCapture=result.captureItems
@@ -815,9 +826,9 @@ fun ArogyaVisitScreen(
                                 }
                             }
                             aiPrevious="Previous question: $qNow\nPrevious draft explanation: ${result.text.take(800)}"
-                        } catch(e:CancellationException) {aiError="Cancelled or timed out. Any previous answer remains unchanged; no freshness check was accepted.";throw e}
-                        catch(e:Exception) {aiError=e.message ?: "AI unavailable. Your visit is unchanged."}
-                        finally {aiBusy=false}
+                        } catch(e:CancellationException) {if(aiRunId==run) aiError="Cancelled or timed out. Any previous answer remains unchanged; no freshness check was accepted.";throw e}
+                        catch(e:Exception) {if(aiRunId==run) aiError=e.message ?: "AI unavailable. Your visit is unchanged."}
+                        finally {if(aiRunId==run) aiBusy=false}
                     }
                 }
                 // Item 4 "More detail": the same passages answer again, longer; the card (and the
@@ -825,11 +836,13 @@ fun ArogyaVisitScreen(
                 fun runMoreDetail(displayQ:String,askedQ:String) {
                     val snapshot=gv; val engine=ai ?: return
                     aiBusy=true;aiError="";aiDraft="";aiChecking=false;aiStartedAt=System.currentTimeMillis();lastDeltaAt=0L;streamQ=displayQ
+                    val run=++aiRunId
                     aiJob=scope.launch {
                         try {
                             val result=engine.moreDetail(askedQ,snapshot,
-                                onProgress={ p -> val u=ArogyaDraftUiReduce.reduce(ArogyaDraftUi(aiDraft,aiChecking),p); aiDraft=u.text; aiChecking=u.checking
-                                    if(u.text.isNotBlank()) lastDeltaAt=System.currentTimeMillis() })
+                                onProgress={ p -> if(aiRunId==run) { val u=ArogyaDraftUiReduce.reduce(ArogyaDraftUi(aiDraft,aiChecking),p); aiDraft=u.text; aiChecking=u.checking
+                                    if(u.text.isNotBlank()) lastDeltaAt=System.currentTimeMillis() } })
+                            if(aiRunId!=run) return@launch
                             aiChecking=false
                             val cur=sopThreads[snapshot.id].orEmpty()
                             val idx=cur.indexOfLast { it.question==displayQ }
@@ -845,9 +858,9 @@ fun ArogyaVisitScreen(
                                 }
                             }
                             aiPrevious="Previous question: $askedQ\nPrevious draft explanation: ${result.text.take(800)}"
-                        } catch(e:CancellationException) {aiError="Cancelled. The first answer is unchanged.";throw e}
-                        catch(e:Exception) {aiError=e.message ?: "The fuller answer failed. The first answer is unchanged."}
-                        finally {aiBusy=false}
+                        } catch(e:CancellationException) {if(aiRunId==run) aiError="Cancelled. The first answer is unchanged.";throw e}
+                        catch(e:Exception) {if(aiRunId==run) aiError=e.message ?: "The fuller answer failed. The first answer is unchanged."}
+                        finally {if(aiRunId==run) aiBusy=false}
                     }
                 }
                 // Item 5a/5c: ☁ Check online with a pre-check (internet + key); without them the
@@ -980,8 +993,8 @@ fun ArogyaVisitScreen(
                             Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                 SopUserBubble(streamQ)
                                 SopAssistantHeader(hindi)
-                                if(aiDraft.isNotBlank()) SopStreamingCard("",aiDraft,aiChecking,secs,hindi,{speak(it)}) {onCancelAi();aiJob?.cancel()}
-                                else SopBusyCard(hindi,aiOnline,aiChecking,true,aiDraft,secs,aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500) {onCancelAi();aiJob?.cancel()}
+                                if(aiDraft.isNotBlank()) SopStreamingCard("",aiDraft,aiChecking,secs,hindi,{speak(it)}) {stopAi()}
+                                else SopBusyCard(hindi,aiOnline,aiChecking,true,aiDraft,secs,aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500) {stopAi()}
                             }
                         }
                         if(aiError.isNotBlank()) item(key="error") {
@@ -1013,7 +1026,7 @@ fun ArogyaVisitScreen(
                         canSend=!qFileBusy && pending==0 && (aiQuestion.isNotBlank() || qFiles.isNotEmpty()),
                         attachEnabled=!qFileBusy && ai!=null && qFiles.size<3,
                         onSend={ askedQuestionForWarning=aiQuestion;runVisitAi(false,afterSafety=ArogyaUrgentTriage.assess(aiQuestion,gv)!=null);aiQuestion="" },
-                        onStop={ onCancelAi();aiJob?.cancel() },
+                        onStop={ stopAi() },
                         onMic={ questionDictation=true;if(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED) voice=true else mic.launch(Manifest.permission.RECORD_AUDIO) },
                         onPhoto={ startPhoto("question") },
                         onFile={ questionFilePicker.launch(arrayOf("image/*","application/pdf")) })
@@ -1024,7 +1037,7 @@ fun ArogyaVisitScreen(
                 Button(onClick={askedQuestionForWarning=aiQuestion;runVisitAi(false,afterSafety=ArogyaUrgentTriage.assess(aiQuestion,gv)!=null)},enabled=!aiBusy && !qFileBusy && pending==0,modifier=Modifier.fillMaxWidth()) {
                     Text(if(aiBusy) tr("Working on your phone…","फ़ोन पर काम हो रहा है…") else tr("Create my visit draft","मेरा विज़िट ड्राफ़्ट बनाएँ"))
                 }
-                if(aiBusy) SopBusyCard(hindi,aiOnline,aiChecking,aiTask==ArogyaAiTask.EXPLAIN,aiDraft,((nowMs-aiStartedAt).coerceAtLeast(0))/1000,aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500) {onCancelAi();aiJob?.cancel()}
+                if(aiBusy) SopBusyCard(hindi,aiOnline,aiChecking,aiTask==ArogyaAiTask.EXPLAIN,aiDraft,((nowMs-aiStartedAt).coerceAtLeast(0))/1000,aiDraft.isNotBlank() && nowMs-lastDeltaAt>2500) {stopAi()}
                 if(aiError.isNotBlank()) Text(aiError,color=MaterialTheme.colorScheme.error)
                 aiResult?.let { result ->
                     AiResultChip(result.provider,result.online,result.elapsedMs,hindi)

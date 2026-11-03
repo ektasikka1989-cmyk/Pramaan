@@ -365,7 +365,9 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val notFoundMarker = turn.sourceIds.firstOrNull { it.startsWith(KnowledgeSourcePresentation.NOT_FOUND_PREFIX) }
         val liveWeb = turn.sourceIds.any { it.startsWith("freshness:") }
         val hasGuideAnswer = turn.text.trim().isNotBlank() && notFoundMarker == null && !liveWeb
-        val text = turn.text.trim()
+        // UI6: the model's [S1]/[1] tags are dropped from the shown text; the card draws its own
+        // tappable superscripts from the checked citations (segments are built from this same text).
+        val text = ArogyaAnswerFormat.stripCitationMarkers(turn.text.trim())
         val hasAnswer = text.isNotBlank()
         val provider = when (turn.provider) {
             AndroBaselineRuntime.Provider.LOCAL -> "ArogyaDoot • offline (${runtime.localModelManager?.loadedModelFileName?.substringBeforeLast('.') ?: "local model"})"
@@ -455,7 +457,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
      */
     private suspend fun buildTier2(question: String, webText: String, guideSources: List<ArogyaSource>, elapsed: Long): ArogyaAiResult? {
         val (answer, refs) = ArogyaOfficialSources.parseRefs(webText)
-        val clean = answer.removePrefix("Not from the selected knowledge base — answered online:").trim()
+        val clean = ArogyaAnswerFormat.stripCitationMarkers(answer.removePrefix("Not from the selected knowledge base — answered online:").trim())
         if (clean.isBlank() || refs.isEmpty()) return null
         if (ArogyaOnlinePolicy.DOWNGRADE.containsMatchIn(clean) || ArogyaOnlinePolicy.PATIENT_ASSESSMENT.containsMatchIn(clean)) {
             Log.i(TAG, "AROGYA_TIER2_REJECT safety")

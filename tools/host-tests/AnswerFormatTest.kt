@@ -77,6 +77,24 @@ fun main() {
     check("len-numbered", ArogyaAnswerFormat.sentenceCount("1. Wash hands well.\n2. Keep it dry now.") == 2)
     check("len-hindi", ArogyaAnswerFormat.sentenceCount("साफ रखें। सूखा रखें।") == 2)
     check("len-blank", ArogyaAnswerFormat.sentenceCount("  ") == 0)
+    // UI6: the model's source tags are removed from the shown answer; the app draws its own superscripts.
+    val sc = ArogyaAnswerFormat::stripCitationMarkers
+    check("strip-s1", sc("Keep the cord dry [S1].") == "Keep the cord dry.", sc("Keep the cord dry [S1]."))
+    check("strip-list", sc("Give ORS [S1, S2] after each stool.") == "Give ORS after each stool.", sc("Give ORS [S1, S2] after each stool."))
+    check("strip-num", sc("Give zinc for 14 days [1][3].") == "Give zinc for 14 days.", sc("Give zinc for 14 days [1][3]."))
+    check("strip-paren", sc("Refer at once (S2).") == "Refer at once.", sc("Refer at once (S2)."))
+    check("strip-source", sc("Wash hands [Source: S1] first.") == "Wash hands first.", sc("Wash hands [Source: S1] first."))
+    check("strip-web", sc("See the guideline [W2].") == "See the guideline.")
+    check("strip-cjk", sc("Keep warm 【1】.") == "Keep warm.")
+    check("strip-hindi", sc("नाल सूखी रखें [S1]।") == "नाल सूखी रखें।", sc("नाल सूखी रखें [S1]।"))
+    check("keep-link", sc("Read [the guide](https://x.in/g.pdf).") == "Read [the guide](https://x.in/g.pdf).")
+    check("keep-text", sc("Give [half a cup] of food.") == "Give [half a cup] of food.")
+    check("keep-dose", sc("Give 14 days (2 tablets).") == "Give 14 days (2 tablets).")
+    check("keep-lines", sc("1. Wash [S1].\n2. Dry [S2].") == "1. Wash.\n2. Dry.", sc("1. Wash [S1].\n2. Dry [S2]."))
+    // UI6: one superscript per run of sentences with the same sources.
+    check("cite-runs", ArogyaAnswerFormat.citeAt(listOf(listOf("1"), listOf("1"), listOf("2"), emptyList(), listOf("2"))) ==
+        listOf(false, true, true, false, true))
+    check("cite-last", ArogyaAnswerFormat.citeAt(listOf(listOf("1", "3"))) == listOf(true))
     println("AnswerFormatTest: $n passed, $fails failed")
     if (fails > 0) kotlin.system.exitProcess(1)
 }
