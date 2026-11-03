@@ -140,13 +140,13 @@ object ArogyaDemoScript {
             listOf(
                 "One hundred of the most common ASHA questions were prepared word for word from the official guides.",
                 "They steer the AI to the right pages and let us measure its accuracy.",
-                "Sunita asks in her own words: baby ko pehla gaadha doodh dena chahiye?",
+                "Sunita asks in her own words about the baby's first thick milk.",
                 "The answer itself is always generated live and cited to its guide page.",
                 "She taps the citation to read the printed sentence, then hears it in Hindi."),
             listOf(
                 "आशा के 100 सबसे आम सवाल आधिकारिक गाइड से शब्द-शब्द तैयार किए गए।",
                 "वे AI को सही पन्नों तक पहुँचाते हैं और सटीकता नापने देते हैं।",
-                "सुनीता अपने शब्दों में पूछती हैं: क्या बच्चे को पहला गाढ़ा दूध देना चाहिए?",
+                "सुनीता अपने शब्दों में बच्चे के पहले गाढ़े दूध के बारे में पूछती हैं।",
                 "उत्तर हमेशा ताज़ा बनता है और गाइड के पेज का हवाला देता है।",
                 "वे हवाला दबाकर छपी पंक्ति पढ़ती हैं, फिर इसे हिंदी में सुनती हैं।")),
         Scene("card", "MCP card photo becomes the card", "MCP कार्ड की फ़ोटो बनती है कार्ड",

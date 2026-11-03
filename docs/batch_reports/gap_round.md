@@ -31,3 +31,11 @@
 ## Item 7 -- Demo screen layout optimisation
 - Scene screen is ArogyaDemoTour.kt:568+: full-width DEMO banner card + separate Scene row + 3 FilterChips, captions fixed at weight(0.32f) with no auto-scroll, cumulative AI-at-work Card above the live body, full-width Exit button. DemoSceneBody holds all 16 scene bodies; ticks list is cumulative (no per-scene split).
 - Rework: one compact top bar (chip + Scene N/M + EN/HI + narrate + overflow Exit, progress under, <=72dp); title max 2 lines; single LazyColumn content (narration sentences as highlightable items with animateScrollToItem, then live-result Card with tap-to-expand Dialog); per-scene AI ticks via a scene-entry tickMark rendered as a slim expandable chip row (+ fixed-rule chip on due/form/danger); bottom Back/Replay/Next with Next widest; landscape splits narration/live into two columns. Screenshots need the phone (Item 8).
+
+## Item 8 -- Full phone verification, benchmark and screenshots
+- BLOCKED: adb device list empty across Items 4-7 (build_install.bat reports PHONE=NOT_CONNECTED each time); adb kill-server/start-server retry did not recover it. The phone is physically disconnected or USB debugging is off.
+- Cannot run without the phone: install (INSTALL/KB_PUSH/KB_PUSH2), all foreground checks, airplane-mode-mid-call timings, all 7 PDF exports, both guided demo runs, M1 benchmark in both modes (-> docs/benchmark/final.md), and all screenshots to docs/screens/ incl. docs/screens/demo/. No results fabricated.
+- Ready when the phone reconnects: latest debug APK built (Item 7, BUILD SUCCESSFUL); run build_install.bat, then work the Item 8 checklist top to bottom, then commit 'Gap round: verified on phone'.
+
+## Note -- MCP source arrived mid-round
+- _claude_work/sources/ now holds MCP_Card_2018.pdf and MCP_Card_Guidebook_MoHFW_MoWCD_2020.pdf (both 6117713 bytes, likely identical). This unblocks the Item 1 MCP follow-up (MCP-ANC rows, immunization/growth sections, MCP PDF relayout); left for a follow-up step, not smuggled into Items 4-8.
