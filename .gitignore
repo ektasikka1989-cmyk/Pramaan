@@ -38,6 +38,7 @@ app/src/main/assets/**
 !app/src/main/assets/doc_templates/
 !app/src/main/assets/doc_templates/**
 !app/src/main/assets/kb_parity.json
+!app/src/main/assets/verified_answers.json
 !app/src/main/assets/guide/
 !app/src/main/assets/guide/**
 !app/src/main/assets/growth/
@@ -61,3 +62,11 @@ tools/host-tests/out/
 tools/host-tests/out-some/
 demo_photos/
 *.patch
+
+# internal working notes stay on the developer's PC (never published)
+/CLAUDE.md
+/docs/CLAUDE_CODE_HANDOFF.md
+/docs/MUSE_CODE_PROMPT_*.md
+/docs/MUSE_META_FIRST_CUT.md
+/_claude_work/github/
+/_claude_work/sources/
