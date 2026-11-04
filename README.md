@@ -18,7 +18,7 @@ Ask an official SOP. See the exact source and page. Turn a home visit into accou
 |---|---|
 | 🎬 **Three-minute demo** | **Coming soon — video in production** |
 | 📱 **Android APK** | **Release pending final installation test** — [Releases](https://github.com/ektasikka1989-cmyk/Pramaan/releases) |
-| 📚 **Models and setup** | [MODELS.md](MODELS.md) · [Hugging Face model pack](https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models) (availability/download to be verified) |
+| 📚 **Models and setup** | [MODELS.md](MODELS.md) · [Model pack, primary link](https://pub-c8d63c87f3ff45c6919a4bdeb91cb247.r2.dev/Pramaan_Meta_Models.zip) · [Model pack, standby link](https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models/resolve/main/Pramaan_Meta_Models.zip?download=true) |
 | 🔒 **Data handling** | [PRIVACY.md](PRIVACY.md) |
 | 🏆 **Entry** | Meta Global AI Developer Hackathon 2026 · Build for Your World · Ekta Sikka |
 
@@ -40,9 +40,9 @@ Her challenge is not simply answering a medical question:
 
 Ask a question in **Hindi, English or Hinglish** — for example, *“What newborn danger signs require urgent referral?”* Pramaan searches its locally stored government-guide knowledge base and presents:
 
-- a concise, task-relevant response;
+- a concise, task-relevant response drawn from the **local knowledge base of 68 official documents** (5,389 passages) stored on the phone;
 - the **source document, specific page and supporting passage** so the ASHA can check what the guidance actually says;
-- access to the underlying PDF when available, plus follow-up questions;
+- access to the underlying PDF when available, highlighted supporting passages showing the exact sentences the answer came from, plus follow-up questions;
 - an optional **Check online** route for eligible cloud use, clearly distinguished from the offline source answer.
 
 This is more than a citation pasted beneath an AI reply: the intended workflow is **ask → inspect source → decide with professional judgment → record action → review follow-up**. A citation makes verification possible; it **does not guarantee that an answer is clinically correct**. Current local content must be updated when official guidance changes.
@@ -85,8 +85,11 @@ Pramaan combines **on-device Meta Llama** with the **new Meta Model API models**
 | **Muse Spark 1.3** | Optional cloud reasoning and writing over the same retrieved evidence; also a vision route for difficult photographed documents | **Online**, with a working Meta Model API key |
 | **Muse Voice Transcribe** | Optional Hindi/English or mixed-language speech transcription | **Online**, with a working key |
 | **SAM 3.1** | Optional object segmentation/counting for photographed drug-kit items, subject to worker confirmation | **Online**, with a working key |
+| **Muse Code** | Agentic coding assistant used to build Pramaan (development tool, not a runtime model) | **Dev-time** |
 
-The app also uses **Whisper** for local speech recognition, **ML Kit** for local OCR, and local search/re-ranking models to retrieve SOP passages. These are supporting components, not all Meta models. **Local first** and **Cloud first** selection, fallback indicators and actual cloud availability must be verified in the installed build. Offline capability refers to functionality **after the required local model/guide setup**; it is not a claim that every feature works before setup.
+The app also uses **Whisper** for local speech recognition, **ML Kit** for local OCR, and **Android TextToSpeech** for reading aloud, and local search/re-ranking models to retrieve SOP passages. These are supporting components, not all Meta models. **Local first** and **Cloud first** selection, fallback indicators and actual cloud availability must be verified in the installed build. Offline capability refers to functionality **after the required local model/guide setup**; it is not a claim that every feature works before setup.
+
+**Response times:** offline answers on the phone typically take **1–3 minutes**, sometimes longer depending on the device and question. Cloud responses are generally faster when connected.
 
 ```mermaid
 flowchart TD
@@ -116,9 +119,9 @@ The same architecture — **role-specific knowledge base + cited guidance + form
 
 ## Try the prototype
 
-1. **Release:** Once published, download the APK from [GitHub Releases](https://github.com/ektasikka1989-cmyk/Pramaan/releases). No tested public APK is linked here yet.
+1. **Install the APK:** download the latest APK from [GitHub Releases](https://github.com/ektasikka1989-cmyk/Pramaan/releases), open it on the phone and allow installation. Verify the installed build on-device before relying on it.
 2. **Device:** Android arm64; approximately 6 GB RAM recommended. Allow sufficient storage and Wi-Fi for the multi-GB model pack; consult [MODELS.md](MODELS.md).
-3. **Setup:** Install the offline model pack and guide database through the in-app setup flow. A Meta Model API key is optional for online model features; availability and billing are determined by Meta.
+3. **Setup:** Install the offline model pack and guide database through the in-app setup flow (model pack: the primary link is tried first, the standby link only if it fails — see above). A Meta Model API key is optional for online model features; availability and billing are determined by Meta.
 4. **Demo:** Open **Home → Demo** with fictional data. First test installed local guidance and an Ask SOP citation in airplane mode; then test any configured cloud pathway separately.
 5. **Proof:** Check the cited PDF/page, confirm changes in the linked record and inspect the pending visit/referral/stock summary.
 

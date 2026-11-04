@@ -1,6 +1,14 @@
 package com.example.arfas
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.os.SystemClock
+import android.speech.tts.TextToSpeech
+import androidx.core.content.ContextCompat
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,6 +44,121 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+
+/** First [n] bytes of a stream (archive sniffing without reading a 3 GB file). */
+private fun headBytes(inp: java.io.InputStream, n: Int = 512): ByteArray {
+    val buf = ByteArray(n)
+    var off = 0
+    while (off < n) {
+        val r = inp.read(buf, off, n - off)
+        if (r <= 0) break
+        off += r
+    }
+    return buf.copyOf(off)
+}
+
+/** Peak microphone level over ~1.5 s (0–32767), or null when the mic cannot be opened. */
+private fun micPeak(): Int? = runCatching {
+    val sr = 16000
+    val minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+    if (minBuf <= 0) error("no mic buffer")
+    val rec = AudioRecord(MediaRecorder.AudioSource.MIC, sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
+    try {
+        if (rec.state != AudioRecord.STATE_INITIALIZED) error("mic init failed")
+        rec.startRecording()
+        val buf = ShortArray((minBuf / 2).coerceAtLeast(1024))
+        var peak = 0
+        val end = SystemClock.uptimeMillis() + 1500
+        while (SystemClock.uptimeMillis() < end) {
+            val n = rec.read(buf, 0, buf.size)
+            if (n > 0) for (i in 0 until n) peak = maxOf(peak, kotlin.math.abs(buf[i].toInt()))
+        }
+        runCatching { rec.stop() }
+        peak
+    } finally {
+        runCatching { rec.release() }
+    }
+}.getOrNull()
+
+/**
+ * After the models are installed: microphone permission (Android runtime flow), offline Whisper files,
+ * online voice configuration, a short mic level test and an Android TextToSpeech speaker test.
+ * (Android has no speaker permission; none is requested.) Text input always keeps working.
+ */
+@Composable
+private fun VoiceCheckCard(hindi: Boolean) {
+    fun tr(en: String, hi: String) = if (hindi) hi else en
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var micGranted by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+    }
+    val micAsk = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { micGranted = it }
+    var micBusy by remember { mutableStateOf(false) }
+    var micResult by remember { mutableStateOf("") }
+    var ttsResult by remember { mutableStateOf("") }
+    var ttsOk by remember { mutableStateOf<Boolean?>(null) }
+    val tts = remember { TextToSpeech(context.applicationContext) { st -> ttsOk = (st == TextToSpeech.SUCCESS) } }
+    DisposableEffect(tts) { onDispose { runCatching { tts.stop(); tts.shutdown() } } }
+    val whisperReady = remember { ArogyaSetup.whisperInstalled(context) }
+    val whisperMb = remember {
+        runCatching { File(context.filesDir, "whisper").listFiles()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L }.getOrDefault(0L) / 1_000_000
+    }
+    val onlineVoice = remember { runCatching { GroqKeyStore(context.applicationContext).metaKey().isNotBlank() }.getOrDefault(false) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(tr("Mic and speaker check", "माइक और स्पीकर जाँच"), fontWeight = FontWeight.Bold)
+            Text((if (micGranted) "✓ " else "○ ") + tr("Microphone permission: ", "माइक की अनुमति: ") + (if (micGranted) tr("allowed", "मिली हुई") else tr("not allowed", "नहीं मिली")),
+                style = MaterialTheme.typography.bodySmall)
+            if (!micGranted) OutlinedButton(onClick = { runCatching { micAsk.launch(Manifest.permission.RECORD_AUDIO) } }) {
+                Text(tr("Allow microphone", "माइक की अनुमति दें"))
+            }
+            Text((if (whisperReady) "✓ " else "○ ") + tr("Offline voice typing (Whisper): ", "ऑफ़लाइन आवाज़ से लिखना (Whisper): ") +
+                (if (whisperReady) tr("ready", "तैयार") + (if (whisperMb > 0) " ($whisperMb MB)" else "") else tr("model files not found", "मॉडल फ़ाइलें नहीं मिलीं")),
+                style = MaterialTheme.typography.bodySmall)
+            Text((if (onlineVoice) "✓ " else "○ ") + tr("Online voice (Muse Voice): ", "ऑनलाइन आवाज़ (Muse Voice): ") +
+                (if (onlineVoice) tr("key saved — works when connected", "key सेव है — इंटरनेट पर चलेगी") else tr("needs the Meta key (step 3)", "Meta key चाहिए (कदम 3)")),
+                style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    if (!micGranted) { runCatching { micAsk.launch(Manifest.permission.RECORD_AUDIO) }; return@OutlinedButton }
+                    if (micBusy) return@OutlinedButton
+                    micBusy = true; micResult = ""
+                    scope.launch(Dispatchers.IO) {
+                        val peak = micPeak()
+                        withContext(Dispatchers.Main) {
+                            micBusy = false
+                            micResult = when {
+                                peak == null -> tr("Mic test failed — the mic may be in use by another app.", "माइक जाँच नहीं हुई — शायद दूसरी ऐप इस्तेमाल कर रही है।")
+                                peak > 200 -> tr("Mic heard sound (level $peak).", "माइक ने आवाज़ सुनी (स्तर $peak)।")
+                                else -> tr("Mic works but heard silence (level $peak) — speak louder and retry.", "माइक चला पर आवाज़ नहीं आई (स्तर $peak) — ज़ोर से बोलकर फिर कोशिश करें।")
+                            }
+                        }
+                    }
+                }, enabled = !micBusy) { Text(if (micBusy) tr("Listening…", "सुन रहे हैं…") else tr("Test microphone", "माइक जाँचें")) }
+                OutlinedButton(onClick = {
+                    if (ttsOk != true) {
+                        ttsResult = tr("Speech engine unavailable — install an Android voice, then retry.", "बोलने वाला इंजन नहीं है — Android आवाज़ इंस्टॉल करके फिर कोशिश करें।")
+                        return@OutlinedButton
+                    }
+                    val rc = runCatching {
+                        tts.speak(if (hindi) "Pramaan तैयार है। स्पीकर चल रहा है।" else "Pramaan is ready. The speaker is working.",
+                            TextToSpeech.QUEUE_FLUSH, null, "pramaan-voice-check")
+                    }.getOrDefault(TextToSpeech.ERROR)
+                    ttsResult = if (rc == TextToSpeech.SUCCESS) tr("Playing a test sentence…", "जाँच वाक्य बजा रहे हैं…")
+                    else tr("Speaker test failed — speech engine unavailable.", "स्पीकर जाँच नहीं हुई — बोलने वाला इंजन नहीं है।")
+                    Log.i("ArogyaDemo", "AROGYA_SETUP voice_check tts=$rc")
+                }) { Text(tr("Test speaker", "स्पीकर जाँचें")) }
+            }
+            if (micResult.isNotBlank()) Text(micResult, style = MaterialTheme.typography.bodySmall)
+            if (ttsResult.isNotBlank()) Text(ttsResult, style = MaterialTheme.typography.bodySmall)
+            if (ttsOk == false) Text(tr("Reading aloud needs an Android voice on the phone.", "बोलकर सुनाने के लिए फ़ोन में Android आवाज़ चाहिए।"),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(tr("Without the microphone, typing still works.", "माइक न हो तब भी टाइप करके काम चलता है।"),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
 
 private val SetupGreen = Color(0xFF1B8E3E)
 
@@ -168,6 +291,12 @@ private fun ModelsPage(hindi: Boolean, installed: Boolean, onChanged: () -> Unit
     var installing by remember { mutableStateOf(false) }
     var installMsg by remember { mutableStateOf("") }
     var installPct by remember { mutableStateOf(0) }
+    var autoInstalledId by remember { mutableStateOf(-1L) }
+    var notice by remember { mutableStateOf("") }
+    // Fresh values for the download-following loop below (LaunchedEffect(Unit) would hold stale ones).
+    val installingNow by rememberUpdatedState(installing)
+    val installedNow by rememberUpdatedState(installed)
+    val wifiOnlyNow by rememberUpdatedState(wifiOnly)
     var error by remember { mutableStateOf("") }
     val free = remember { (context.getExternalFilesDir(null) ?: context.filesDir).usableSpace }
     fun install(uri: Uri, fromDownload: Boolean) {
@@ -175,6 +304,33 @@ private fun ModelsPage(hindi: Boolean, installed: Boolean, onChanged: () -> Unit
         installing = true; error = ""; installMsg = tr("Installing the models…", "मॉडल इंस्टॉल हो रहे हैं…")
         scope.launch {
             try {
+                if (fromDownload) {
+                    val bytes = withContext(Dispatchers.IO) { ArogyaSetupDownload.file(context, name).length() }
+                    Log.i("ArogyaDemo", "AROGYA_SETUP_DOWNLOAD complete name=$name bytes=$bytes")
+                    if (!ArogyaSetupPlan.downloadComplete(bytes)) {
+                        error = tr("The download looks incomplete, so it was not installed. Start the download again.",
+                            "डाउनलोड अधूरा लगता है, इसलिए इंस्टॉल नहीं किया। डाउनलोड फिर से शुरू करें।")
+                        Log.w("ArogyaDemo", "AROGYA_SETUP_DOWNLOAD incomplete name=$name bytes=$bytes expected=${ArogyaSetupPlan.MODELS_BYTES}")
+                        return@launch
+                    }
+                }
+                // Verify the archive before extraction: an HTML error page must never be treated as a zip.
+                val head: ByteArray? = withContext(Dispatchers.IO) {
+                    runCatching {
+                        if (fromDownload) ArogyaSetupDownload.file(context, name).inputStream().use { headBytes(it) }
+                        else context.contentResolver.openInputStream(uri)?.use { headBytes(it) }
+                    }.getOrNull()
+                }
+                if (head == null || !ArogyaSetupPlan.zipMagicOk(head)) {
+                    val html = head != null && ArogyaSetupPlan.looksLikeHtml(head)
+                    Log.w("ArogyaDemo", "AROGYA_SETUP_DOWNLOAD not_a_zip name=$name html=$html")
+                    if (fromDownload) { ArogyaSetupDownload.finish(context, name); dl = null }
+                    error = if (html) tr("The download was an error page, not the models zip. Start the download again.",
+                        "डाउनलोड मॉडल zip नहीं, एक error पेज था। डाउनलोड फिर से शुरू करें।")
+                    else tr("This file is not a valid models zip, so it was not installed.",
+                        "यह फ़ाइल सही मॉडल zip नहीं है, इसलिए इंस्टॉल नहीं की।")
+                    return@launch
+                }
                 val report = ModelFileManager(context.applicationContext).installOneZipFromUri(uri) { msg, pct -> installMsg = msg; installPct = pct }
                 val ok = withContext(Dispatchers.IO) { ArogyaSetup.llamaInstalled(context) }
                 Log.i("ArogyaDemo", "AROGYA_SETUP models_install ok=$ok ready=${report.successCount}/${report.totalCount}")
@@ -191,12 +347,30 @@ private fun ModelsPage(hindi: Boolean, installed: Boolean, onChanged: () -> Unit
         while (true) {
             val s = withContext(Dispatchers.IO) { ArogyaSetupDownload.query(context, name) }
             dl = s
+            if (s != null && s.running && ArogyaSetupDownload.source(context, name) == 0) notice = ""
             if (s != null) {
                 val now = System.currentTimeMillis()
                 if (lastBytes >= 0 && now > lastT && s.done >= lastBytes) speed = ((s.done - lastBytes) * 1000 / (now - lastT)).let { if (speed == 0L) it else (speed * 3 + it) / 4 }
                 lastBytes = s.done; lastT = now
-                if (s.ok && !installing && !installed) install(Uri.fromFile(ArogyaSetupDownload.file(context, name)), true)
-                if (s.failed) error = tr("Download failed: ", "डाउनलोड नहीं हुआ: ") + s.reason
+                if (s.ok && !installingNow && !installedNow) {
+                    // One auto-install per finished download (content link first, like the guide page):
+                    // without the id guard a failed install would re-stream the 3 GB zip every 800 ms.
+                    val id = ArogyaSetupDownload.savedId(context, name)
+                    if (id != autoInstalledId) { autoInstalledId = id; install(ArogyaSetupDownload.contentUri(context, name) ?: Uri.fromFile(ArogyaSetupDownload.file(context, name)), true) }
+                }
+                if (s.failed && !installingNow && !installedNow) {
+                    if (ArogyaSetupDownload.source(context, name) == 0) {
+                        // Primary (Cloudflare) failed: try the Hugging Face standby automatically, once.
+                        notice = tr("The main link failed — trying the standby link…", "मुख्य लिंक नहीं चला — दूसरा लिंक आज़मा रहे हैं…")
+                        Log.i("ArogyaDemo", "AROGYA_SETUP_DOWNLOAD primary failed (${s.reason}); trying fallback")
+                        runCatching { ArogyaSetupDownload.start(context, ArogyaSetupPlan.MODELS_URL_FALLBACK, name, tr("Pramaan — offline AI models", "Pramaan — ऑफ़लाइन AI मॉडल"), wifiOnlyNow) }
+                            .onFailure { error = tr("Standby download could not start: ", "दूसरा डाउनलोड शुरू नहीं हुआ: ") + (it.message ?: "") }
+                    } else {
+                        notice = ""
+                        error = tr("Both download links failed: ", "दोनों लिंक से डाउनलोड नहीं हुआ: ") + s.reason +
+                            tr(". Check the connection and try again, or choose the file below if you already have it.", "। कनेक्शन जाँचकर फिर कोशिश करें, या फ़ाइल पहले से हो तो नीचे से चुनें।")
+                    }
+                }
             }
             delay(800)
         }
@@ -209,7 +383,11 @@ private fun ModelsPage(hindi: Boolean, installed: Boolean, onChanged: () -> Unit
         Text(tr("Meta Llama 3.2 3B and the other Meta models, so the phone can answer, read photos and fill forms with no internet.",
             "Meta Llama 3.2 3B और दूसरे Meta मॉडल, ताकि फ़ोन बिना इंटरनेट जवाब दे, फ़ोटो पढ़े और फ़ॉर्म भरे।"), textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
     }
-    if (installed) { DoneBadge(tr("Done — offline AI models are installed", "हो गया — ऑफ़लाइन AI मॉडल इंस्टॉल हैं")); return }
+    if (installed) {
+        DoneBadge(tr("Done — offline AI models are installed", "हो गया — ऑफ़लाइन AI मॉडल इंस्टॉल हैं"))
+        VoiceCheckCard(hindi)
+        return
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row { Text(tr("Download size", "डाउनलोड"), Modifier.weight(1f)); Text(ArogyaSetupPlan.gb(ArogyaSetupPlan.MODELS_BYTES), fontWeight = FontWeight.Bold) }
@@ -242,12 +420,13 @@ private fun ModelsPage(hindi: Boolean, installed: Boolean, onChanged: () -> Unit
                     }
                     Button(onClick = {
                         error = ""
-                        runCatching { ArogyaSetupDownload.start(context, ArogyaSetupPlan.MODELS_URL, ArogyaSetupPlan.MODELS_FILE, tr("Pramaan — offline AI models", "Pramaan — ऑफ़लाइन AI मॉडल"), wifiOnly) }
+                        runCatching { ArogyaSetupDownload.start(context, ArogyaSetupPlan.MODELS_URL_PRIMARY, ArogyaSetupPlan.MODELS_FILE, tr("Pramaan — offline AI models", "Pramaan — ऑफ़लाइन AI मॉडल"), wifiOnly) }
                             .onFailure { error = tr("Could not start the download: ", "डाउनलोड शुरू नहीं हुआ: ") + it.message }
                         speed = 0
                     }, enabled = enough, modifier = Modifier.fillMaxWidth()) { Text(tr("⬇ Download and install", "⬇ डाउनलोड और इंस्टॉल करें")) }
                 }
             }
+            if (notice.isNotBlank()) Text(notice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
             if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
     }

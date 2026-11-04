@@ -23,7 +23,7 @@ downloads the on-phone Meta models from Hugging Face and installs them; nothing 
 ## 2. Downloaded by the setup wizard (Hugging Face)
 | Download | Size | What it contains | Licence |
 |---|---|---|---|
-| [`Pramaan_Meta_Models.zip`](https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models) | 3.26 GB | The on-phone Meta models: **Llama 3.2 3B Instruct** (GGUF, Q4_K_M) for answers, form filling and explanations via llama.cpp, and the offline vision models | [Llama 3.2 Community License](https://www.llama.com/llama3_2/license/) — Built with Llama; each other model keeps its own licence |
+| [`Pramaan_Meta_Models.zip` (primary)](https://pub-c8d63c87f3ff45c6919a4bdeb91cb247.r2.dev/Pramaan_Meta_Models.zip), [standby](https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models/resolve/main/Pramaan_Meta_Models.zip?download=true) | 3.26 GB | The on-phone Meta models: **Llama 3.2 3B Instruct** (GGUF, Q4_K_M) for answers, form filling and explanations via llama.cpp, and the offline vision models | [Llama 3.2 Community License](https://www.llama.com/llama3_2/license/) — Built with Llama; each other model keeps its own licence |
 | [`ASHA_Health_Guide_v2.db`](https://huggingface.co/datasets/EktaSikka/Pramaan_Knowledge_Base) | 24.5 MB | The same guide database as in the APK — downloaded only if the bundled copy fails to install | Built from official Government of India documents |
 
 How it works (`ArogyaSetupUi.kt`, `ArogyaSetupDownload.kt`, `ArogyaSetupPlan.kt`): Android's DownloadManager fetches the

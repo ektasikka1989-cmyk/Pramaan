@@ -130,11 +130,14 @@ class MetaModelStore(private val modelsDir: File) {
             return InstallReport(status(), logs, "Not enough free space: need about $need MB, have ${freeBytes / 1_048_576} MB")
         }
         var written = 0L
+        var entries = 0
+        Log.i(TAG, "META_ZIP_OPENED bytes=$zipBytes freeMb=${freeBytes / 1_048_576}")
         try {
             ZipInputStream(input.buffered(1 shl 20)).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
                     if (!entry.isDirectory) {
+                        entries++
                         val entryPath = entry.name.replace('\\', '/')
                         val base = entryPath.substringAfterLast('/')
                         val c = classify(base, entryPath)
@@ -205,6 +208,12 @@ class MetaModelStore(private val modelsDir: File) {
             runCatching { File(metaDir, "last_install.txt").writeText((logs + "✗ $why").joinToString("\n")) }
             return InstallReport(status(), logs, why)
         }
+        if (entries == 0) {
+            // An HTML error page saved as ".zip" yields zero entries: never treat it as a valid archive.
+            Log.e(TAG, "META_ZIP_EMPTY no entries — not a valid models zip")
+            return InstallReport(status(), logs, "The file is not a valid models zip (0 entries). An error page may have been saved instead of the zip — download again or pick the correct file.")
+        }
+        Log.i(TAG, "META_ZIP_DONE entries=$entries writtenMb=${written / 1_048_576}")
         onProgress("Done", 100)
         runCatching { File(metaDir, "last_install.txt").writeText(logs.joinToString("\n")) }
         return InstallReport(status(), logs)

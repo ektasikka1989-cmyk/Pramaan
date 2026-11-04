@@ -22,6 +22,9 @@ object ArogyaSetupDownload {
     private fun dm(c: Context) = c.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     fun file(c: Context, name: String): File = File(c.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: c.filesDir, name)
     fun savedId(c: Context, name: String): Long = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("dl_$name", -1L)
+    /** Which model source the remembered download uses: 0 = primary (Cloudflare), 1 = fallback (Hugging Face). */
+    fun source(c: Context, name: String): Int = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt("src_$name", 0)
+    fun setSource(c: Context, name: String, src: Int) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt("src_$name", src).apply()
     private fun saveId(c: Context, name: String, id: Long) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong("dl_$name", id).apply()
 
     /** Starts (or restarts) a download; returns its id. */
@@ -37,6 +40,8 @@ object ArogyaSetupDownload {
             .setAllowedOverRoaming(false)
         val id = dm(c).enqueue(req)
         saveId(c, name, id)
+        if (url == ArogyaSetupPlan.MODELS_URL_PRIMARY) setSource(c, name, 0)
+        else if (url == ArogyaSetupPlan.MODELS_URL_FALLBACK) setSource(c, name, 1)
         Log.i(TAG, "AROGYA_SETUP_DOWNLOAD start name=$name wifiOnly=$wifiOnly id=$id")
         return id
     }

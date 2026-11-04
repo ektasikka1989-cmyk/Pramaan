@@ -2,13 +2,16 @@ package com.example.arfas
 
 /**
  * The first-run setup wizard's plan and words (pure Kotlin, host-tested):
- *  1. Offline AI models — the Meta models zip from Hugging Face (or a zip the ASHA already has),
+ *  1. Offline AI models — the Meta models zip (Cloudflare first, Hugging Face standby, or a zip the ASHA already has),
  *  2. Health guides — the guide bundled in the APK; downloaded only if that install fails,
  *  3. Meta API key — optional; "Create a free key" opens Meta's developer page.
  * Every step can be skipped; [summary] says honestly what works with what is installed.
  */
 object ArogyaSetupPlan {
-    const val MODELS_URL = "https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models/resolve/main/Pramaan_Meta_Models.zip"
+    const val MODELS_URL_PRIMARY = "https://pub-c8d63c87f3ff45c6919a4bdeb91cb247.r2.dev/Pramaan_Meta_Models.zip"
+    const val MODELS_URL_FALLBACK = "https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models/resolve/main/Pramaan_Meta_Models.zip?download=true"
+    /** Back-compat alias: the primary (Cloudflare) link. */
+    const val MODELS_URL = MODELS_URL_PRIMARY
     const val MODELS_FILE = "Pramaan_Meta_Models.zip"
     const val MODELS_BYTES = 3_260_000_000L
     const val GUIDE_URL = "https://huggingface.co/datasets/EktaSikka/Pramaan_Knowledge_Base/resolve/main/ASHA_Health_Guide_v2.db"
@@ -18,6 +21,33 @@ object ArogyaSetupPlan {
 
     /** Free space needed before the models download: the zip, the installed models, and a margin. */
     const val MODELS_FREE_NEEDED = MODELS_BYTES * 2 + 300_000_000L
+
+    /** The Hugging Face models download is complete when the file reached the published size
+     *  (the real file is slightly larger; anything smaller is a truncated download). Pure, host-tested. */
+    fun downloadComplete(size: Long): Boolean = size >= MODELS_BYTES
+
+    /** First bytes of a real zip: PK\x03\x04 (entries), PK\x05\x06 (empty), PK\x07\x08 (spanned). Pure, host-tested. */
+    fun zipMagicOk(head: ByteArray): Boolean {
+        if (head.size < 4) return false
+        if (head[0] != 0x50.toByte() || head[1] != 0x4B.toByte()) return false
+        return (head[2] == 0x03.toByte() && head[3] == 0x04.toByte()) ||
+            (head[2] == 0x05.toByte() && head[3] == 0x06.toByte()) ||
+            (head[2] == 0x07.toByte() && head[3] == 0x08.toByte())
+    }
+
+    /** True when the first bytes look like an HTML error page (after BOM/whitespace). Pure, host-tested. */
+    fun looksLikeHtml(head: ByteArray): Boolean {
+        var i = 0
+        if (head.size >= 3 && head[0] == 0xEF.toByte() && head[1] == 0xBB.toByte() && head[2] == 0xBF.toByte()) i = 3
+        while (i < head.size) {
+            val b = head[i]
+            if (b == 0x20.toByte() || b == 0x0A.toByte() || b == 0x0D.toByte() || b == 0x09.toByte()) i++ else break
+        }
+        if (i >= head.size || head[i] != 0x3C.toByte()) return false // '<'
+        val tag = String(head, i, minOf(head.size - i, 16), Charsets.US_ASCII).lowercase(java.util.Locale.US)
+        return tag.startsWith("<!doctype") || tag.startsWith("<html") || tag.startsWith("<head") ||
+            tag.startsWith("<body") || tag.startsWith("<title") || tag.startsWith("<h1") || tag.startsWith("<p>")
+    }
 
     enum class Step { MODELS, GUIDE, KEY }
 

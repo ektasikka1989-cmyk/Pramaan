@@ -41,7 +41,8 @@ object ArogyaSetup {
         return File(c.filesDir, "models").listFiles()?.any { it.isFile && it.name.startsWith("LLAMA3B_", true) && it.name.endsWith(".gguf", true) } == true
     }
 
-    private fun whisperInstalled(c: Context): Boolean {
+    /** Offline speech-to-text is usable when Whisper model files are on the phone (or bundled). */
+    fun whisperInstalled(c: Context): Boolean {
         if (File(c.filesDir, "whisper").listFiles()?.any { it.isFile && it.length() > 0 } == true) return true
         return runCatching { c.assets.open("voice/stt/whisper/model.bin").close(); true }.getOrDefault(false)
     }
