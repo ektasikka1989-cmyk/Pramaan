@@ -25,7 +25,9 @@ object MetaOnline {
         api ?: run {
             val app = context.applicationContext
             MetaModelApi(
-                apiKey = { runCatching { GroqKeyStore(app).getKey() }.getOrDefault("") },
+                // Always the saved Meta key: getKey() returned the key of the engine selected in Settings, so with Groq
+                // selected (or a Groq key also saved) every Meta call (photo reading, SAM, voice) saw "no Meta key".
+                apiKey = { runCatching { GroqKeyStore(app).metaKey() }.getOrDefault("") },
                 gate = PrivacyGate(File(app.filesDir, "meta_egress.log"))
             ).also { api = it }
         }

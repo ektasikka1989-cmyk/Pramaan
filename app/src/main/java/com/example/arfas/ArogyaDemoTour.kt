@@ -220,6 +220,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
     var personEngine by remember { mutableStateOf("") }
     // The photo just read, kept so the ASHA can have it read again online when the phone's reading was incomplete.
     var personFields by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var personOcr by remember { mutableStateOf("") }
     var personPhoto by remember { mutableStateOf<Pair<Bitmap, List<ArogyaTableOcr.Line>>?>(null) }
     var medPhoto by remember { mutableStateOf<Bitmap?>(null) }
     var onlineBusy by remember { mutableStateOf(false) }
@@ -577,9 +578,9 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
         scope.launch {
             onlineBusy = true; onlineNote = ""
             try {
-                if (!withContext(Dispatchers.IO) { MetaOnline.ready(context) }) {
-                    onlineNote = tr("No internet or no Meta key. Connect, then press again.", "इंटरनेट या Meta key नहीं। जोड़कर फिर दबाएँ।"); return@launch
-                }
+                val (net, key) = withContext(Dispatchers.IO) { MetaOnline.hasInternet(context) to MetaOnline.api(context).isConfigured }
+                if (!net || !key) { onlineNote = if (!net) tr("No internet on the phone. Connect to Wi-Fi or mobile data, then press again.", "फ़ोन पर इंटरनेट नहीं। Wi-Fi या मोबाइल डेटा जोड़कर फिर दबाएँ।")
+                    else tr("No Meta key saved. Add it in ✨ AI → Cloud settings (a Meta key, not a Groq gsk_ key), then press again.", "Meta key सेव नहीं। ✨ AI → Cloud सेटिंग में Meta key डालें (Groq gsk_ नहीं), फिर दबाएँ।"); return@launch }
                 val t = System.currentTimeMillis()
                 when (kind) {
                     "person" -> {
@@ -698,6 +699,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                             tr("Aadhaar number read on the phone — saved encrypted, shown masked.", "आधार नंबर फ़ोन पर पढ़ा — सुरक्षित सेव, छिपाकर दिखाया।").takeIf { !fields["aadhaar"].isNullOrBlank() }).joinToString(" ")
                         personPreview = ArogyaPersonCsv.toBeneficiary(fields); personEngine = eng
                         personFields = fields; personPhoto = bmp to lines; onlineNote = ""
+                        personOcr = ArogyaTableOcr.rowText(lines).ifBlank { ocr }
                         Log.i("ArogyaDemo", "AROGYA_DEMO_PERSON engine=\"$eng\" fields=${fields.keys.joinToString(",")}")
                         personAgreed = false; personSaved = false; personDue = ""
                         ticks += ArogyaAiTick("add person from photo", "फ़ोटो से नया व्यक्ति",
@@ -1052,7 +1054,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         opens = opensBy[scenes.getOrNull(scene)?.id.orEmpty()].orEmpty(), onOpen = { openDoc(it) }, formNote = formNote, personEngine = personEngine,
                         sopQ = ArogyaDemoScript.question(wf, demoHindi), sopF = ArogyaDemoScript.followUp(wf, demoHindi),
                         onConfirmSave = { formConfirmed = true; replay() }, onEditPerson = { personPreview = it },
-                        personFields = personFields, onlineBusy = onlineBusy, onlineNote = onlineNote, onReadOnline = { readOnline(it) })
+                        personFields = personFields, personOcr = personOcr, onlineBusy = onlineBusy, onlineNote = onlineNote, onReadOnline = { readOnline(it) })
                     }
                     val listState = rememberLazyListState()
                     LaunchedEffect(caption, scene) { if (caption in lines().indices) listState.animateScrollToItem(caption) }
@@ -1178,7 +1180,7 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
     updates: List<String> = emptyList(), stockDelta: List<String> = emptyList(), refillText: String = "",
     opens: List<Pair<String, String>> = emptyList(), onOpen: (String) -> Unit = {}, formNote: String = "", personEngine: String = "",
     sopQ: String = "", sopF: String = "", onConfirmSave: () -> Unit = {}, onEditPerson: (Beneficiary) -> Unit = {},
-    personFields: Map<String, String> = emptyMap(), onlineBusy: Boolean = false, onlineNote: String = "", onReadOnline: (String) -> Unit = {}) {
+    personFields: Map<String, String> = emptyMap(), personOcr: String = "", onlineBusy: Boolean = false, onlineNote: String = "", onReadOnline: (String) -> Unit = {}) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // "Updated": real changes this save made, shown on the save screen.
         if (sceneId == "saved" && !saved) DemoCard(tr("Confirm before saving", "सेव से पहले पक्का करें")) {
@@ -1260,6 +1262,12 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                         tr("House", "मकान") to p.household, tr("Village", "गाँव") to p.village, "LMP" to p.lmp).filter { it.second.isBlank() }.map { it.first }
                     if (missing.isNotEmpty() && !personSaved) Text(tr("Not read from the photo: ", "फ़ोटो से नहीं पढ़ा: ") + missing.joinToString(", ") + tr(" — type them above if you have them.", " — हों तो ऊपर लिखें।"),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    // The evidence: the text the phone's reader saw, row by row (tap to show). The details above come from it.
+                    if (personOcr.isNotBlank()) {
+                        var showOcr by remember { mutableStateOf(false) }
+                        TextButton(onClick = { showOcr = !showOcr }) { Text(if (showOcr) tr("Hide the text the phone read", "फ़ोन ने जो पढ़ा, छिपाएँ") else tr("📄 Show the text the phone read", "📄 फ़ोन ने जो पढ़ा, दिखाएँ")) }
+                        if (showOcr) Text(personOcr.take(1200), style = MaterialTheme.typography.labelSmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                    }
                     // A value read but doubtful (OCR dropped a digit): shown, never silently fixed or dropped.
                     val phoneDigits = p.phone.count { it.isDigit() }
                     val phoneDoubt = p.phone.isNotBlank() && phoneDigits != 10 && !p.phone.startsWith("+")
