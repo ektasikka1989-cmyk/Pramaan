@@ -124,7 +124,7 @@ Rows (method, counsel, condoms, ocp, napkins, ecp, ptk) are the app's entry form
 
 ## 5. MCP sections — verified against MCP Card Guidebook (MoHFW/MoWCD 2020)
 
-Source PDFs: `_claude_work/sources/MCP_Card_Guidebook_MoHFW_MoWCD_2020.pdf` (= `MCP_Card_2018.pdf`);
+Source PDFs: `_work/sources/MCP_Card_Guidebook_MoHFW_MoWCD_2020.pdf` (= `MCP_Card_2018.pdf`);
 field transcription in `docs/forms/MCP_CARD_SPEC.md`. Page numbers below are MCP card pages;
 Guidebook printed pages in brackets.
 

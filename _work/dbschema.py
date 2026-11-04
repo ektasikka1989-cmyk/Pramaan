@@ -1,5 +1,5 @@
 import sqlite3
-c = sqlite3.connect(r'C:\Pramaan - Copy\_claude_work\run\ASHA_Health_Guide_v2.db')
+c = sqlite3.connect(r'C:\Pramaan - Copy\_work\run\ASHA_Health_Guide_v2.db')
 for t in ('knowledge_sources', 'procurement_chunks'):
     print('=== ' + t + ' ===')
     row = c.execute("SELECT sql FROM sqlite_master WHERE name=?", (t,)).fetchone()

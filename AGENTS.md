@@ -40,10 +40,10 @@ It is entered in the Meta Global AI Developer Hackathon (deadline 5 Nov 2026, 6:
    `ArogyaOnlinePolicy.scrub`).
 
 ## Build / run / test (Windows)
-- Build, install on the phone and push the guide DB: `_claude_work\run\build_install.bat`. It writes
+- Build, install on the phone and push the guide DB: `_work\run\build_install.bat`. It writes
   `build_log.txt`; check for `BUILD SUCCESSFUL`, `INSTALL=OK` and `KB_PUSH=OK`.
 - Equivalent command: `gradlew.bat :app:assembleDebug` then `adb install -r app\build\outputs\apk\debug\app-debug.apk`.
-- Device logs: `_claude_work\run\logs.bat` writes `app_log.txt`. Markers: `AROGYA_ROUTE`, `AROGYA_FORM_FILL`,
+- Device logs: `_work\run\logs.bat` writes `app_log.txt`. Markers: `AROGYA_ROUTE`, `AROGYA_FORM_FILL`,
   `AROGYA_FORM_SAVED`, `AROGYA_VOICE_CLOUD`, `AROGYA_SAM_COUNT`, `AROGYA_CLOUD_TEST`.
 - Pure-logic tests: `tools/host-tests/` (see its README). Run them after changing any `Arogya*` logic file.
 - A build takes 5–10 minutes. Don't delete `build/`, `app/.cxx/` or `.kotlin/` before submission (native rebuild is slow).
@@ -57,4 +57,4 @@ It is entered in the Meta Global AI Developer Hackathon (deadline 5 Nov 2026, 6:
   - `ArogyaVisitAi.kt` — AI engine and routing.
   - `ArogyaCloud*.kt` — cloud settings, keys, SAM count.
   - `ArogyaModelClient.kt` — Muse Spark and Glimmer endpoints.
-- Guide DB: `_claude_work/run/ASHA_Health_Guide.db`; on the phone it is `/sdcard/Download/ASHA_Health_Guide.db`.
+- Guide DB: `_work/run/ASHA_Health_Guide.db`; on the phone it is `/sdcard/Download/ASHA_Health_Guide.db`.

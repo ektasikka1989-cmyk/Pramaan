@@ -48,7 +48,7 @@ What is solid (checked, no gap found):
 ### 1. Uncompiled screen code (P0)
 DUI2 (`ArogyaDemoTour.kt`, ~370 changed lines) and the DUI4 fixes have never gone through Gradle. I read
 them against every function and class they use and found no errors, but Compose errors only show up in a
-real build. **Do:** `_claude_work\run\build_install.bat`, check for `BUILD SUCCESSFUL` / `INSTALL=OK` /
+real build. **Do:** `_work\run\build_install.bat`, check for `BUILD SUCCESSFUL` / `INSTALL=OK` /
 `KB_PUSH=OK`, then run the whole demo once in English and once in Hindi.
 
 ### 2. No README (P0)
@@ -110,8 +110,8 @@ Do at least the demo path end to end and the Ask screen (Stop, Open PDF, citatio
 results in the report.
 
 ### 10. Untracked source documents (P1)
-On the owner's PC these are untracked: `docs/forms/`, `docs/verified_qa/`, `CLAUDE.md`,
-`docs/CLAUDE_CODE_HANDOFF.md`, `docs/MUSE_CODE_PROMPT_*.md`, `_claude_work/sources/`. HANDOVER §5 says the
+On the owner's PC these are untracked: `docs/forms/`, `docs/verified_qa/`, the internal working notes,
+`docs/MUSE_CODE_PROMPT_*.md`, `_work/sources/`. HANDOVER §5 says the
 official formats follow the source documents, so commit `docs/forms/` and `docs/verified_qa/` as
 evidence (if the licence allows; government PDFs usually do). Don't commit `tools/host-tests/out-some/`
 (build output); add it to `.gitignore`.

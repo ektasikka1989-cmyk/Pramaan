@@ -19,10 +19,10 @@ local.properties
 *.logcat
 *.zip
 # local build helper output (scripts are kept; databases, logs and pulls are not)
-/_claude_work/run/*.txt
-/_claude_work/run/*.png
-/_claude_work/run/*.xml
-/_claude_work/tmp/
+/_work/run/*.txt
+/_work/run/*.png
+/_work/run/*.xml
+/_work/tmp/
 *.db
 *.db-journal
 *.db-wal
@@ -64,9 +64,7 @@ demo_photos/
 *.patch
 
 # internal working notes stay on the developer's PC (never published)
-/CLAUDE.md
-/docs/CLAUDE_CODE_HANDOFF.md
 /docs/MUSE_CODE_PROMPT_*.md
 /docs/MUSE_META_FIRST_CUT.md
-/_claude_work/github/
-/_claude_work/sources/
+/_work/github/
+/_work/sources/

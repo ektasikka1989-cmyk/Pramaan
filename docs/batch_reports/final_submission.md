@@ -379,7 +379,7 @@ Audit method: searched Arogya*.kt, PocketRag*.kt, GenericKb*.kt, KnowledgeSource
 - Fixed: Home's Offline | Online switch stayed stale after the demo flipped Phone | Cloud (it caches the setting until `modeTick` changes). Closing the demo (or a deep link out of it) now bumps `modeTick`. File: ArogyaVisitScreen.kt.
 - Fixed: when the MCP card's cells could not be paired with the card at Start, `demoMark` returned 0, so the scene said "No field changed yet — run the voice note…", which was untrue. It now returns -1: the scene shows no change line, and the legend leaves out the "Yellow = changed today" part. File: ArogyaDocRender.kt; DocRenderTest updated.
 - Tests (Linux host, kotlinc 2.0.21): all 47 suites pass except GoldMatchTest, which needs `app/src/main/assets/verified_answers.json`. That file is gitignored, so it is not in this checkout. It is not a code failure, but a clean clone will build without the gold answers.
-- Still to do on Windows: `_claude_work\run\build_install.bat` (the DUI2 + DUI4 Compose code is not compiled yet), then the manual checks listed under DUI2.
+- Still to do on Windows: `_work\run\build_install.bat` (the DUI2 + DUI4 Compose code is not compiled yet), then the manual checks listed under DUI2.
 
 ### DUI5. Photo features fixed, MCP card linked to HBNC, 3-workflow demo (BUILD PENDING)
 Root causes (found in the code; to confirm on the phone with `logs.bat`):

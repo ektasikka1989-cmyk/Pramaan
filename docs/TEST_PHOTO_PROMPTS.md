@@ -163,5 +163,5 @@ Expected: the fields it can read are filled; the rest are listed under **"Not re
 
 ## What to send me after testing
 For each photo: the screen it was used on, what the app showed (a screenshot), and `app_log.txt` from
-`_claude_work\run\logs.bat`. The lines `AROGYA_PERSON_READ`, `AROGYA_REGISTER_ROWS`, `AROGYA_CARD_TEXT`, `AROGYA_MEDSCAN` and `AROGYA_SAM_COUNT`
+`_work\run\logs.bat`. The lines `AROGYA_PERSON_READ`, `AROGYA_REGISTER_ROWS`, `AROGYA_CARD_TEXT`, `AROGYA_MEDSCAN` and `AROGYA_SAM_COUNT`
 show exactly what the phone read.

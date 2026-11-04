@@ -120,7 +120,7 @@ def cloud_answer(key, model, evidence, ref_notes, question, timeout=90):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--db', default='_claude_work/run/ASHA_Health_Guide_v2.db')
+    ap.add_argument('--db', default='_work/run/ASHA_Health_Guide_v2.db')
     ap.add_argument('--asset', default='app/src/main/assets/verified_answers.json')
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--hi-cloud', type=int, default=20)

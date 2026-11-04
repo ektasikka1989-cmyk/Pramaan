@@ -175,10 +175,10 @@ HBYC weight row are app summaries, labelled as such; the other forms are row-for
 
 - **Project:** `C:\Pramaan - Copy`. The build needs the Android SDK/NDK (NDK 26.1.10909125) and the
   Android Studio JDK.
-- **Build + install + push guide:** run `_claude_work\run\build_install.bat` (double-click). It runs
+- **Build + install + push guide:** run `_work\run\build_install.bat` (double-click). It runs
   `gradlew :app:assembleDebug`, installs over ADB and pushes `ASHA_Health_Guide.db` to the phone. It writes
   `build_log.txt`; look for `BUILD SUCCESSFUL`, `INSTALL=OK` and `KB_PUSH=OK`.
-- **Logs:** run `_claude_work\run\logs.bat`. It writes `app_log.txt` with the app's tags (ArogyaDemo,
+- **Logs:** run `_work\run\logs.bat`. It writes `app_log.txt` with the app's tags (ArogyaDemo,
   ArogyaRegistry, MetaModelApi, MetaOnline, PocketRag…).
 - **Useful log markers:** `AROGYA_ROUTE`, `AROGYA_FORM_FILL`, `AROGYA_FORM_SAVED`, `AROGYA_VOICE_CLOUD`,
   `AROGYA_SAM_COUNT`, `AROGYA_CLOUD_TEST`, `AROGYA_CLOUD_TIMEOUT`, `AROGYA_FINISH_EXTRACT`.

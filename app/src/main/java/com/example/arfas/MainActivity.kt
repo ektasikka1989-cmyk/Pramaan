@@ -1150,7 +1150,7 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // ChatGPT-style first-turn UX: the composer is available immediately.
+        // Chat-style first-turn UX: the composer is available immediately.
         // Start the normal foreground-service session, then submit the already typed
         // first turn as soon as the controller reports that the session is active.
         startSession(false)

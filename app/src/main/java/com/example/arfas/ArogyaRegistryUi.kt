@@ -218,7 +218,7 @@ private fun ArogyaAiAdvancedDialog(hindi: Boolean, ai: ArogyaVisitAi, onDismiss:
                 benchScope.launch {
                     try {
                         ArogyaBenchmark.runAll(ai) { line -> benchLog = (benchLog + "\n" + line).takeLast(3000) }
-                        benchLog += "\nDone — pull logs with _claude_work\\run\\logs.bat"
+                        benchLog += "\nDone — pull logs with _work\\run\\logs.bat"
                     } catch (e: CancellationException) { benchLog += "\nCancelled" }
                     finally { benchBusy = false }
                 }
@@ -250,7 +250,7 @@ private fun ArogyaAiAdvancedDialog(hindi: Boolean, ai: ArogyaVisitAi, onDismiss:
                 benchScope.launch {
                     try {
                         ArogyaBenchmark.runSpeedCheck(ai) { line -> spLog = (spLog + "\n" + line).takeLast(2000) }
-                        spLog += "\nDone — pull logs with _claude_work\\run\\logs.bat"
+                        spLog += "\nDone — pull logs with _work\\run\\logs.bat"
                     } catch (e: CancellationException) { spLog += "\nCancelled" }
                     finally { spBusy = false }
                 }

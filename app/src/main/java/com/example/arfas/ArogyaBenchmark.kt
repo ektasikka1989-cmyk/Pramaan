@@ -12,7 +12,7 @@ import kotlinx.coroutines.CancellationException
  * urgent alert; a fresh visit id per question keeps turns independent.
  */
 object ArogyaBenchmark {
-    private const val TAG = "ArogyaDemo" // captured by _claude_work/run/logs.bat
+    private const val TAG = "ArogyaDemo" // captured by _work/run/logs.bat
     data class Question(val id: Int, val lang: String, val text: String, val expected: String)
     data class Row(val id: Int, val provider: String, val ms: Long, val chars: Int, val sources: String, val safety: Boolean, val error: String, val firstWordsMs: Long = -1)
 

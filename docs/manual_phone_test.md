@@ -80,7 +80,7 @@ Targets: cloud ≤ 3 s to first word; offline ≤ 15 s to first word.
 
 ## G. How to read the logs if something fails
 
-1. On the laptop run `_claude_work\run\logs.bat` (writes `app_log.txt`, phone stays untouched).
+1. On the laptop run `_work\run\logs.bat` (writes `app_log.txt`, phone stays untouched).
 2. Search for these tags and send the matching lines back:
    - `AROGYA_BUDGET` — engine/feature/lang/tokens per generation; `capped=true` means the prompt hit the context window.
    - `AROGYA_GOLD match` — which verified item matched and its score (`strong` ≥ 0.80, `medium` 0.65–0.80).

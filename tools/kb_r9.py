@@ -55,8 +55,8 @@ def table_hash(c, table):
 
 
 def main():
-    src = sys.argv[1] if len(sys.argv) > 1 else '_claude_work/run/ASHA_Health_Guide.db'
-    dst = sys.argv[2] if len(sys.argv) > 2 else '_claude_work/run/ASHA_Health_Guide_v2.db'
+    src = sys.argv[1] if len(sys.argv) > 1 else '_work/run/ASHA_Health_Guide.db'
+    dst = sys.argv[2] if len(sys.argv) > 2 else '_work/run/ASHA_Health_Guide_v2.db'
     s = sqlite3.connect('file:%s?mode=ro' % src, uri=True)
     before = {t: table_hash(s, t) for t in ('procurement_chunks', 'arogya_chunk_review')}
     n_src = s.execute('SELECT COUNT(*) FROM knowledge_sources').fetchone()[0]

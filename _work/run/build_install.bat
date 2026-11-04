@@ -1,5 +1,5 @@
 @echo off
-rem Pramaan: build debug APK, check phone, install, push KB. Output -> _claude_work\build_log.txt
+rem Pramaan: build debug APK, check phone, install, push KB. Output -> _work\build_log.txt
 cd /d "%~dp0\..\.."
 set LOG=%~dp0build_log.txt
 echo START %date% %time% > "%LOG%"

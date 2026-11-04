@@ -103,7 +103,7 @@ Status: **PLAN FOR APPROVAL. No code changed.** Items refer to the owner's list 
 About 9 hours plus your build and phone test. Order: 2 → 3 → 1 → 6 → 4 → 5 → 7 → 8 (data correctness first, screens after).
 
 ## E. What I need from the phone
-Run `_claude_work\run\logs.bat` right after trying Workflow 1 and send `app_log.txt`. The lines that settle items 3–6:
+Run `_work\run\logs.bat` right after trying Workflow 1 and send `app_log.txt`. The lines that settle items 3–6:
 - `AROGYA_FORM_FILL form=mcp_anc col=0 … filled=X/63`: how many rows survived;
 - `AROGYA_DEMO_SAVED wf=1 …`: what was saved and the stock change;
 - `AROGYA_DEMO_STEP_FAILED`: any step that threw;

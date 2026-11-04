@@ -1,6 +1,6 @@
 # Gold-100 benchmark (laptop, 2026-11-03)
 
-DB: _claude_work/run/ASHA_Health_Guide_v2.db | items: 100 | key: absent
+DB: _work/run/ASHA_Health_Guide_v2.db | items: 100 | key: absent
 
 ## 1. Integrity (v2 DB)
 - sources: 293, resolved: 293 (by chunk_id col: 0, by row id: 293, by src+page+quote: 0, missing: 0)
