@@ -371,7 +371,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val hasAnswer = text.isNotBlank()
         val provider = when (turn.provider) {
             AndroBaselineRuntime.Provider.LOCAL -> "Pramaan • offline (${runtime.localModelManager?.loadedModelFileName?.substringBeforeLast('.') ?: "local model"})"
-            AndroBaselineRuntime.Provider.CLOUD -> "Muse Spark 1.3 (Meta) • online"
+            AndroBaselineRuntime.Provider.CLOUD -> runtime.cloudEngineLabel().let { if (it.contains("Muse")) "Muse Spark 1.3 (Meta) • online" else "$it • online" }
             else -> "Pramaan"
         }
         // Sources exactly as Pramaan presents them: document rows (title, pages, official link) and the

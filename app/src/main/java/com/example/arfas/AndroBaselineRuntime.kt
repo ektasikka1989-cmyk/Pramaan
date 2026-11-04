@@ -331,6 +331,9 @@ class AndroBaselineRuntime(
         get() = ((effectiveContextWindowTokens - RESERVED_OUTPUT_TOKENS - SYSTEM_PROMPT_TOKEN_ESTIMATE)
             * HISTORY_BUDGET_FRACTION).toInt().coerceAtLeast(512)
 
+    /** Pramaan: the cloud model the current key reaches ("Meta · Muse Spark" / "Groq · Qwen3.8 27B"), for honest answer labels. */
+    fun cloudEngineLabel(): String = groqProvider.engineLabel
+
     fun updateGroqApiKey(newKey: String) {
         groqProvider.cancelActiveCall()
         groqProvider = GroqChatProvider(newKey.trim())

@@ -47,7 +47,7 @@ class FixSightRuntimeGraph private constructor(context: Context) {
 
     val runtime = AndroBaselineRuntime(
         context = appContext,
-        apiKey = groqKeyStore.getKey().trim(),
+        apiKey = cloudKey().trim(),
         contextProviders = listOf(
             // Retained for Audio+Video only. AndroBaselineRuntime explicitly skips it
             // for Audio-only KB-OFF, so it cannot pre-route ordinary voice questions.
@@ -196,16 +196,22 @@ class FixSightRuntimeGraph private constructor(context: Context) {
             }
         }
 
+    /**
+     * Pramaan: the key for Ask SOP's cloud turn. The engine chosen in Settings first; when that engine has no key
+     * saved, the other saved key, so "Cloud first" never silently stays on the phone because of the engine switch.
+     */
+    private fun cloudKey(): String = groqKeyStore.getKey().ifBlank { groqKeyStore.metaKey().ifBlank { groqKeyStore.groqKey() } }
+
     fun updateGroqKey(key: String) {
         val clean = key.trim()
         if (clean.isBlank()) groqKeyStore.clearKey() else groqKeyStore.saveKey(clean)
-        runtime.updateGroqApiKey(groqKeyStore.getKey())
+        runtime.updateGroqApiKey(cloudKey())
     }
 
     /** Online AI engine switch (Settings): Groq · Qwen or Meta · Muse Spark, each with its own key. */
     fun setOnlineEngine(engine: GroqKeyStore.Engine) {
         groqKeyStore.setEngine(engine)
-        runtime.updateGroqApiKey(groqKeyStore.getKey())
+        runtime.updateGroqApiKey(cloudKey())
     }
 
     companion object {
