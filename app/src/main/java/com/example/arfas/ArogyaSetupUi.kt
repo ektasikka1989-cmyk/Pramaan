@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -17,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -133,7 +135,7 @@ private fun WelcomePage(hindi: Boolean) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     Spacer(Modifier.height(24.dp))
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        StepIcon("🩺")
+        Image(painterResource(R.drawable.pramaan_avatar), contentDescription = "Pramaan", modifier = Modifier.size(132.dp))
         Text("Pramaan", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(tr("Set up in 3 quick steps", "3 आसान कदमों में तैयार करें"), style = MaterialTheme.typography.titleMedium)
         Text(tr("Each step can be skipped. Registers, visit forms and danger checks work from the start, even with no internet.",

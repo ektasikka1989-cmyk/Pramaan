@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Teal sampled from the Pramaan icon artwork, so the adaptive icon has no visible edge. -->
+    <color name="pramaan_icon_background">#159EBD</color>
+</resources>

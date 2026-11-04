@@ -402,6 +402,8 @@ fun ArogyaWelcome(hindi: Boolean, onDone: () -> Unit) {
     var page by remember { mutableStateOf(0) }
     AlertDialog(onDismissRequest = {}, title = { Text(slides[page].first) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (page == 0) androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(R.drawable.pramaan_avatar), contentDescription = "Pramaan",
+                modifier = Modifier.size(96.dp).align(Alignment.CenterHorizontally))
             Text(slides[page].second)
             Text("${page + 1} / ${slides.size}", style = MaterialTheme.typography.labelMedium)
         }
