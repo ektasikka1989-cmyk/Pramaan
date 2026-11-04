@@ -13,11 +13,13 @@ Ask an official SOP. See the exact source and page. Turn a home visit into accou
   <img alt="Licence" src="https://img.shields.io/badge/code-MIT-lightgrey">
 </p>
 
+<p align="center"><strong>▶ <a href="https://www.youtube.com/shorts/ZJPV7phtfXA">Watch Pramaan in Action — 3-Minute Demo</a></strong></p>
+
 > **Hackathon prototype — fictional records only.** Pramaan supports trained frontline workers; it is not a diagnostic device, does not replace clinical judgment, and is not approved for live patient records. The demo people and records are synthetic.
 
 | Explore | Link or status |
 |---|---|
-| 🎬 **Three-minute demo** | **Coming soon — video in production** |
+| 🎬 **Three-minute demo** | [▶ Watch Pramaan in Action — 3-Minute Demo](https://www.youtube.com/shorts/ZJPV7phtfXA) |
 | 📱 **Android APK** | [GitHub Releases — download APK](https://github.com/ektasikka1989-cmyk/Pramaan/releases) (~700 MB) · [install and test](#try-the-prototype) |
 | 📚 **Models and setup** | [MODELS.md](MODELS.md) · **[Model pack, primary link](https://pub-c8d63c87f3ff45c6919a4bdeb91cb247.r2.dev/Pramaan_Meta_Models.zip)** · [Model pack, standby link](https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models/resolve/main/Pramaan_Meta_Models.zip?download=true) (approximately 3.3 GB) |
 | 🔒 **Data handling** | [PRIVACY.md](PRIVACY.md) — what is stored, what leaves the phone and when |
