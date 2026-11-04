@@ -867,6 +867,10 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         if (!cloudFirst && cloudReady && values.orEmpty().none { it.value.source == "ai" }) cloud()?.let { values = it }
         if (values == null) { label = "Fixed patterns only (no model)"; values = ArogyaOfficialForms.parse("", spec, column, text) }
         val ms = System.currentTimeMillis() - t
+        // Never silent: say how many rows came from the model and how many from the fixed rules.
+        val aiN = values!!.count { it.value.source == "ai" }; val ruleN = values!!.size - aiN
+        if (aiN == 0) msg = (msg + " The AI model gave no usable rows; $ruleN read from the note by fixed rules.").trim()
+        Log.i(TAG, "AROGYA_FORM_FILL_SPLIT form=${spec.id} ai=$aiN rules=$ruleN prompt_rows=${ArogyaOfficialForms.relevantFields(spec, column, text).size}")
         Log.i(TAG, "AROGYA_FORM_FILL form=${spec.id} col=$column policy=${if (cloudFirst) "cloud_first" else "local_first"} model=\"$label\" meta=$meta ms=$ms filled=${values!!.size}/${ArogyaOfficialForms.fieldsFor(spec, column).size}")
         values!! to ArogyaExtraction(emptyList(), label, meta, ms, msg)
     }

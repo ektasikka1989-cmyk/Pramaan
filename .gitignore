@@ -60,3 +60,4 @@ tools/host-tests/out/
 # host-test build output
 tools/host-tests/out-some/
 demo_photos/
+*.patch

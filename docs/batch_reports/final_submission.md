@@ -393,3 +393,22 @@ Root causes (found in the code; to confirm on the phone with `logs.bat`):
 - **Photos:** `tools/demo_samples/make_samples.py <out> <demo-date>` → W1 slip, W2 MCP card, W3 zinc strip, W3 ORS sachets, extra 8-person register page, extra IFA strip.
 - Tests (Linux host): 48/49 suites pass (GoldMatch needs the gitignored asset). New: TableOcrTest 9, HbncLinkTest 12, DemoTourTest 61 (workflows, aims, notes, medicines by rules). Updated for intended changes: FormSpecs, FormsVerify, DayCheck (linked entries counted apart; no PNC entry for a pregnant woman). Bracket balance checked on all changed files. **Compose code is not compiled yet.**
 - To check on the phone: each workflow end to end in EN; the camera path for medicine scan and add person (the photo must come back); the register page photo adds 8 people; Neha's card shows the 7th Day column + header; the stock before → after numbers.
+
+### DUI6. Demo v2: form fill never empty, danger by rules, 11/12/11 screens with Open buttons (BUILD PENDING)
+- **Root cause of the empty ANC form, card and records (owner items 4–6):** the ANC page at visit 1 has 63 rows. The phone model got a 3,700-character prompt and a 700-token reply budget, so its JSON was most likely cut off and nothing was kept (to confirm with `AROGYA_FORM_FILL … filled=X/63`). Fixes in `ArogyaFormSpecs`:
+  - `relevantFields` sends only the rows the note mentions (W1: about 10);
+  - `parse` rescues every complete `{"id","value","evidence"}` object from a cut-off reply;
+  - `ruleValues` adds a fixed-rule backup with evidence: weight (adult and baby), BP, Hb, weeks, IFA, calcium, ORS, zinc, temperature (baby/mother), meals, pads, explicit no/yes phrases. It never overrides a model value.
+  - `fillForm` logs `AROGYA_FORM_FILL_SPLIT ai=… rules=…` and says when the model gave nothing usable.
+  - Bug found by the new test: the sentence split also cut inside decimals (38.4 → 38). Fixed.
+- **Danger check moved to fixed rules:** `ArogyaDemoScript.dangerLines` runs `ArogyaDangerSigns.evaluate` on her words, then the form's own action rules. Workflow 2 refers even with zero AI values. When nothing is found, the rules that were checked are listed.
+- **Script v2:** the owner's wording for the intro and schedule sentences. W1 has 11 screens, W2 12, W3 11; every workflow has Plan, Voice, Danger, Ask SOP (question + follow-up per workflow), Explain, Save, Practice, Summary. W2 adds a WhatsApp-to-ANM screen; W3 has Refill + Scan.
+- **Proof of updates:**
+  - an "Open to check" panel on the add-person, card, save, refill and scan screens opens the real documents in the viewer: MCP card (today's changes in yellow), the official form table, the village/ANC/immunization registers and the stock register (rows updated today starred);
+  - the slip review shows every field, plus the EDD rule and which reader ran;
+  - the voice screen marks each value ✨ AI or ⚙ rule and is never silent;
+  - save waits for "Sunita confirms";
+  - Explain uses the referral advice and the Ask answer, with no second guide search;
+  - the refill text comes from `refillRequest`;
+  - the MCP button names the right person; the broken "diary" deep link is removed.
+- Tests: 49/50 suites pass (GoldMatch needs the gitignored asset). New FormFillTest (17): all three notes in EN + HI with no model, partial-reply rescue, AI wins over rules, no invention, decimals kept. DemoTourTest is now 70 checks (screen lists, owner sentences, danger by rules). A syntax-only compile of the six screen files shows no syntax errors; the remaining errors are missing Android libraries. **Compose code is not compiled yet.**

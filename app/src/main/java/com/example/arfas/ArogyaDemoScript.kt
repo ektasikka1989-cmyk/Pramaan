@@ -5,8 +5,8 @@ package com.example.arfas
  * helpers the host tests check — navigation bounds, the AI-steps table and the
  * before/after table. No Android or Compose imports.
  *
- * 16 scenes (demo UI pass), three short sentences each in English and Hindi. One hero
- * everywhere: Baby of Neha (नेहा का बच्चा).
+ * Demo v2: three workflows (11/12/11 screens), picked on the demo home screen. Every screen has an
+ * aim and three short sentences in English and Hindi.
  */
 object ArogyaDemoScript {
     const val HERO_PREFIX = "Baby of Neha"
@@ -64,114 +64,117 @@ object ArogyaDemoScript {
     /** A complete workflow the presenter picks on the demo home screen. */
     data class Workflow(val id: Int, val title: String, val hi: String, val line: String, val lineHi: String, val scenes: List<Scene>)
 
-    private fun meet(story: String, storyHi: String) = Scene("meet", "Meet Sunita, ASHA of Rampur", "मिलिए सुनीता से, रामपुर की आशा",
-        listOf("Sunita is the ASHA of Rampur, about 1,000 people.", story, "Pramaan does the paperwork with AI on her phone, and she confirms every result."),
-        listOf("सुनीता रामपुर की आशा हैं, लगभग 1,000 लोग।", storyHi, "Pramaan यह काग़ज़ी काम फ़ोन पर AI से करता है, और हर नतीजा सुनीता पक्का करती हैं।"),
-        "Introduction", "परिचय", "Show who uses Pramaan and what this visit needs.", "दिखाना कि Pramaan कौन चलाता है और इस विज़िट में क्या चाहिए।")
+    private fun sc(id: String, title: String, hi: String, en: List<String>, hiN: List<String>, screen: String, screenHi: String, aim: String, aimHi: String) =
+        Scene(id, title, hi, en, hiN, screen, screenHi, aim, aimHi)
 
-    private fun due(who: String, whoHi: String) = Scene("due", "Plan the day", "दिन की योजना",
-        listOf("Every morning the app lists who is due, and why.", "Dates come from fixed government schedules, never from AI.", who),
-        listOf("हर सुबह ऐप बताता है कि किसकी विज़िट बाकी है, और क्यों।", "तारीख़ें सरकार के तय शेड्यूल से आती हैं, AI से कभी नहीं।", whoHi),
-        "Home · Today's plan", "होम · आज की योजना", "Plan today's visits from the official schedules.", "सरकारी शेड्यूल से आज की विज़िट तय करना।")
+    /** Screen 1 of every workflow: who Sunita is + today's plan (fixed schedules). */
+    private fun plan(story: String, storyHi: String) = sc("plan", "Meet Sunita and today's plan", "मिलिए सुनीता से, और आज की योजना",
+        listOf("Sunita is the ASHA for Rampur, a village of about 1,000 people.", story, "These visits follow the fixed schedules in the government guidelines."),
+        listOf("सुनीता रामपुर गाँव की आशा हैं, जहाँ लगभग 1,000 लोग रहते हैं।", storyHi, "ये विज़िट सरकारी दिशानिर्देशों के तय शेड्यूल के अनुसार होती हैं।"),
+        "Home · Today's plan", "होम · आज की योजना", "Introduce the ASHA and plan today's visits.", "आशा का परिचय और आज की विज़िट की योजना।")
 
-    private fun records(what: String, whatHi: String) = Scene("records", "Everything updated", "सब अपडेट",
-        listOf("One save updated every record that needs this visit.", what, "Nothing is sent anywhere; the records stay encrypted on her phone."),
-        listOf("एक सेव से इस विज़िट से जुड़ा हर रिकॉर्ड अपडेट हुआ।", whatHi, "कहीं कुछ नहीं भेजा गया; रिकॉर्ड उनके फ़ोन पर सुरक्षित (एन्क्रिप्टेड) हैं।"),
-        "Registers · Today", "रजिस्टर · आज", "Show every form, card, register and stock line this visit changed.", "दिखाना कि इस विज़िट से कौन-कौन से फ़ॉर्म, कार्ड, रजिस्टर और स्टॉक बदले।")
+    private fun formOpens(what: String, whatHi: String) = sc("form", "The right form opens", "सही फ़ॉर्म खुलता है",
+        listOf(what, "The app opens the official form for this visit, with every row as printed.", "This choice is a fixed rule, not AI."),
+        listOf(whatHi, "ऐप इस विज़िट का सरकारी फ़ॉर्म खोलता है, हर पंक्ति छपे फ़ॉर्म जैसी।", "यह चुनाव तय नियम है, AI नहीं।"),
+        "Visit · Official form", "विज़िट · सरकारी फ़ॉर्म", "Open the official form for this visit.", "इस विज़िट का सरकारी फ़ॉर्म खोलना।")
 
-    private val impact = Scene("beforeafter", "How AI eased the visit", "AI ने विज़िट कैसे आसान की",
-        listOf("By hand, this paperwork takes many minutes on every visit.", "The table shows what AI did and how long it took today.", "By-hand times are estimates; AI times are measured."),
-        listOf("हाथ से यह काग़ज़ी काम हर विज़िट में कई मिनट लेता है।", "तालिका बताती है कि आज AI ने क्या किया और कितना समय लगा।", "हाथ वाले समय अनुमान हैं; AI वाले समय नापे गए।"),
-        "Impact", "असर", "Show the time saved, honestly measured.", "बचा समय दिखाना, ईमानदारी से नापा हुआ।")
+    private fun voice(form: String, formHi: String) = sc("voice", "Speak once, the form fills", "एक बार बोलें, फ़ॉर्म भरे",
+        listOf("Sunita says what happened in one short note.", "AI fills the $form and shows the words each value came from; fixed rules catch numbers the AI misses.", "Sunita checks the values and confirms them."),
+        listOf("सुनीता एक छोटे नोट में बताती हैं कि क्या हुआ।", "AI $formHi भरता है और हर मान के शब्द दिखाता है; जो अंक AI छोड़े, तय नियम पकड़ते हैं।", "सुनीता मान जाँचकर पक्का करती हैं।"),
+        "Visit · Voice note", "विज़िट · वॉइस नोट", "Fill the official form from her spoken note, with evidence.", "बोले गए नोट से सरकारी फ़ॉर्म भरना, सबूत के साथ।")
+
+    private fun danger(en: String, hi: String) = sc("danger", "Danger check", "खतरे की जाँच",
+        listOf("Before anything else, the app checks for danger signs.", "It uses the fixed danger rules from the government guides, never AI.", en),
+        listOf("सबसे पहले ऐप खतरे के लक्षण जाँचता है।", "इसके लिए सरकारी गाइड के तय नियम हैं, AI कभी नहीं।", hi),
+        "Visit · Danger signs", "विज़िट · खतरे के लक्षण", "Catch every danger sign by fixed rules and act on it.", "तय नियमों से हर खतरे का लक्षण पकड़ना और कदम उठाना।")
+
+    private fun ask(en: String, hi: String) = sc("sops", "Ask the official guides", "सरकारी गाइड से पूछें",
+        listOf(en, "The answer comes only from the official guides on her phone, with the exact page.", "She can ask a follow-up, and open the PDF at that page in one tap."),
+        listOf(hi, "उत्तर सिर्फ़ फ़ोन में रखी सरकारी गाइड से आता है, सही पेज के साथ।", "वे दोबारा सवाल पूछ सकती हैं, और एक टैप में उसी पेज पर PDF खोल सकती हैं।"),
+        "Ask · Official guides", "पूछें · सरकारी गाइड", "Answer questions from official guides, with the source.", "सरकारी गाइड से जवाब, स्रोत के साथ।")
+
+    private fun explain(en: String, hi: String) = sc("explain", "Explain to the family", "परिवार को समझाना",
+        listOf(en, "AI rewrites the advice in simple Hindi, adding nothing that is not in the source.", "Sunita can read it aloud, even offline."),
+        listOf(hi, "AI सलाह को सरल हिंदी में लिखता है, स्रोत से बाहर कुछ नहीं जोड़ता।", "सुनीता इसे ऑफ़लाइन भी पढ़कर सुना सकती हैं।"),
+        "Visit · Explain", "विज़िट · समझाना", "Help the family understand the advice in their language.", "परिवार को उनकी भाषा में सलाह समझाना।")
+
+    private fun save(en: String, hi: String) = sc("saved", "One save updates everything", "एक सेव, सब अपडेट",
+        listOf("Sunita saves once.", en, "Each updated record has an Open button, so it can be checked right away."),
+        listOf("सुनीता एक बार सेव करती हैं।", hi, "हर अपडेट रिकॉर्ड के साथ खोलें बटन है, ताकि तुरंत जाँचा जा सके।"),
+        "Visit · Save", "विज़िट · सेव", "Write the visit into every record in one step, and show the proof.", "एक कदम में विज़िट हर रिकॉर्ड में लिखना, और सबूत दिखाना।")
+
+    private fun card(en: String, hi: String) = sc("mcpcard", "The official MCP card", "आधिकारिक MCP कार्ड",
+        listOf("This is the official MCP card, in the printed card's layout, with the state, district and sub-centre.", en, "Today's changes are highlighted in yellow."),
+        listOf("यह आधिकारिक MCP कार्ड है, छपे कार्ड जैसा, राज्य, ज़िला और उप-केंद्र के साथ।", hi, "आज के बदलाव पीले रंग में हैं।"),
+        "MCP card · Official", "MCP कार्ड · आधिकारिक", "Show the official card filled from this visit.", "इस विज़िट से भरा आधिकारिक कार्ड दिखाना।")
+
+    private val practice = sc("practice", "Three questions a day", "रोज़ तीन सवाल",
+        listOf("At the end of the day, the app asks Sunita three short questions.", "AI makes them from the official guides, and each answer shows its source page.", "A few minutes a day keeps her knowledge fresh."),
+        listOf("दिन के अंत में ऐप सुनीता से तीन छोटे सवाल पूछता है।", "AI इन्हें सरकारी गाइड से बनाता है, और हर जवाब का स्रोत पेज दिखता है।", "रोज़ कुछ मिनट से उनका ज्ञान ताज़ा रहता है।"),
+        "Learn · Daily practice", "सीखें · रोज़ अभ्यास", "Keep the ASHA's knowledge fresh, from official guides.", "आशा का ज्ञान ताज़ा रखना, सरकारी गाइड से।")
+
+    private val summary = sc("summary", "AI behind the visit, and time saved", "विज़िट के पीछे AI, और बचा समय",
+        listOf("Each feature has a tool on the phone and a tool in the cloud; Meta's models are marked in blue.", "Danger signs, schedules and stock stay fixed rules.", "The time table shows what AI did today; by-hand times are estimates."),
+        listOf("हर सुविधा का एक टूल फ़ोन पर और एक क्लाउड में है; Meta के मॉडल नीले रंग में हैं।", "खतरे के लक्षण, शेड्यूल और स्टॉक तय नियम ही रहते हैं।", "समय तालिका बताती है कि आज AI ने क्या किया; हाथ वाले समय अनुमान हैं।"),
+        "AI summary · Impact", "AI सारांश · असर", "Show which AI did what, and the time it saved.", "दिखाना कि किस AI ने क्या किया, और कितना समय बचा।")
 
     val workflow1 = Workflow(1, "New pregnancy: register and first ANC visit", "नई गर्भावस्था: पंजीकरण और पहली ANC विज़िट",
-        "Slip photo → person added → voice note → MCP card ANC page, IFA and calcium from the kit", "पर्ची की फ़ोटो → नया व्यक्ति → वॉइस नोट → MCP कार्ड ANC पेज, किट से IFA और कैल्शियम", listOf(
-        meet("Today a young woman, Sarita, has just found out she is pregnant.", "आज एक युवती, सरिता, को अभी पता चला है कि वह गर्भवती है।"),
-        due("Sarita is new, so first she must be registered.", "सरिता नई हैं, इसलिए पहले उनका पंजीकरण होगा।"),
-        Scene("addperson", "Register Sarita from a photo", "फ़ोटो से सरिता का पंजीकरण",
-            listOf("Sunita photographs Sarita's registration slip.", "The phone reads the name, husband, age, mobile, house and LMP; any Aadhaar number is removed.", "She checks the details, and Sarita joins the village and pregnancy registers."),
-            listOf("सुनीता सरिता की पंजीकरण पर्ची की फ़ोटो लेती हैं।", "फ़ोन नाम, पति, उम्र, मोबाइल, मकान और LMP पढ़ता है; आधार नंबर हटा दिया जाता है।", "वे जानकारी जाँचती हैं, और सरिता गाँव और गर्भवती रजिस्टर में जुड़ जाती हैं।"),
+        "Slip photo → registers → voice note → danger check → guide answer → family advice → MCP card, IFA and calcium from the kit",
+        "पर्ची फ़ोटो → रजिस्टर → वॉइस नोट → खतरे की जाँच → गाइड उत्तर → परिवार को सलाह → MCP कार्ड, किट से IFA और कैल्शियम", listOf(
+        plan("Today a young woman, Sarita, has found out she is pregnant, so she must be registered first.", "आज एक युवती, सरिता, को पता चला है कि वह गर्भवती है, इसलिए पहले उनका पंजीकरण होगा।"),
+        sc("addperson", "Register Sarita from a photo", "फ़ोटो से सरिता का पंजीकरण",
+            listOf("Sunita photographs Sarita's registration slip.", "The phone reads every column: name, husband, age, mobile, house, village, category and LMP; any Aadhaar number is removed.", "She checks the details, saves, and opens the registers to see Sarita added."),
+            listOf("सुनीता सरिता की पंजीकरण पर्ची की फ़ोटो लेती हैं।", "फ़ोन हर कॉलम पढ़ता है: नाम, पति, उम्र, मोबाइल, मकान, गाँव, श्रेणी और LMP; आधार नंबर हटा दिया जाता है।", "वे जानकारी जाँचकर सेव करती हैं, और रजिस्टर खोलकर देखती हैं कि सरिता जुड़ गईं।"),
             "Register · Add person", "रजिस्टर · नया व्यक्ति", "Register a new pregnant woman without copying by hand.", "बिना हाथ से नकल किए नई गर्भवती का पंजीकरण।"),
-        Scene("form", "The right form opens", "सही फ़ॉर्म खुलता है",
-            listOf("From her LMP the app knows she is in the first trimester.", "So it opens the MCP card ANC page, first visit.", "This choice is a fixed rule, not AI."),
-            listOf("LMP से ऐप जानता है कि वह पहली तिमाही में हैं।", "इसलिए वह MCP कार्ड का ANC पेज, पहली विज़िट, खोलता है।", "यह चुनाव तय नियम है, AI नहीं।"),
-            "Visit · Official form", "विज़िट · सरकारी फ़ॉर्म", "Open the official form for this stage of pregnancy.", "गर्भावस्था के इस चरण का सरकारी फ़ॉर्म खोलना।"),
-        Scene("voice", "Speak once, the form fills", "एक बार बोलें, फ़ॉर्म भरे",
-            listOf("Sunita says what happened in one short note.", "AI puts each fact in its row and shows the words it came from.", "Numbers such as weight, BP, Hb and the tablets given must appear in her words."),
-            listOf("सुनीता एक छोटे नोट में बताती हैं कि क्या हुआ।", "AI हर बात उसकी पंक्ति में रखता है और दिखाता है कि वह किन शब्दों से आई।", "वज़न, BP, Hb और दी गई गोलियाँ जैसे अंक उनके शब्दों में होने ज़रूरी हैं।"),
-            "Visit · Voice note", "विज़िट · वॉइस नोट", "Fill the ANC page from her spoken note, with evidence.", "बोले गए नोट से ANC पेज भरना, सबूत के साथ।"),
-        Scene("saved", "One save updates everything", "एक सेव, सब अपडेट",
-            listOf("Sunita saves once.", "The ANC page, the pregnancy register, the stock, the diary and the next due date update together.", "The IFA and calcium she gave leave the drug kit at the same moment."),
-            listOf("सुनीता एक बार सेव करती हैं।", "ANC पेज, गर्भवती रजिस्टर, स्टॉक, डायरी और अगली तारीख़ एक साथ अपडेट होते हैं।", "दी गई IFA और कैल्शियम उसी पल दवा किट से घट जाती हैं।"),
-            "Visit · Save", "विज़िट · सेव", "Write the visit into every record in one step.", "एक कदम में विज़िट हर रिकॉर्ड में लिखना।"),
-        Scene("mcpcard", "Sarita's official MCP card", "सरिता का आधिकारिक MCP कार्ड",
-            listOf("This is Sarita's official MCP card, in the printed card's layout.", "Her details fill page 3 and today's ANC visit fills page 5.", "Today's changes are highlighted in yellow."),
-            listOf("यह सरिता का आधिकारिक MCP कार्ड है, छपे कार्ड जैसा।", "उनकी जानकारी पेज 3 पर और आज की ANC विज़िट पेज 5 पर भरी है।", "आज के बदलाव पीले रंग में हैं।"),
-            "MCP card · Official", "MCP कार्ड · आधिकारिक", "Show the official card filled from this visit.", "इस विज़िट से भरा आधिकारिक कार्ड दिखाना।"),
-        records("Her ANC check-up and Td are now on tomorrow's plan.", "उनकी ANC जाँच और Td अब आगे की योजना में हैं।"),
-        impact))
+        formOpens("From her LMP the app knows she is in the first trimester: MCP card ANC page, visit 1.", "LMP से ऐप जानता है कि वह पहली तिमाही में हैं: MCP कार्ड ANC पेज, विज़िट 1।"),
+        voice("ANC page", "ANC पेज"),
+        danger("For Sarita, the rules find no danger sign today.", "सरिता के लिए आज नियमों को कोई खतरे का लक्षण नहीं मिला।"),
+        ask("Sunita asks how many IFA tablets Sarita should take, and how.", "सुनीता पूछती हैं कि सरिता कितनी IFA गोलियाँ और कैसे लें।"),
+        explain("Sarita's family must understand the iron tablets and the food she needs.", "सरिता के परिवार को आयरन की गोलियाँ और ज़रूरी खाना समझना चाहिए।"),
+        save("The ANC page, the MCP card, the pregnancy register, the stock and the next due date update together.", "ANC पेज, MCP कार्ड, गर्भवती रजिस्टर, स्टॉक और अगली तारीख़ एक साथ अपडेट होते हैं।"),
+        card("Her details fill page 3, and today's visit fills page 5.", "उनकी जानकारी पेज 3 पर, और आज की विज़िट पेज 5 पर भरी है।"),
+        practice, summary))
 
     val workflow2 = Workflow(2, "Newborn day-7 visit with a danger sign", "नवजात की 7वें दिन की विज़िट, खतरे के लक्षण के साथ",
-        "Card photo → voice note → danger rule → referral → guide answer → HBNC form and MCP card", "कार्ड फ़ोटो → वॉइस नोट → खतरे का नियम → रेफ़रल → गाइड उत्तर → HBNC फ़ॉर्म और MCP कार्ड", listOf(
-        meet("Today, Neha's baby, born at home, is due for the day-7 newborn visit.", "आज नेहा के बच्चे की, जो घर पर जन्मा, 7वें दिन की नवजात विज़िट है।"),
-        due("Baby of Neha is due for the day-7 visit.", "नेहा के बच्चे की 7वें दिन की विज़िट बाकी है।"),
-        Scene("card", "Read the family's MCP card", "परिवार का MCP कार्ड पढ़ें",
-            listOf("The ANM wrote the birth vaccines on the family's card.", "Sunita photographs the card; the phone reads the vaccines and dates.", "She ticks what is correct, and the app's card catches up."),
-            listOf("ANM ने जन्म के टीके परिवार के कार्ड पर लिखे।", "सुनीता कार्ड की फ़ोटो लेती हैं; फ़ोन टीके और तारीख़ें पढ़ता है।", "वे सही बातों पर निशान लगाती हैं, और ऐप का कार्ड अपडेट हो जाता है।"),
+        "Card photo → voice note → danger rules → ANM WhatsApp → guide answer → family advice → HBNC form, MCP card and stock",
+        "कार्ड फ़ोटो → वॉइस नोट → खतरे के नियम → ANM को WhatsApp → गाइड उत्तर → परिवार को सलाह → HBNC फ़ॉर्म, MCP कार्ड और स्टॉक", listOf(
+        plan("Today, Neha's baby, born at home, is due for the day-7 newborn visit.", "आज नेहा के बच्चे की, जो घर पर जन्मा, 7वें दिन की नवजात विज़िट है।"),
+        sc("card", "Read the family's MCP card", "परिवार का MCP कार्ड पढ़ें",
+            listOf("The ANM wrote the birth vaccines on the family's card.", "Sunita photographs the card; the phone reads the vaccines and dates.", "She ticks what is correct, and opens the card to see it updated."),
+            listOf("ANM ने जन्म के टीके परिवार के कार्ड पर लिखे।", "सुनीता कार्ड की फ़ोटो लेती हैं; फ़ोन टीके और तारीख़ें पढ़ता है।", "वे सही बातों पर निशान लगाती हैं, और कार्ड खोलकर अपडेट देखती हैं।"),
             "MCP card · Photo", "MCP कार्ड · फ़ोटो", "Bring the ANM's entries into the app without retyping.", "ANM की लिखी बातें बिना दोबारा लिखे ऐप में लाना।"),
-        Scene("voice", "Speak once, the form fills", "एक बार बोलें, फ़ॉर्म भरे",
-            listOf("Sunita says what she saw in one note.", "AI fills the day-7 column of the HBNC form, with the words each value came from.", "The medicines she gave the mother are read from the same note."),
-            listOf("सुनीता एक नोट में बताती हैं कि उन्होंने क्या देखा।", "AI HBNC फ़ॉर्म का 7वें दिन का कॉलम भरता है, हर मान के शब्दों के साथ।", "माँ को दी गई दवाइयाँ भी उसी नोट से पढ़ी जाती हैं।"),
-            "Visit · Voice note", "विज़िट · वॉइस नोट", "Fill the HBNC form from her spoken note, with evidence.", "बोले गए नोट से HBNC फ़ॉर्म भरना, सबूत के साथ।"),
-        Scene("danger", "Danger sign: refer today", "खतरे का लक्षण: आज रेफ़र",
-            listOf("A temperature of 38.4 and poor feeding are danger signs.", "Fixed government rules flag them before any AI runs.", "The app offers 108 and the ANM, and drafts the message."),
-            listOf("38.4 का तापमान और कम दूध पीना खतरे के लक्षण हैं।", "सरकार के तय नियम किसी भी AI से पहले इन्हें पकड़ते हैं।", "ऐप 108 और ANM का विकल्प देता है, और संदेश तैयार करता है।"),
-            "Visit · Danger signs", "विज़िट · खतरे के लक्षण", "Catch danger signs by fixed rules and refer at once.", "तय नियमों से खतरे के लक्षण पकड़ना और तुरंत रेफ़र करना।"),
-        Scene("explain", "Explain to the family", "परिवार को समझाना",
-            listOf("The family must understand why the baby goes to the PHC today.", "AI rewrites the guide's advice in simple Hindi, adding nothing new.", "Sunita can read it aloud, offline."),
-            listOf("परिवार को समझना चाहिए कि बच्चा आज PHC क्यों जा रहा है।", "AI गाइड की सलाह को सरल हिंदी में लिखता है, कुछ नया नहीं जोड़ता।", "सुनीता इसे ऑफ़लाइन पढ़कर सुना सकती हैं।"),
-            "Visit · Explain", "विज़िट · समझाना", "Explain the advice to the family in their language.", "सलाह परिवार की भाषा में समझाना।"),
-        Scene("sops", "Ask the guide", "गाइड से पूछें",
-            listOf("Neha asks what to put on the cord.", "Sunita asks the official guides on her phone, in Hindi or English.", "The answer cites the exact page, and opens the PDF in one tap."),
-            listOf("नेहा पूछती हैं कि नाल पर क्या लगाएँ।", "सुनीता फ़ोन पर सरकारी गाइड से हिंदी या अंग्रेज़ी में पूछती हैं।", "उत्तर सही पेज का हवाला देता है, और एक टैप में PDF खोलता है।"),
-            "Ask · Official guides", "पूछें · सरकारी गाइड", "Answer the family's question from official guides, with the source.", "परिवार के सवाल का जवाब सरकारी गाइड से, स्रोत के साथ।"),
-        Scene("saved", "One save updates everything", "एक सेव, सब अपडेट",
-            listOf("Sunita saves once.", "The HBNC form, the baby's and mother's MCP card, the growth chart, the referral and the stock update together.", "The IFA and calcium for the mother leave the drug kit."),
-            listOf("सुनीता एक बार सेव करती हैं।", "HBNC फ़ॉर्म, बच्चे और माँ का MCP कार्ड, वज़न चार्ट, रेफ़रल और स्टॉक एक साथ अपडेट होते हैं।", "माँ के लिए IFA और कैल्शियम दवा किट से घटते हैं।"),
-            "Visit · Save", "विज़िट · सेव", "Write the visit into every record in one step.", "एक कदम में विज़िट हर रिकॉर्ड में लिखना।"),
-        Scene("mcpcard", "Neha's official MCP card", "नेहा का आधिकारिक MCP कार्ड",
-            listOf("This is the official MCP card, in the printed card's layout.", "Today's visit filled the 7th Day column, the vaccines and the growth chart.", "Today's changes are highlighted in yellow."),
-            listOf("यह आधिकारिक MCP कार्ड है, छपे कार्ड जैसा।", "आज की विज़िट से 7वें दिन का कॉलम, टीके और वज़न चार्ट भरे।", "आज के बदलाव पीले रंग में हैं।"),
-            "MCP card · Official", "MCP कार्ड · आधिकारिक", "Show the official card filled from this visit.", "इस विज़िट से भरा आधिकारिक कार्ड दिखाना।"),
-        records("The referral is recorded, and the day-14 visit is on the plan.", "रेफ़रल दर्ज है, और 14वें दिन की विज़िट योजना में है।"),
-        Scene("aitable", "AI tools behind this visit", "इस विज़िट के पीछे AI टूल",
-            listOf("Each feature has a tool on the phone and a tool in the cloud.", "Meta's models are marked in blue.", "Danger signs stay fixed rules."),
-            listOf("हर सुविधा का एक टूल फ़ोन पर और एक क्लाउड में है।", "Meta के मॉडल नीले रंग में हैं।", "खतरे के लक्षण तय नियम ही रहते हैं।"),
-            "AI summary", "AI सारांश", "Show which AI tool did what, offline and online.", "दिखाना कि कौन सा AI टूल क्या करता है, ऑफ़लाइन और ऑनलाइन।"),
-        impact))
+        formOpens("The baby is 7 days old, so the app opens the home-visit form, Day 7 column.", "बच्चा 7 दिन का है, इसलिए ऐप गृह भ्रमण फ़ॉर्म का 7वें दिन का कॉलम खोलता है।"),
+        voice("HBNC form", "HBNC फ़ॉर्म"),
+        danger("A temperature of 38.4 and poor feeding are danger signs: refer today.", "38.4 का तापमान और कम दूध पीना खतरे के लक्षण हैं: आज ही रेफ़र करें।"),
+        sc("anm", "Tell the ANM on WhatsApp", "ANM को WhatsApp पर बताएँ",
+            listOf("The ANM must know about the referral at once.", "AI drafts the message from Sunita's own findings; names stay on the phone.", "She reads it, edits it if needed, and sends it on WhatsApp."),
+            listOf("ANM को रेफ़रल के बारे में तुरंत पता होना चाहिए।", "AI सुनीता के अपने निष्कर्षों से संदेश लिखता है; नाम फ़ोन पर ही रहते हैं।", "वे इसे पढ़कर, ज़रूरत हो तो बदलकर, WhatsApp पर भेजती हैं।"),
+            "Visit · Escalate", "विज़िट · सूचना", "Escalate the danger sign to the ANM in seconds.", "खतरे की सूचना सेकंडों में ANM तक पहुँचाना।"),
+        ask("Neha asks what to put on the cord; Sunita asks the guides.", "नेहा पूछती हैं कि नाल पर क्या लगाएँ; सुनीता गाइड से पूछती हैं।"),
+        explain("Neha's family must understand why the baby goes to the PHC today.", "नेहा के परिवार को समझना चाहिए कि बच्चा आज PHC क्यों जा रहा है।"),
+        save("The HBNC form, the MCP card for baby and mother, the growth chart, the referral and the stock update together.", "HBNC फ़ॉर्म, बच्चे और माँ का MCP कार्ड, वज़न चार्ट, रेफ़रल और स्टॉक एक साथ अपडेट होते हैं।"),
+        card("Today's visit filled the 7th Day column, the vaccines and the growth chart.", "आज की विज़िट से 7वें दिन का कॉलम, टीके और वज़न चार्ट भरे।"),
+        practice, summary))
 
     val workflow3 = Workflow(3, "Sick child: medicines and the drug kit", "बीमार बच्चा: दवाइयाँ और दवा किट",
-        "Voice note → sick-child form → ORS and zinc leave the kit → refill request → new strip scanned", "वॉइस नोट → बीमार-बच्चा फ़ॉर्म → किट से ORS और ज़िंक → रिफिल अनुरोध → नई पट्टी स्कैन", listOf(
-        meet("Today, little Rohan has loose stools and his mother has called Sunita.", "आज छोटे रोहन को दस्त हैं और उसकी माँ ने सुनीता को बुलाया है।"),
-        due("Rohan's visit is added as a sick-child visit.", "रोहन की विज़िट बीमार-बच्चा विज़िट के रूप में जुड़ती है।"),
-        Scene("voice", "Speak once, the form fills", "एक बार बोलें, फ़ॉर्म भरे",
-            listOf("Sunita checks the danger signs and says what she found.", "AI fills the sick-child form and shows the words behind each value.", "The ORS and zinc she gave are rows on the same form."),
-            listOf("सुनीता खतरे के लक्षण जाँचती हैं और बताती हैं कि क्या मिला।", "AI बीमार-बच्चा फ़ॉर्म भरता है और हर मान के पीछे के शब्द दिखाता है।", "दिए गए ORS और ज़िंक उसी फ़ॉर्म की पंक्तियाँ हैं।"),
-            "Visit · Voice note", "विज़िट · वॉइस नोट", "Fill the sick-child form from her spoken note, with evidence.", "बोले गए नोट से बीमार-बच्चा फ़ॉर्म भरना, सबूत के साथ।"),
-        Scene("saved", "Save: medicines leave the kit", "सेव: दवाइयाँ किट से घटीं",
-            listOf("Sunita saves once.", "The form, the follow-up date and the stock register update together.", "Zinc has now run out."),
-            listOf("सुनीता एक बार सेव करती हैं।", "फ़ॉर्म, अगली तारीख़ और स्टॉक रजिस्टर एक साथ अपडेट होते हैं।", "ज़िंक अब ख़त्म हो गया है।"),
-            "Visit · Save", "विज़िट · सेव", "Record the visit and take the medicines out of the kit.", "विज़िट दर्ज करना और दवाइयाँ किट से घटाना।"),
-        Scene("refill", "Ask the ANM for a refill", "ANM से रिफिल माँगें",
-            listOf("The app sees which kit items are low.", "It writes the refill request with exact balances.", "Sunita sends it to the ANM in one tap."),
-            listOf("ऐप देखता है कि किट की कौन सी दवाइयाँ कम हैं।", "वह सही बचे हुए नंबरों के साथ रिफिल अनुरोध लिखता है।", "सुनीता एक टैप में इसे ANM को भेजती हैं।"),
+        "Voice note → danger rules → guide answer → advice for the mother → ORS and zinc leave the kit → refill request → new stock scanned",
+        "वॉइस नोट → खतरे के नियम → गाइड उत्तर → माँ को सलाह → किट से ORS और ज़िंक → रिफिल अनुरोध → नया स्टॉक स्कैन", listOf(
+        plan("Today, little Rohan has loose stools, and his mother has called Sunita.", "आज छोटे रोहन को दस्त हैं, और उसकी माँ ने सुनीता को बुलाया है।"),
+        formOpens("Rohan is unwell, so the app opens the sick-child form.", "रोहन बीमार है, इसलिए ऐप बीमार-बच्चा फ़ॉर्म खोलता है।"),
+        voice("sick-child form", "बीमार-बच्चा फ़ॉर्म"),
+        danger("Rohan has no general danger sign, so he is treated at home and seen again in 2 days.", "रोहन में कोई सामान्य खतरे का लक्षण नहीं है, इसलिए घर पर इलाज और 2 दिन बाद फिर जाँच।"),
+        ask("Sunita checks how to prepare ORS and give zinc.", "सुनीता जाँचती हैं कि ORS कैसे बनाएँ और ज़िंक कैसे दें।"),
+        explain("Rohan's mother must know how to give ORS and zinc at home.", "रोहन की माँ को पता होना चाहिए कि घर पर ORS और ज़िंक कैसे दें।"),
+        save("The form, the follow-up date and the stock register update together; zinc has now run out.", "फ़ॉर्म, अगली तारीख़ और स्टॉक रजिस्टर एक साथ अपडेट होते हैं; ज़िंक अब ख़त्म हो गया है।"),
+        sc("refill", "Ask the ANM for a refill", "ANM से रिफिल माँगें",
+            listOf("The app sees which kit items are out or low.", "It writes the refill request with exact balances, in a fixed format.", "Sunita sends it to the ANM on WhatsApp in one tap."),
+            listOf("ऐप देखता है कि किट की कौन सी दवाइयाँ ख़त्म या कम हैं।", "वह सही बचे हुए नंबरों के साथ तय प्रारूप में रिफिल अनुरोध लिखता है।", "सुनीता एक टैप में इसे WhatsApp पर ANM को भेजती हैं।"),
             "Drug kit · Refill", "दवा किट · रिफिल", "Ask for a refill before the kit runs dry.", "किट ख़ाली होने से पहले रिफिल माँगना।"),
-        Scene("medscan", "New stock: scan and count", "नया स्टॉक: स्कैन और गिनती",
+        sc("medscan", "New stock: scan and count", "नया स्टॉक: स्कैन और गिनती",
             listOf("The refill arrives at the sub-centre.", "Sunita photographs the new strip; the phone reads name, batch and expiry, and it goes into stock.", "Online, Meta SAM 3.1 helps count sachets; offline she counts by hand."),
             listOf("रिफिल उप-केंद्र पर पहुँचता है।", "सुनीता नई पट्टी की फ़ोटो लेती हैं; फ़ोन नाम, बैच और एक्सपायरी पढ़ता है, और वह स्टॉक में जुड़ती है।", "ऑनलाइन, Meta SAM 3.1 पैकेट गिनने में मदद करता है; ऑफ़लाइन वे हाथ से गिनती हैं।"),
             "Drug kit · Receive", "दवा किट · प्राप्ति", "Add new stock from a photo, with batch and expiry.", "फ़ोटो से नया स्टॉक जोड़ना, बैच और एक्सपायरी के साथ।"),
-        records("The stock register shows every tablet in and out.", "स्टॉक रजिस्टर हर गोली का आना-जाना दिखाता है।"),
-        impact))
+        practice, summary))
 
     val workflows = listOf(workflow1, workflow2, workflow3)
 
@@ -188,6 +191,42 @@ object ArogyaDemoScript {
         else -> if (hindi) NOTE_HI else NOTE_EN
     }
 
+    /** The Ask SOP question and follow-up for each workflow. */
+    fun question(wf: Int, hindi: Boolean): String = when (wf) {
+        1 -> if (hindi) "गर्भवती महिला को कितनी IFA गोलियाँ लेनी चाहिए, और कैसे?" else "How many IFA tablets should a pregnant woman take, and how?"
+        3 -> if (hindi) "दस्त वाले बच्चे के लिए ORS कैसे बनाएँ और ज़िंक कैसे दें?" else "How do I prepare ORS and give zinc to a child with diarrhoea?"
+        else -> if (hindi) QUESTION_HI else QUESTION_EN
+    }
+    fun followUp(wf: Int, hindi: Boolean): String = when (wf) {
+        1 -> if (hindi) "गर्भावस्था में खून की कमी के लिए कौन सा खाना अच्छा है?" else "Which foods help with anaemia in pregnancy?"
+        3 -> if (hindi) "दस्त वाले बच्चे को कब रेफ़र करना चाहिए?" else "When should a child with diarrhoea be referred?"
+        else -> if (hindi) FOLLOWUP_HI else FOLLOWUP_EN
+    }
+
+    /**
+     * Danger check for the demo, by fixed rules only: the danger-sign engine on her own words (newborn /
+     * postnatal mother), then the official form's own action rules on the confirmed values. Never AI.
+     */
+    fun dangerLines(note: String, spec: FormSpec, values: Map<String, String>, visit: ArogyaVisit, hindi: Boolean): List<String> {
+        val a = ArogyaDangerSigns.evaluate(note, visit)
+        val who = { s: ArogyaDangerSigns.Subject -> when (s) { ArogyaDangerSigns.Subject.INFANT -> if (hindi) "बच्चा: " else "Baby: "; ArogyaDangerSigns.Subject.MOTHER -> if (hindi) "माँ: " else "Mother: "; else -> "" } }
+        val rules = a.findings.map { f ->
+            (if (f.level == ArogyaDangerSigns.Level.URGENT) "⚠ " else "• ") + who(f.subject) + (if (hindi) f.sign.hi else f.sign.en) +
+                (if (f.evidence.isNotBlank()) " — “${f.evidence}”" else "")
+        }
+        val form = ArogyaOfficialForms.dangers(spec, values).map { "• $it" }
+        return (rules + form).distinct()
+    }
+
+    /** Rows the danger rules check on this form (shown when nothing is found, so "none" is visibly a checked result). */
+    fun dangerChecked(spec: FormSpec, hindi: Boolean): List<String> =
+        spec.fields.filter { it.dangerIf.isNotBlank() }.map { if (hindi) it.hi else it.label }.take(8)
+
+    /** The fixed referral advice the family explanation starts from when danger signs were found (rules, not AI). */
+    fun referralAdvice(dangers: List<String>): String =
+        if (dangers.isEmpty()) "" else "Danger signs found: " + dangers.joinToString("; ") { it.removePrefix("⚠ ").removePrefix("• ") } +
+            ". Refer now: take the baby to the PHC today. Keep the baby warm and keep breastfeeding on the way."
+
     private val GIVE_WORDS = Regex("(?i)\\b(gave|given|give|issued)\\b|दी|दिए|दिया|दीं")
 
     /**
@@ -195,7 +234,7 @@ object ArogyaDemoScript {
      * each "N <kit item>" in those sentences. Used where the form has no medicine rows (HBNC).
      */
     fun medicinesGiven(note: String, catalog: List<String>): List<VoiceStockLine> =
-        note.split(Regex("[.।\\n]")).filter { GIVE_WORDS.containsMatchIn(it) }
+        note.split(Regex("(?<!\\d)\\.|\\.(?!\\d)|[।\\n]")).filter { GIVE_WORDS.containsMatchIn(it) }
             .flatMap { ArogyaVoiceStock.parseRules(it, catalog) }
             .map { it.copy(op = "give") }.distinctBy { it.item }
 }
