@@ -5,8 +5,8 @@ files are large and have their own licences, so **they are not stored in git**. 
 file the app uses, how each one reaches the phone, and where it comes from.
 
 **For judges / testers:** install the APK from [Releases](https://github.com/ektasikka1989-cmyk/Pramaan/releases/latest).
-It already contains the search models, the guide database and the app data. You add **two files** (Llama and Whisper)
-to the phone's Downloads folder and the setup wizard installs them.
+It already contains Whisper (offline speech), the search models, the guide database and the app data — that is why it is about 700 MB. On first launch the **setup wizard**
+downloads the on-phone Meta models from Hugging Face and installs them; nothing has to be copied by hand.
 
 ## 1. Inside the APK (nothing to do)
 | Asset (in `app/src/main/assets/`) | What it does | In git? | Source / licence |
@@ -18,20 +18,25 @@ to the phone's Downloads folder and the setup wizard installs them.
 | `semantic/model.onnx`, `semantic/tokenizer.json` | multilingual-e5-small: meaning-based guide search (English, Hindi, Hinglish) | ❌ (too large) | [intfloat/multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small) (MIT), exported to ONNX |
 | `reranker/model.onnx`, `reranker/parity.json` | mMiniLMv2 cross-encoder: re-ranks the top passages | ❌ (too large) | [cross-encoder/mmarco-mMiniLMv2-L12-H384-v1](https://huggingface.co/cross-encoder/mmarco-mMiniLMv2-L12-H384-v1) (Apache-2.0), exported to ONNX |
 | `voice/tts/*`, `voice/asr/*` (optional) | Sherpa-ONNX offline voices | ❌ (too large) | [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) models (Apache-2.0) |
-| `voice/stt/whisper/model.bin` (optional) | Bundled Whisper; if absent, the wizard installs it from Downloads | ❌ (too large) | see below |
+| `voice/stt/whisper/model.bin` | **Whisper**: offline speech to text (Hindi / English), bundled in the released APK | ❌ (too large) | [ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp) (MIT) |
 
-## 2. Installed by the setup wizard (put in the phone's Downloads)
-| File | Size | What it does | Where to get it | Licence |
-|---|---|---|---|---|
-| `Llama-3.2-3B-Instruct-Q4_K_M.gguf` | ~2.0 GB | **Meta Llama 3.2 3B Instruct**: the on-phone language model (answers, form filling, explanations) via llama.cpp | [bartowski/Llama-3.2-3B-Instruct-GGUF](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF) | [Llama 3.2 Community License](https://www.llama.com/llama3_2/license/) — Built with Llama |
-| `ggml-small.bin` | ~470 MB | **Whisper small**: offline speech to text (Hindi / English) via whisper.cpp | [ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp) | MIT |
+## 2. Downloaded by the setup wizard (Hugging Face)
+| Download | Size | What it contains | Licence |
+|---|---|---|---|
+| [`Pramaan_Meta_Models.zip`](https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models) | 3.26 GB | The on-phone Meta models: **Llama 3.2 3B Instruct** (GGUF, Q4_K_M) for answers, form filling and explanations via llama.cpp, and the offline vision models | [Llama 3.2 Community License](https://www.llama.com/llama3_2/license/) — Built with Llama; each other model keeps its own licence |
+| [`ASHA_Health_Guide_v2.db`](https://huggingface.co/datasets/EktaSikka/Pramaan_Knowledge_Base) | 24.5 MB | The same guide database as in the APK — downloaded only if the bundled copy fails to install | Built from official Government of India documents |
 
-The wizard (`ArogyaSetup.kt`, file matching in `ArogyaSetupMatch.kt`) finds these files by name in Downloads, copies
-them into the app's private storage with progress, and checks them before use.
+How it works (`ArogyaSetupUi.kt`, `ArogyaSetupDownload.kt`, `ArogyaSetupPlan.kt`): Android's DownloadManager fetches the
+zip (Wi-Fi only by default, resumes after a dropped signal, continues in the background), the free space is checked
+first, and `MetaModelStore.installZip` streams each model straight to its final place (no second copy) and checks the
+Llama file is complete. The zip is deleted afterwards. A zip already on the phone can be chosen instead.
 
-## 3. Optional: offline vision pack
-A zip with DETR, CLIP, DINOv2 and MobileSAM (ONNX) enables offline object and kit detection (`MetaModelStore.kt`).
-It is **not needed** for the demo: the drug-kit count uses **SAM 3.1** online, or a count by hand offline.
+## 3. What each on-phone model does
+| Model | Used for |
+|---|---|
+| **Llama 3.2 3B Instruct** (Meta) | Guide answers, voice note → official form, family explanation, ANM message, daily practice — all offline |
+| Whisper (whisper.cpp) — bundled in the APK | Offline speech to text (Hindi / English) |
+| DETR / CLIP / DINOv2 / MobileSAM (ONNX), where included | Offline object and kit detection (`MetaModelStore.kt`); the drug-kit count also works online with SAM 3.1, or by hand |
 
 ## 4. Cloud models (optional, Meta Model API, the user's own key)
 | Model | Used for |
@@ -41,10 +46,12 @@ It is **not needed** for the demo: the drug-kit count uses **SAM 3.1** online, o
 | Muse Voice Transcribe | Voice notes |
 | SAM 3.1 | Drug-kit counting from a photo |
 
-The key is entered in **Settings** and stored encrypted (Android Keystore). No key is in this repository. Text sent to
-the cloud has names, relatives, village, phone, RCH ID and household removed first.
+The key is created at [dev.meta.ai](https://dev.meta.ai/), entered in the **setup wizard** (or Settings), tested with one
+short call and stored encrypted (Android Keystore). Only Meta's models are used online. No key is in this repository.
+Text sent to the cloud has names, relatives, village, phone, RCH ID and household removed first; photos have Aadhaar
+numbers blacked out on the phone before sending.
 
 ## Why the models are not in git
 - GitHub limits files to 100 MB, and the models together are about 3 GB.
 - Each model keeps its own licence and official download page; linking to it keeps attribution clear.
-- Planned ([`docs/LIGHT_APP_PLAN.md`](docs/LIGHT_APP_PLAN.md)): a smaller APK whose setup downloads these files automatically from one pinned Hugging Face repository.
+- The setup wizard downloads them from the two Hugging Face repositories above, so the APK stays self-contained for everything else.
