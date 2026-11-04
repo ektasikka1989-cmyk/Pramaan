@@ -172,7 +172,12 @@ private fun PhotoPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (List<Be
                     val missing = ArogyaTableOcr.CORE.filter { rules[it].isNullOrBlank() }
                     val fields = if (missing.isEmpty()) rules else ai.extractPersonFields(layout).first + rules
                     Log.i("ArogyaDemo", "AROGYA_PERSON_READ rules=${rules.keys.joinToString(",")} ai_asked=${missing.isNotEmpty()} final=${fields.keys.joinToString(",")}")
-                    if (fields["name"].isNullOrBlank()) throw IllegalStateException(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
+                    if (fields["name"].isNullOrBlank()) throw IllegalStateException(
+                        if (ArogyaTableOcr.CORE.none { !fields[it].isNullOrBlank() }) tr("This does not look like a registration slip, register page or card: no name, age, mobile, house or LMP was found. Check the document and take the photo again.",
+                            "यह पंजीकरण पर्ची, रजिस्टर या कार्ड नहीं लगता: नाम, उम्र, मोबाइल, मकान या LMP नहीं मिला। कागज़ जाँचें और फिर फ़ोटो लें।")
+                        else tr("The name could not be read on this photo (found: ", "इस फ़ोटो पर नाम नहीं पढ़ा जा सका (मिला: ") +
+                            ArogyaTableOcr.CORE.filter { !fields[it].isNullOrBlank() }.joinToString(", ") { personFieldLabel(it, hindi) } +
+                            tr("). Turn on the internet to read it with Muse Spark, or add the person by typing.", ")। Muse Spark से पढ़ने के लिए इंटरनेट चालू करें, या टाइप करके जोड़ें।"))
                     listOf(ArogyaPersonCsv.toBeneficiary(fields))
                 }
                 if (found.any { it.aadhaar.isNotBlank() }) msg = tr("Aadhaar number read — saved encrypted, shown masked (last 4 digits).", "आधार नंबर पढ़ा — सुरक्षित (एन्क्रिप्टेड) सेव, सिर्फ़ आखिरी 4 अंक दिखते हैं।")
@@ -191,7 +196,7 @@ private fun PhotoPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (List<Be
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u -> if (u != null) run(u, false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(tr("Photograph the MCP card or register page. Only the picked photo is read; Aadhaar numbers are removed.", "MCP कार्ड या रजिस्टर पेज की फ़ोटो लें। सिर्फ़ चुनी फ़ोटो पढ़ी जाती है; आधार नंबर हटाए जाते हैं।"), style = MaterialTheme.typography.bodySmall)
+        Text(tr("Photograph the slip, MCP card or register page. Only the picked photo is read. Aadhaar is saved encrypted, shown masked, and blacked out before any online reading.", "पर्ची, MCP कार्ड या रजिस्टर पेज की फ़ोटो लें। सिर्फ़ चुनी फ़ोटो पढ़ी जाती है। आधार सुरक्षित सेव होता है, छिपाकर दिखता है, और ऑनलाइन पढ़ने से पहले काला किया जाता है।"), style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { camPerm.launch(android.Manifest.permission.CAMERA) }, enabled = !busy) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
             OutlinedButton(onClick = { ArogyaPhotoGuard.hold(context); pick.launch(arrayOf("image/*")) }, enabled = !busy) { Text(tr("Choose photo", "फ़ोटो चुनें")) }

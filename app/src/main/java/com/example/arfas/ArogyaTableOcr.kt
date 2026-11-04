@@ -136,15 +136,68 @@ object ArogyaTableOcr {
             t.isEmpty() -> "?"
             digitsOnly(t) && (d.length == 10 || (d.length == 12 && d.startsWith("91") && t.startsWith("+"))) -> "phone"
             digitsOnly(t) && d.length == 12 -> "aadhaar"
+            // OCR drops or adds a digit: 9 or 11 digits is still the mobile, shown to the ASHA with a "check it" warning.
+            digitsOnly(t) && t.none { it == ' ' } && d.length in 9..11 -> "phone"
             DATE.matches(t) -> "date"
             AGE.matchEntire(t)?.groupValues?.get(1)?.toIntOrNull()?.let { it in 0..110 } == true -> "age"
             HOUSE.matches(t) && t.any(Char::isLetter) -> "household"
             SEX.matches(t) -> "sex"
-            CATEGORY.containsMatchIn(t) && t.split(Regex("\\s+")).size <= 3 -> "category"
+            (CATEGORY.containsMatchIn(t) || fuzzyCategory(t) != null) && t.split(Regex("\\s+")).size <= 3 -> "category"
             t.any(Char::isDigit) -> "?"
             else -> ""
         }
     }
+
+    /** A cell's form, or the forms of its parts when two table cells were read as one. */
+    private fun valueForms(v: String): List<String> = splitMerged(v).map { formOf(it) }
+
+    /**
+     * "23 9000000301" → ["23", "9000000301"]; "H-051 Rampur" → ["H-051", "Rampur"]; "Pregnant 26/08/2026" → both.
+     * Split only when the whole is not one value and every part is recognisable (a name such as "Sarita Yadav"
+     * and an Aadhaar written "0000 1111 2222" stay whole).
+     */
+    fun splitMerged(v: String): List<String> {
+        val t = v.trim()
+        if (t.none(Char::isDigit)) return listOf(t)
+        val whole = formOf(t)
+        if (whole in setOf("phone", "date", "household", "age") || (whole == "aadhaar" && AADHAAR_FORMAT.matches(t))) return listOf(t)
+        val parts = t.split(Regex("\\s+")).filter { it.isNotBlank() }.flatMap { splitAgePhone(it) }
+        if (parts.size < 2) return listOf(t)
+        // Re-join words that belong together (a name, "Eligible couple") between the recognised parts.
+        val out = ArrayList<String>()
+        parts.forEach { p ->
+            val last = out.lastOrNull()
+            if (last != null && formOf(p) == "" && formOf(last) == "") out[out.size - 1] = "$last $p" else out += p
+        }
+        return if (out.all { formOf(it) != "?" }) out else listOf(t)
+    }
+    /** "239000000301" (age written against the mobile, no gap) → ["23", "9000000301"]; an OCR-dropped digit is kept as read. */
+    private fun splitAgePhone(p: String): List<String> {
+        if (!p.all(Char::isDigit) || p.length !in 11..13) return listOf(p)
+        val age = p.take(2).toInt(); val rest = p.drop(2)
+        return if (age in 12..60 && rest.length in 9..11 && rest[0] in '5'..'9') listOf(p.take(2), rest) else listOf(p)
+    }
+
+    // ── Category words as OCR / handwriting really comes back ("Pregmant", "Pregnent", "Chlid") ──
+    private val CAT_WORDS = listOf("pregnant" to "Pregnant", "pregnancy" to "Pregnant", "eligible" to "Eligible couple", "couple" to "Eligible couple",
+        "mother" to "Mother", "postnatal" to "Mother", "child" to "Child", "infant" to "Child", "other" to "Other")
+    private fun editDistance(a: String, b: String): Int {
+        val d = IntArray(b.length + 1) { it }
+        for (i in 1..a.length) { var prev = d[0]; d[0] = i
+            for (j in 1..b.length) { val tmp = d[j]; d[j] = minOf(d[j] + 1, d[j - 1] + 1, prev + if (a[i - 1] == b[j - 1]) 0 else 1); prev = tmp } }
+        return d[b.length]
+    }
+    /** The category a word means, tolerant of 1 wrong letter (2 in long words); null when it is not a category word. */
+    fun fuzzyCategory(v: String): String? {
+        val toks = v.lowercase().split(Regex("[^a-z]+")).filter { it.length >= 4 }
+        if (toks.isEmpty() || toks.size > 3) return null
+        for (t in toks) for ((w, canon) in CAT_WORDS) {
+            val dist = editDistance(t, w)
+            if (dist == 0 || (dist == 1 && w.length >= 5) || (dist == 2 && w.length >= 8)) return canon
+        }
+        return null
+    }
+    private val AADHAAR_FORMAT = Regex("""^\d{4}[\s-]?\d{4}[\s-]?\d{4}$""")
 
     /**
      * One person from a slip whose table has no heading row ("Sarita Yadav | Ramesh Yadav | 23 | 9000000301 |
@@ -154,26 +207,37 @@ object ArogyaTableOcr {
      * word cells in order are the name, the husband / relative and the village. The ASHA checks each one.
      */
     fun headerlessRow(lines: List<Line>): Map<String, String>? {
-        val rs = rows(lines)
-        if (rs.isEmpty()) return null
-        val medianH = lines.filter { it.text.isNotBlank() }.map { it.h }.sorted().let { it[it.size / 2] }
-        fun hits(r: List<Line>) = if (r.any { ':' in it.text }) 0 else r.map { formOf(it.text) }.count { it in setOf("phone", "date", "household", "category") }
-        val ai = rs.indices.maxByOrNull { hits(rs[it]) } ?: return null
-        if (hits(rs[ai]) < 2 || rs[ai].size < 3) return null
-        // Join the OCR rows just above / below that belong to the same table row (a cell written on two lines).
-        var lo = ai; var hi = ai
-        fun near(a: List<Line>, b: List<Line>) = maxOf(a.minOf { it.top }, b.minOf { it.top }) - minOf(a.maxOf { it.bottom }, b.maxOf { it.bottom }) <= medianH * 0.8
-        while (lo > 0 && ai - lo < 2 && rs[lo - 1].none { ':' in it.text } && hits(rs[lo - 1]) == 0 && near(rs[lo - 1], rs[lo])) lo--
-        while (hi < rs.size - 1 && hi - ai < 2 && rs[hi + 1].none { ':' in it.text } && hits(rs[hi + 1]) == 0 && near(rs[hi + 1], rs[hi])) hi++
+        val clean = lines.filter { it.text.isNotBlank() }
+        if (clean.isEmpty()) return null
+        val medianH = clean.map { it.h }.sorted()[clean.size / 2]
+        // Values that can only be data (a mobile, a date, a house number, a category) mark the person's row. A tilted
+        // photo makes that row slope, so a straight line is fitted through them instead of grouping by height alone.
+        val strong = setOf("phone", "date", "household", "category")
+        val anchors0 = clean.filter { ':' !in it.text && valueForms(it.text).any { f -> f in strong } }
+        // Count values, not OCR pieces: the whole row often comes back as one piece ("23 9000000301 H-051 Rampur …").
+        if (anchors0.sumOf { a -> valueForms(a.text).count { it in strong } } < 2) return null
+        val seed = anchors0.firstOrNull { valueForms(it.text).contains("phone") } ?: anchors0.first()
+        val anchors = anchors0.filter { kotlin.math.abs(it.cy - seed.cy) <= medianH * 3 }
+        val mx = anchors.map { it.cx.toDouble() }.average(); val my = anchors.map { it.cy.toDouble() }.average()
+        val sxx = anchors.sumOf { (it.cx - mx) * (it.cx - mx) }
+        val slope = if (sxx < 1.0) 0.0 else (anchors.sumOf { (it.cx - mx) * (it.cy - my) } / sxx).coerceIn(-0.35, 0.35)
+        fun rowY(x: Int) = my + slope * (x - mx)
+        // The row's cells: near that line (a cell written on two lines sits half a line above / below it). Labels
+        // ("Sub-centre: …"), titles (many words) and serial numbers are not cells of the person.
+        val band = clean.filter { c -> ':' !in c.text && splitMerged(c.text).all { it.trim().split(Regex("\\s+")).size <= 4 } &&
+            kotlin.math.abs(c.cy - rowY(c.cx)) <= medianH * 1.4 }
+        if (band.sumOf { splitMerged(it.text).size } < 3) return null
         // Columns: cells that overlap horizontally are one cell of the table.
         data class Col(var left: Int, var right: Int, val cells: MutableList<Line>)
         val cols = ArrayList<Col>()
-        (lo..hi).flatMap { rs[it] }.sortedBy { it.left }.forEach { c ->
+        band.sortedBy { it.left }.forEach { c ->
             val col = cols.firstOrNull { c.left < it.right && c.right > it.left }
             if (col != null) { col.cells += c; col.left = minOf(col.left, c.left); col.right = maxOf(col.right, c.right) }
             else cols += Col(c.left, c.right, mutableListOf(c))
         }
+        // Two neighbouring cells read as one ("23 9000000301", "H-051 Rampur") are split back into their values.
         val values = cols.sortedBy { it.left }.map { col -> col.cells.sortedBy { it.top }.joinToString(" ") { it.text.trim() } }
+            .flatMap { v -> splitMerged(v) }
         val out = LinkedHashMap<String, String>()
         val words = ArrayList<String>()
         var date: String? = null
@@ -182,7 +246,8 @@ object ArogyaTableOcr {
                 "" -> if (!isSerial(v)) words += v
                 "date" -> if (date == null) date = v
                 "age" -> out["age"] = v     // the last short number: a serial number comes first
-                "phone", "aadhaar", "household", "sex", "category" -> if (f !in out) out[f] = v
+                "category" -> if (f !in out) out[f] = fuzzyCategory(v) ?: v
+                "phone", "aadhaar", "household", "sex" -> if (f !in out) out[f] = v
             }
         }
         words.getOrNull(0)?.let { out["name"] = it }

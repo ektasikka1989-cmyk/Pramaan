@@ -113,7 +113,11 @@ class MLKitProcessor {
             }
         val latin = read(textRecognizer)
         val hindi = read(devanagariRecognizer)
-        return if (hindi.any { l -> l.text.any { it in '\u0900'..'\u097F' } }) hindi else latin
+        // Use the Hindi reader only for a page that is mostly Hindi: a signature or tick read as one Devanagari mark
+        // must not switch an English slip to the Hindi reader (it reads English letters worse).
+        val letters = hindi.sumOf { l -> l.text.count { it.isLetter() } }.coerceAtLeast(1)
+        val deva = hindi.sumOf { l -> l.text.count { it in '\u0900'..'\u097F' } }
+        return if (deva * 100 / letters >= 25) hindi else latin
     }
 
     /**

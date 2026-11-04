@@ -79,7 +79,8 @@ object ArogyaPersonCsv {
 
     /** dd/MM/yyyy, dd-MM-yyyy or yyyy-MM-dd → ISO yyyy-MM-dd; null when invalid. */
     fun parseDate(s: String): String? {
-        val t = s.trim()
+        // OCR reads 0 as O and 1 as l / I inside dates ("26/08/2O26").
+        val t = s.trim().let { r -> if (r.count(Char::isDigit) >= 4) r.replace('O', '0').replace('o', '0').replace('l', '1').replace('I', '1').replace(" ", "") else r }
         if (t.isEmpty()) return null
         fun iso(d: Int, m: Int, y: Int) = runCatching { LocalDate.of(y, m, d).toString() }.getOrNull()
         Regex("""^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$""").matchEntire(t)?.let { m ->
@@ -100,7 +101,8 @@ object ArogyaPersonCsv {
             listOf("child", "children", "infant", "baby", "bachcha", "bacha", "shishu", "बच्चा").any { n.contains(it) } -> BenCategory.CHILD
             listOf("couple", "eligible", "ec", "dampati", "yogya", "दंपति").any { n.contains(it) } -> BenCategory.ELIGIBLE_COUPLE
             listOf("other", "anya", "अन्य").any { n.contains(it) } -> BenCategory.OTHER
-            else -> null
+            // Misread by OCR / handwriting ("Pregmant"): the nearest category word, 1–2 letters off.
+            else -> ArogyaTableOcr.fuzzyCategory(s)?.let { c -> if (c.equals(s.trim(), ignoreCase = true)) null else catOf(c) }
         }
     }
 

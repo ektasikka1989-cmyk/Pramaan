@@ -585,7 +585,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     "person" -> {
                         val (bmp, ls) = personPhoto ?: return@launch
                         val seen = ArogyaPhotoVision.transcribe(context, bmp, ls, ArogyaPhotoText.Kind.PERSON)?.let { ArogyaPhotoText.people(it).firstOrNull() }
-                        if (seen == null) { onlineNote = tr("Muse Spark could not read more from this photo. Type the missing details.", "Muse Spark इस फ़ोटो से और नहीं पढ़ पाया। बाकी जानकारी लिखें।"); return@launch }
+                        if (seen == null) { onlineNote = tr("Muse Spark found no person's details on this photo. Check that it is the right document, or type the details.", "Muse Spark को इस फ़ोटो पर किसी व्यक्ति की जानकारी नहीं मिली। सही कागज़ है, जाँचें या जानकारी लिखें।"); return@launch }
                         personFields = personFields + seen
                         personPreview = ArogyaPersonCsv.toBeneficiary(personFields)
                         personEngine = listOf(personEngine, ArogyaPhotoVision.LABEL).filter { it.isNotBlank() }.joinToString(" · ")
@@ -668,7 +668,6 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         val ocrProc = MLKitProcessor()
                         val (ocr, lines) = try { withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) to runCatching { ocrProc.recognizeLines(bmp) }.getOrDefault(emptyList()) } }
                             finally { runCatching { ocrProc.close() } }
-                        if (ocr.isBlank()) error(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
                         // Fixed rules first (table headings in any wording, "Label: value" lines); the phone AI then reads the
                         // page with its layout kept, only for details still missing. Rules win where both answer.
                         val rules = ArogyaTableOcr.readPerson(lines)
@@ -679,11 +678,22 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                             ArogyaPhotoVision.transcribe(context, bmp, lines, ArogyaPhotoText.Kind.PERSON)?.let { ArogyaPhotoText.people(it).firstOrNull() } } else null
                         val (fields, eng) = if (seen != null) (rules + seen) to ArogyaPhotoVision.LABEL
                             else if (missing.isEmpty()) rules to tr("On-phone rules (offline): every column read", "फ़ोन पर नियम (ऑफ़लाइन): हर कॉलम पढ़ा")
-                            else { val got = (ai ?: error("AI is not ready")).extractPersonFields(ArogyaTableOcr.rowText(lines).ifBlank { ocr })
-                                (got.first + rules) to (if (rules.isEmpty()) got.second else tr("On-phone rules + ", "फ़ोन पर नियम + ") + got.second) }
+                            else { // The phone model may be slow, not loaded or find nothing: the review still opens.
+                                val got = if (ocr.isBlank()) null else runCatching { ai?.extractPersonFields(ArogyaTableOcr.rowText(lines).ifBlank { ocr }) }
+                                    .onFailure { if (it is CancellationException) throw it; Log.w("ArogyaDemo", "AROGYA_PERSON_READ phone_ai_failed ${it.message?.take(120)}") }.getOrNull()
+                                ((got?.first ?: emptyMap()) + rules) to (if (got == null) tr("On-phone rules (offline): ML Kit text", "फ़ोन पर नियम (ऑफ़लाइन): ML Kit अक्षर")
+                                    else if (rules.isEmpty()) got.second else tr("On-phone rules + ", "फ़ोन पर नियम + ") + got.second) }
                         Log.i("ArogyaDemo", "AROGYA_PERSON_READ rules=${rules.keys.joinToString(",")} ai_asked=${missing.isNotEmpty()} final=${fields.keys.joinToString(",")}")
-                        if (fields["name"].isNullOrBlank()) error(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
-                        personMsg = listOfNotNull(
+                        // What the phone saw, without the values (for app_log.txt): rows, cells and the form of each cell.
+                        Log.i("ArogyaDemo", "AROGYA_PERSON_OCR lines=${lines.size} ocr_chars=${ocr.length} rows=" + ArogyaTableOcr.rows(lines).joinToString("|") { r -> r.size.toString() } +
+                            " headerless=${ArogyaTableOcr.headerlessRow(lines)?.keys?.joinToString(",") ?: "none"}")
+                        // No name found: never a dead end. The review opens with what was captured, the missing details
+                        // listed, and the "Read online with Muse Spark" button; Sunita can also type them.
+                        val coreFound = ArogyaTableOcr.CORE.count { !fields[it].isNullOrBlank() }
+                        personMsg = if (coreFound == 0) tr("⚠ This does not look like a registration slip, register page or card: no name, age, mobile, house, village or LMP was found. Check that it is the right document, then take the photo again.",
+                            "⚠ यह पंजीकरण पर्ची, रजिस्टर या कार्ड नहीं लगता: नाम, उम्र, मोबाइल, मकान, गाँव या LMP नहीं मिला। सही कागज़ है, जाँचें और फिर से फ़ोटो लें।")
+                            else if (fields["name"].isNullOrBlank()) tr("The phone could not read the name on this photo. Press \"Read online\" below, or type the details.",
+                            "फ़ोन इस फ़ोटो पर नाम नहीं पढ़ पाया। नीचे \"ऑनलाइन पढ़ें\" दबाएँ, या जानकारी लिखें।") else listOfNotNull(
                             tr("Photo read by Muse Spark online. Aadhaar was blacked out on the phone before sending.", "फ़ोटो Muse Spark ने ऑनलाइन पढ़ी। भेजने से पहले आधार फ़ोन पर ही काला किया गया।").takeIf { seen != null },
                             tr("Aadhaar number read on the phone — saved encrypted, shown masked.", "आधार नंबर फ़ोन पर पढ़ा — सुरक्षित सेव, छिपाकर दिखाया।").takeIf { !fields["aadhaar"].isNullOrBlank() }).joinToString(" ")
                         personPreview = ArogyaPersonCsv.toBeneficiary(fields); personEngine = eng
@@ -1250,10 +1260,20 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                         tr("House", "मकान") to p.household, tr("Village", "गाँव") to p.village, "LMP" to p.lmp).filter { it.second.isBlank() }.map { it.first }
                     if (missing.isNotEmpty() && !personSaved) Text(tr("Not read from the photo: ", "फ़ोटो से नहीं पढ़ा: ") + missing.joinToString(", ") + tr(" — type them above if you have them.", " — हों तो ऊपर लिखें।"),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    // A value read but doubtful (OCR dropped a digit): shown, never silently fixed or dropped.
+                    val phoneDigits = p.phone.count { it.isDigit() }
+                    val phoneDoubt = p.phone.isNotBlank() && phoneDigits != 10 && !p.phone.startsWith("+")
+                    if (phoneDoubt && !personSaved) Text(tr("⚠ Mobile has $phoneDigits digits (should be 10) — check it against the slip.", "⚠ मोबाइल में $phoneDigits अंक हैं (10 होने चाहिए) — पर्ची से मिलाएँ।"),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    val ageDoubt = p.age.toIntOrNull()?.let { p.category == BenCategory.PREGNANT && it !in 14..50 } == true
+                    if (ageDoubt && !personSaved) Text(tr("⚠ Age ${p.age} looks unusual for a pregnancy — check it.", "⚠ उम्र ${p.age} गर्भावस्था के लिए असामान्य — जाँचें।"),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                     // Offline reading incomplete → say what was captured and offer the online reading (Muse Spark).
                     if (!personSaved && !personEngine.contains("Muse Spark")) {
-                        val got = ArogyaTableOcr.CORE.filter { !personFields[it].isNullOrBlank() }
-                        ReadOnlineOffer(got.map { personFieldLabel(it, hindi) }, (ArogyaTableOcr.CORE - got.toSet()).map { personFieldLabel(it, hindi) },
+                        val unclear = buildList { if (phoneDoubt) add("phone"); if (ageDoubt) add("age") }
+                        val got = ArogyaTableOcr.CORE.filter { !personFields[it].isNullOrBlank() && it !in unclear }
+                        ReadOnlineOffer(got.map { personFieldLabel(it, hindi) },
+                            (ArogyaTableOcr.CORE - got.toSet()).map { personFieldLabel(it, hindi) + if (it in unclear) tr(" (unclear)", " (साफ़ नहीं)") else "" },
                             hindi, onlineBusy, onlineNote) { onReadOnline("person") }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1410,6 +1430,8 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                             else tr("Added to MCP card (they leave the due list): ", "MCP कार्ड में जोड़े (बाकी सूची से हटे): ") + vaccinesAdded.joinToString())
                         if (weightAdded.isNotBlank()) Text(tr("Weight added: ", "वज़न जोड़ा: ") + weightAdded)
                     }
+                    if (r.fields.isEmpty()) Text(tr("⚠ No vaccines, dates or weights were found. Check that this is the MCP card's immunization page.",
+                        "⚠ कोई टीका, तारीख या वज़न नहीं मिला। जाँचें कि यह MCP कार्ड का टीकाकरण पेज है।"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     if (!cardApplied && !cardModel.contains("Muse Spark")) {
                         val bad = r.fields.filter { it.value.contains("not readable") }
                         ReadOnlineOffer(r.fields.filter { it !in bad }.map { it.label }, bad.map { it.label + tr(" (date)", " (तारीख)") }.ifEmpty { if (r.fields.isEmpty()) listOf(tr("vaccines and dates", "टीके और तारीखें")) else emptyList() },
@@ -1443,6 +1465,8 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                         Text(tr("Name: ", "नाम: ") + s.name.ifBlank { "—" }, style = MaterialTheme.typography.bodySmall)
                         Text(tr("Batch: ", "बैच: ") + s.batch.ifBlank { "—" } + " · " + tr("Expiry: ", "एक्सपायरी: ") + s.expiry.ifBlank { "—" } +
                             " · " + tr("Qty: ", "मात्रा: ") + (if (s.qty > 0) s.qty.toString() else "—"), style = MaterialTheme.typography.bodySmall)
+                        if (s.name.isBlank() && s.batch.isBlank() && s.expiry.isBlank() && s.qty <= 0) Text(tr("⚠ This does not look like a medicine label: no name, batch, expiry or quantity was found. Check the photo.",
+                            "⚠ यह दवा का लेबल नहीं लगता: नाम, बैच, एक्सपायरी या मात्रा नहीं मिली। फ़ोटो जाँचें।"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         Text(if (medMatched.isNotBlank()) tr("Matches kit item: $medMatched", "किट की दवा मिली: $medMatched")
                             else tr("Not in the kit list — will be added as a new item.", "किट सूची में नहीं — नई दवा जुड़ेगी।"),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)

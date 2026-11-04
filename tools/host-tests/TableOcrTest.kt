@@ -127,6 +127,47 @@ fun main() {
     check("used-meta-models", U.steps("SAM 3.1 (Meta, online)")[0].model == "SAM 3.1" && U.steps("Muse Glimmer 30B — Together AI")[0].model == "Muse Glimmer 30B" &&
         U.steps("Whisper base (offline)")[0].model.startsWith("Whisper") && U.steps("same day rules")[0].model != "SAM 3.1")
 
+    // ── Real phone photo conditions: tilted ~4°, two cells read as one, signature scribble, title above ──
+    fun tilt(l: ArogyaTableOcr.Line, k: Double) = ArogyaTableOcr.Line(l.text, l.left, l.top + (l.left * k).toInt(), l.right, l.bottom + (l.left * k).toInt())
+    val merged = noHead.filter { it.text != "23" && it.text != "9000000301" && it.text != "H-051" && it.text != "Rampur" } +
+        listOf(L("23 9000000301", 172, 162, 103), L("H-051 Rampur", 280, 162, 95)) + L("Qhauf~", 300, 247, 60)
+    for (k in listOf(-0.07, 0.0, 0.07)) {
+        val tp = ArogyaTableOcr.readPerson(merged.map { tilt(it, k) })
+        check("tilted-merged-slip-$k", tp["name"] == "Sarita Yadav" && tp["relative"] == "Ramesh Yadav" && tp["age"] == "23" && tp["phone"] == "9000000301" &&
+            tp["household"] == "H-051" && tp["village"] == "Rampur" && tp["category"] == "Pregnant" && tp["lmp"] == "26/08/2026", tp)
+    }
+    check("split-merged", ArogyaTableOcr.splitMerged("23 9000000301") == listOf("23", "9000000301") && ArogyaTableOcr.splitMerged("0000 1111 2222") == listOf("0000 1111 2222") &&
+        ArogyaTableOcr.splitMerged("Sarita Yadav") == listOf("Sarita Yadav") && ArogyaTableOcr.splitMerged("Pregnant 26/08/2026") == listOf("Pregnant", "26/08/2026"), ArogyaTableOcr.splitMerged("Pregnant 26/08/2026"))
+
+    // ── REAL OCR of the user's slip photo (4 Nov): row read as ONE piece, "23"+mobile run together with a digit
+    //    dropped, "Pregmant", the second line of the names ("Yadav") missed. Must still give a reviewable person. ──
+    val real = listOf(
+        ArogyaTableOcr.Line("PREGNANCY REGISTRATION-VILLAGE RAMPUR", 90, 76, 370, 96),
+        ArogyaTableOcr.Line("Sub-centre:RampurSC", 65, 107, 197, 122),
+        ArogyaTableOcr.Line("ASHA: Sunita Devi", 233, 104, 336, 121),
+        ArogyaTableOcr.Line("Sarita", 64, 149, 103, 164),
+        ArogyaTableOcr.Line("Ramesh", 116, 148, 159, 164),
+        ArogyaTableOcr.Line("23900000301 H-051 Rampur Pregmant 26/08/2026", 165, 147, 425, 171),
+        ArogyaTableOcr.Line("Aadhaar No.:[Aadhaar Redacted]", 60, 196, 267, 227),
+        ArogyaTableOcr.Line("Family consenttaken:Yes", 60, 240, 208, 265),
+        ArogyaTableOcr.Line("Signature:", 231, 239, 289, 258))
+    // The same row as word boxes (how ML Kit returns elements), merged back into cells by the app's own cells().
+    val rowWords = run { var x = 165; "23900000301 H-051 Rampur Pregmant 26/08/2026".split(" ").map { w -> ArogyaTableOcr.Line(w, x, 147, x + w.length * 6, 171).also { x += w.length * 6 + 12 } } }
+    val realWords = real.filter { !it.text.startsWith("2390") } + ArogyaTableOcr.cells(rowWords)
+    for ((tag, ls) in listOf("line" to real, "words" to realWords)) {
+        val rp = ArogyaTableOcr.readPerson(ls)
+        check("real-photo-$tag", rp["name"] == "Sarita" && rp["relative"] == "Ramesh" && rp["age"] == "23" && rp["phone"] == "900000301" &&
+            rp["household"] == "H-051" && rp["village"] == "Rampur" && rp["category"] == "Pregnant" && rp["lmp"] == "26/08/2026", rp)
+        val rb = ArogyaPersonCsv.toBeneficiary(rp)
+        check("real-photo-$tag-beneficiary", rb.category == BenCategory.PREGNANT && rb.lmp == "2026-08-26" && rb.phone == "900000301", rb)
+    }
+    check("fuzzy-category", ArogyaTableOcr.fuzzyCategory("Pregmant") == "Pregnant" && ArogyaTableOcr.fuzzyCategory("Chlid") == null &&
+        ArogyaTableOcr.fuzzyCategory("Father") == null && ArogyaTableOcr.fuzzyCategory("Sarita Yadav") == null && ArogyaTableOcr.fuzzyCategory("Mothar") == "Mother")
+    check("ocr-date", ArogyaPersonCsv.parseDate("26/08/2O26") == "2026-08-26" && ArogyaPersonCsv.parseDate("26 / 08 / 2026") == "2026-08-26")
+    // A photo that is not a person's record at all: nothing is invented.
+    val unrelated = listOf(ArogyaTableOcr.Line("SALE 50% OFF", 10, 10, 200, 40), ArogyaTableOcr.Line("Shop No. 12, Main Market", 10, 60, 300, 90), ArogyaTableOcr.Line("Open 10 am to 9 pm", 10, 110, 260, 140))
+    check("unrelated-photo-empty", ArogyaTableOcr.readPerson(unrelated)["name"] == null, ArogyaTableOcr.readPerson(unrelated))
+
     println("TableOcrTest: $n passed, $fails failed")
     if (fails > 0) kotlin.system.exitProcess(1)
 }
