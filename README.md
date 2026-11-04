@@ -20,7 +20,7 @@ on an ordinary Android phone, in Hindi or English, <b>with or without internet</
 | 🎬 **Demo video (3 min)** | **DEMO_VIDEO_LINK** |
 | 📱 **Download the app** | [**Pramaan v1.0 APK**](https://github.com/ektasikka1989-cmyk/Pramaan/releases/latest) (~700 MB — [why it is large](#why-the-apk-is-700-mb)) · [install in 3 steps](#try-it-in-10-minutes) |
 | 🧠 **Models** | [MODELS.md](MODELS.md) · on-phone Meta models: [Pramaan_Meta_Models](https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models) (3.3 GB, downloaded by the in-app setup) |
-| 🏆 **Hackathon** | Meta Global AI Developer Hackathon 2026 · theme **Build for Your World** · [how Pramaan meets each judging criterion](#for-the-judges-criteria-and-where-to-see-them) |
+| 🏆 **Hackathon** | Meta Global AI Developer Hackathon 2026 · theme **Build for Your World** · [Pramaan at a glance](#pramaan-at-a-glance) |
 | 👤 **Author** | Ekta Sikka |
 
 > **Scope.** Pramaan is a job aid for trained government health workers, not medical advice for patients. Answers are
@@ -30,8 +30,8 @@ on an ordinary Android phone, in Hindi or English, <b>with or without internet</
 ---
 
 ## Contents
-[The problem](#the-problem) · [What Pramaan does](#what-pramaan-does) · [The three demo workflows](#the-three-demo-workflows) ·
-[For the judges](#for-the-judges-criteria-and-where-to-see-them) · [Meta models](#how-meta-models-power-pramaan) ·
+[The problem](#the-problem) · [What Pramaan does](#what-pramaan-does) · [The three demo workflows](#the-three-demo-workflows) · [At a glance](#pramaan-at-a-glance) ·
+[Meta models](#how-meta-models-power-pramaan) ·
 [How it works](#how-it-works) · [Offline vs online](#what-works-offline-and-what-the-cloud-adds) ·
 [Safety and privacy](#safety-privacy-and-clinical-responsibility) · [Try it](#try-it-in-10-minutes) ·
 [Technical depth](#technical-depth) · [Built during the hackathon](#what-was-built-during-the-hackathon-26-oct--4-nov-2026) ·
@@ -65,20 +65,20 @@ medical answers.
 Home → **Demo** runs three complete, real ASHA visits. Every screen first shows its **aim**, then does the work live,
 and after each action lists **what changed, with a button to open the real card, register or summary**.
 
-| Workflow | What the judge sees |
+| Workflow | What happens |
 |---|---|
 | **1 · New pregnancy** (Sarita, 10 weeks) | Registration slip photo → added to the village and pregnancy registers (EDD by rule) → the right form opens (MCP card, ANC visit 1) → **one voice note fills 20 rows**: weight, height, pulse, BP, Hb, urine albumin and sugar, blood group, HIV test, Td-1, delivery hospital, complaints → danger check: none → ask the guides (pregnancy danger signs) → explanation for the family in Hindi → ASHA confirms → MCP card (pages 3–6), ANC register, stock (pregnancy test kit) and next due date update together |
 | **2 · Newborn day-7 visit** (Baby of Neha) | MCP card photo: birth vaccines read with the ANM's dates → HBNC form Day 7 from a voice note → **danger sign: fever and poor feeding → refer** → WhatsApp to the ANM → ask the guides (cord care) → family advice → save: HBNC form, MCP card page 7 (linked), growth chart, referral, the mother's medicines from the kit |
 | **3 · Sick child** (Rohan, diarrhoea) | Voice note → sick-child form → no danger sign, treat at home → ask the guides (ORS at home) → advice for the mother → ORS and zinc leave the kit → zinc runs out → refill request to the ANM → new strip scanned into stock (or the kit counted with SAM 3.1) |
 
-## For the judges: criteria and where to see them
-| What judges look for | How Pramaan answers it | Where to see it |
+## Pramaan at a glance
+| | What it means | See it |
 |---|---|---|
-| **Impact** | A daily pain for about a million frontline health workers; works where they are — offline, on a basic phone, in Hindi; fills the **real government formats**, not new ones; danger signs never depend on AI | Video · [the problem](#the-problem) · Workflow 2 (referral) · [`docs/forms_verification.md`](docs/forms_verification.md) |
-| **Creative use of Meta's AI** | **Four Meta models in one workflow**: Llama 3.2 on the phone for every AI step offline; Muse Spark (text and vision) for better answers and photo reading online; Muse Voice for Hindi/English notes; SAM 3.1 to count drug-kit items. One switch moves every AI action between phone and cloud, and **each answer is tagged with the model that produced it** | [Meta models](#how-meta-models-power-pramaan) · tap any ✨ tag in the app |
-| **Demo** | Three end-to-end visits, each screen showing its aim, live AI, and links to the real records it changed; shown offline (airplane mode) and online | Video · Home → Demo |
-| **Technical depth and execution** | llama.cpp on Android, on-device RAG with citations, grounded form filling with fixed-rule backup, table reading from OCR positions, privacy redaction of photos before upload, streaming model installer, 52 host test suites | [Technical depth](#technical-depth) · [`tools/host-tests/`](tools/host-tests) |
-| **Theme: Build for Your World** | Built from first-hand knowledge of the ASHA's day: her forms, her registers, her village without signal | [The problem](#the-problem) |
+| 🌍 **Real-world impact** | A daily burden for about a million frontline health workers, solved where they work: offline, on an ordinary phone, in Hindi. Pramaan fills the **real government formats** instead of inventing new ones, and danger signs never depend on AI | [The problem](#the-problem) · Workflow 2 (referral) · [`docs/forms_verification.md`](docs/forms_verification.md) |
+| 🧠 **Four Meta models, one workflow** | Llama 3.2 on the phone for every AI step offline; Muse Spark (text and vision) for better answers and photo reading online; Muse Voice for Hindi/English notes; SAM 3.1 to count drug-kit items. One switch moves every AI action between phone and cloud, and every answer is tagged with the model that produced it | [Meta models](#how-meta-models-power-pramaan) · tap any ✨ tag in the app |
+| 🎬 **A complete, working product** | Three end-to-end home visits; each screen shows its aim, runs the AI live and links to the real records it changed — offline (airplane mode) and online | Demo video · Home → Demo |
+| ⚙️ **Engineering depth** | llama.cpp on Android, on-device RAG with page citations, grounded form filling with a fixed-rule backup, table reading from OCR positions, Aadhaar redaction before any upload, a streaming model installer, 52 host test suites | [Technical depth](#technical-depth) · [`tools/host-tests/`](tools/host-tests) |
+| 🏡 **Built for our world** | Designed from first-hand knowledge of the ASHA's day: her forms, her registers, her village without signal | [The problem](#the-problem) |
 
 ## How Meta models power Pramaan
 | Meta model | Where | What it does in the visit | Why this model | Code |

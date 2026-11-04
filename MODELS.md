@@ -4,7 +4,7 @@ Pramaan runs its AI **on the phone** (offline) and, optionally, **in the cloud**
 files are large and have their own licences, so **they are not stored in git**. This page lists every model and data
 file the app uses, how each one reaches the phone, and where it comes from.
 
-**For judges / testers:** install the APK from [Releases](https://github.com/ektasikka1989-cmyk/Pramaan/releases/latest).
+**To try it:** install the APK from [Releases](https://github.com/ektasikka1989-cmyk/Pramaan/releases/latest).
 It already contains Whisper (offline speech), the search models, the guide database and the app data — that is why it is about 700 MB. On first launch the **setup wizard**
 downloads the on-phone Meta models from Hugging Face and installs them; nothing has to be copied by hand.
 
