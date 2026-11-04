@@ -487,7 +487,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         ran = ran - scene; busy = false; return@LaunchedEffect
                     }
                     if (!saved) {
-                        val vals = filled.mapValues { it.value.value }
+                        // The whole note goes with the visit: medicines and danger signs in it are recorded by the save itself.
+                        val vals = filled.mapValues { it.value.value } + (if (transcript.isNotBlank()) mapOf(ArogyaOfficialForms.NOTE_KEY to transcript) else emptyMap())
                         // Workflow 1 without the slip photo: the slip's details are registered now (labelled).
                         if (store.state.value.beneficiaries.none { it.id == b.id }) {
                             store.update { reg -> reg.copy(beneficiaries = reg.beneficiaries + b) }
@@ -495,6 +496,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                                 "✓ गाँव + गर्भवती रजिस्टर: ${b.name} जोड़ी गईं (पर्ची से लिखा, फ़ोटो नहीं)")
                         }
                         val cur = store.state.value.beneficiaries.first { it.id == b.id }
+                        ArogyaOfficialForms.stockShortfalls(store.state.value, vals).forEach { (item, give, have) ->
+                            updates = updates + tr("⚠ Drug kit: giving $give $item, kit had $have — record stock received", "⚠ दवा किट: $give $item दिए, किट में $have थे — मिला स्टॉक दर्ज करें") }
                         savedSummary = ArogyaVisitSave.save(store, queue, cur, sp, column, vals, filled.mapValues { it.value.source }, emptySet())
                         saved = true
                         val rec = queue.state.value.visits.firstOrNull { it.id == "official:${b.id}:${sp.id}:$column" }
@@ -502,15 +505,6 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         savedReferral = if (rec == null) tr("Visit record not found after save.", "सेव के बाद विज़िट नहीं मिला।")
                             else if (rec.referral == ArogyaReferral.NEEDED) tr("Referral recorded: NEEDED — ", "रेफ़रल दर्ज: ज़रूरी — ") + rec.referralNote
                             else tr("Referral recorded: none needed.", "रेफ़रल दर्ज: ज़रूरत नहीं।")
-                        // HBNC has no medicine rows: the medicines Sunita said she gave go through the drug kit's
-                        // "Give to person" path (stock line + diary + card IFA total), read by fixed rules from her note.
-                        if (sp.id == "annex9") {
-                            val mum = store.state.value.beneficiaries.firstOrNull { it.category == BenCategory.MOTHER && it.household == cur.household && cur.household.isNotBlank() }
-                            val gives = ArogyaDemoScript.medicinesGiven(transcript, ArogyaRegistryLogic.catalog(store.state.value.stockItems).map { it.name })
-                            if (mum != null) gives.forEach { g ->
-                                store.update { reg -> ArogyaOfficialForms.applyGive(reg, mum, g.item, g.qty, "demo-w2-${g.item.filter(Char::isLetterOrDigit)}", "demo") }
-                            }
-                        }
                         val after = balances()
                         stockDelta = (stockBefore.keys + after.keys).mapNotNull { k ->
                             val a = stockBefore[k] ?: 0; val z = after[k] ?: 0
@@ -532,7 +526,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         if (sp.id == "annex9") store.state.value.beneficiaries.firstOrNull { it.category == BenCategory.MOTHER && it.household == cur.household && cur.household.isNotBlank() }
                             ?.let { addOpens("saved", (tr("Mother's MCP card · ", "माँ का MCP कार्ड · ") + it.name) to "card:${it.id}") }
                         if (stockDelta.isNotEmpty()) addOpens("saved", tr("Drug-kit stock register", "दवा किट स्टॉक रजिस्टर") to "stock")
-                        if (vals.isEmpty()) updates = updates + tr("⚠ No values were filled — go back to the voice screen and check the note.", "⚠ कोई मान नहीं भरा — वॉइस स्क्रीन पर लौटकर नोट जाँचें।")
+                        if (filled.isEmpty()) updates = updates + tr("⚠ No values were filled — go back to the voice screen and check the note.", "⚠ कोई मान नहीं भरा — वॉइस स्क्रीन पर लौटकर नोट जाँचें।")
                         Log.i("ArogyaDemo", "AROGYA_DEMO_SAVED wf=$wf form=${sp.id} col=$column filled=${vals.size} dangers=${dangers.size} stock=${stockDelta.joinToString("; ")}")
                     }
                 }
@@ -612,12 +606,16 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         val (ocr, lines) = try { withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) to runCatching { ocrProc.recognizeLines(bmp) }.getOrDefault(emptyList()) } }
                             finally { runCatching { ocrProc.close() } }
                         if (ocr.isBlank()) error(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
-                        val rows = ArogyaTableOcr.people(lines)
-                        personMsg = if (ArogyaPersonExtract.hasAadhaar(ocr))
-                            tr("Aadhaar number found and removed — it is never stored.", "आधार नंबर मिला और हटाया — वो कभी सेव नहीं होता।") else ""
-                        val (fields, eng, _) = if (rows.isNotEmpty()) Triple(rows.first().mapValues { ArogyaPersonExtract.maskAadhaar(it.value) }, "On-phone rules (offline): register rows", 0L)
-                            else (ai ?: error("AI is not ready")).extractPersonFields(ocr)
-                        if (fields.isEmpty()) error(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
+                        // Fixed rules first (table headings in any wording, "Label: value" lines); the phone AI then reads the
+                        // page with its layout kept, only for details still missing. Rules win where both answer.
+                        val rules = ArogyaTableOcr.readPerson(lines)
+                        val missing = ArogyaTableOcr.CORE.filter { rules[it].isNullOrBlank() }
+                        val (fields, eng) = if (missing.isEmpty()) rules to tr("On-phone rules (offline): every column read", "फ़ोन पर नियम (ऑफ़लाइन): हर कॉलम पढ़ा")
+                            else { val got = (ai ?: error("AI is not ready")).extractPersonFields(ArogyaTableOcr.rowText(lines).ifBlank { ocr })
+                                (got.first + rules) to (if (rules.isEmpty()) got.second else tr("On-phone rules + ", "फ़ोन पर नियम + ") + got.second) }
+                        Log.i("ArogyaDemo", "AROGYA_PERSON_READ rules=${rules.keys.joinToString(",")} ai_asked=${missing.isNotEmpty()} final=${fields.keys.joinToString(",")}")
+                        if (fields["name"].isNullOrBlank()) error(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
+                        personMsg = if (!fields["aadhaar"].isNullOrBlank()) tr("Aadhaar number read — saved encrypted, shown masked.", "आधार नंबर पढ़ा — सुरक्षित सेव, छिपाकर दिखाया।") else ""
                         personPreview = ArogyaPersonCsv.toBeneficiary(fields); personEngine = eng
                         Log.i("ArogyaDemo", "AROGYA_DEMO_PERSON engine=\"$eng\" fields=${fields.keys.joinToString(",")}")
                         personAgreed = false; personSaved = false; personDue = ""
@@ -972,7 +970,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         updates = updates, stockDelta = stockDelta, refillText = refillText,
                         opens = opensBy[scenes.getOrNull(scene)?.id.orEmpty()].orEmpty(), onOpen = { openDoc(it) }, formNote = formNote, personEngine = personEngine,
                         sopQ = ArogyaDemoScript.question(wf, demoHindi), sopF = ArogyaDemoScript.followUp(wf, demoHindi),
-                        onConfirmSave = { formConfirmed = true; replay() })
+                        onConfirmSave = { formConfirmed = true; replay() }, onEditPerson = { personPreview = it })
                     }
                     val listState = rememberLazyListState()
                     LaunchedEffect(caption, scene) { if (caption in lines().indices) listState.animateScrollToItem(caption) }
@@ -1097,7 +1095,7 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
     cardChanged: Int = -1, remembered: Map<String, Pair<Long, Long>> = emptyMap(),
     updates: List<String> = emptyList(), stockDelta: List<String> = emptyList(), refillText: String = "",
     opens: List<Pair<String, String>> = emptyList(), onOpen: (String) -> Unit = {}, formNote: String = "", personEngine: String = "",
-    sopQ: String = "", sopF: String = "", onConfirmSave: () -> Unit = {}) {
+    sopQ: String = "", sopF: String = "", onConfirmSave: () -> Unit = {}, onEditPerson: (Beneficiary) -> Unit = {}) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // "Updated": real changes this save made, shown on the save screen.
         if (sceneId == "saved" && !saved) DemoCard(tr("Confirm before saving", "सेव से पहले पक्का करें")) {
@@ -1157,23 +1155,38 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                     OutlinedButton(onClick = { onChoosePhoto("person") }) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
                 }
                 if (personMsg.isNotBlank()) Text(personMsg, style = MaterialTheme.typography.bodySmall)
-                personPreview?.let { p -> DemoCard(tr("✨ Review — from photo", "✨ जाँचें — फ़ोटो से")) {
-                    ConfirmChip(hindi)
-                    Text(p.name.ifBlank { "—" } + (if (p.relativeName.isNotBlank()) " · ${p.relativeName}" else "") +
-                        (if (p.village.isNotBlank()) " · ${p.village}" else ""), fontWeight = FontWeight.Bold)
+                personPreview?.let { p -> DemoCard(tr("✨ Check the details — correct anything, then confirm", "✨ जानकारी जाँचें — गलत हो तो सुधारें, फिर पक्का करें")) {
                     if (personEngine.isNotBlank()) Text(tr("Read by: ", "पढ़ा: ") + personEngine, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    val edd = ArogyaRegistryLogic.edd(p)
-                    listOf(tr("Age", "उम्र") to p.age, tr("Mobile", "मोबाइल") to p.phone, tr("House", "मकान") to p.household, tr("Village", "गाँव") to p.village,
-                        tr("Category", "श्रेणी") to (if (hindi) p.category.titleHi else p.category.title), "LMP" to p.lmp,
-                        tr("EDD (rule: LMP + 280 days)", "EDD (नियम: LMP + 280 दिन)") to (edd?.toString() ?: ""), "RCH ID" to p.rchId)
-                        .forEach { (k, v) -> Text("$k: " + v.ifBlank { tr("— not on the slip", "— पर्ची पर नहीं") }, style = MaterialTheme.typography.bodySmall) }
+                    // Every field is editable: the photo reading is a proposal until Sunita confirms it.
+                    @Composable fun field(label: String, value: String, onChange: (String) -> Unit) = OutlinedTextField(value = value, onValueChange = onChange,
+                        label = { Text(label) }, singleLine = true, enabled = !personSaved, modifier = Modifier.fillMaxWidth())
+                    field(tr("Name", "नाम"), p.name) { onEditPerson(p.copy(name = it)) }
+                    field(tr("Husband / father", "पति / पिता"), p.relativeName) { onEditPerson(p.copy(relativeName = it)) }
+                    field(tr("Age (years)", "उम्र (साल)"), p.age) { v -> onEditPerson(p.copy(age = v.filter { it.isDigit() }.take(3))) }
+                    field(tr("Mobile", "मोबाइल"), p.phone) { v -> onEditPerson(p.copy(phone = v.filter { it.isDigit() || it == '+' }.take(15))) }
+                    field(tr("House", "मकान"), p.household) { onEditPerson(p.copy(household = it)) }
+                    field(tr("Village", "गाँव"), p.village) { onEditPerson(p.copy(village = it)) }
+                    field(tr("LMP (YYYY-MM-DD)", "LMP (साल-महीना-दिन)"), p.lmp) { onEditPerson(p.copy(lmp = it.trim())) }
+                    Text(tr("Category: ", "श्रेणी: ") + (if (hindi) p.category.titleHi else p.category.title), style = MaterialTheme.typography.bodySmall)
+                    ArogyaRegistryLogic.edd(p)?.let { Text(tr("EDD (rule: LMP + 280 days): ", "EDD (नियम: LMP + 280 दिन): ") + it, style = MaterialTheme.typography.bodySmall) }
+                    if (p.aadhaar.isNotBlank()) Text(tr("Aadhaar: ", "आधार: ") + ArogyaPersonExtract.masked(p.aadhaar) + tr(" (saved encrypted, shown masked)", " (सुरक्षित सेव, छिपाकर दिखाया)"), style = MaterialTheme.typography.bodySmall)
+                    if (p.rchId.isNotBlank()) Text("RCH ID: " + p.rchId, style = MaterialTheme.typography.bodySmall)
+                    if (p.notes.isNotBlank()) Text(tr("Not understood as a field — kept as notes, please check: ", "किसी खाने से नहीं मिला — नोट में रखा, जाँचें: ") + p.notes,
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    val missing = listOf(tr("Husband / father", "पति / पिता") to p.relativeName, tr("Age", "उम्र") to p.age, tr("Mobile", "मोबाइल") to p.phone,
+                        tr("House", "मकान") to p.household, tr("Village", "गाँव") to p.village, "LMP" to p.lmp).filter { it.second.isBlank() }.map { it.first }
+                    if (missing.isNotEmpty() && !personSaved) Text(tr("Not read from the photo: ", "फ़ोटो से नहीं पढ़ा: ") + missing.joinToString(", ") + tr(" — type them above if you have them.", " — हों तो ऊपर लिखें।"),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(personAgreed, onAgreePerson)
-                        Text(tr("Family agreed to be registered", "परिवार रजिस्टर होने को तैयार"), style = MaterialTheme.typography.bodySmall)
+                        Checkbox(personAgreed, onAgreePerson, enabled = !personSaved)
+                        Text(tr("The family agreed to be registered", "परिवार पंजीकरण के लिए तैयार है"), style = MaterialTheme.typography.bodySmall)
                     }
-                    if (!personSaved) Button(onClick = onSavePerson, enabled = personAgreed && p.name.isNotBlank()) {
-                        Text(tr("Save person", "व्यक्ति सेव करें")) }
-                    else Text("✓ " + tr("Saved — in the due list: ", "सेव हो गया — बाकी सूची में: ") + personDue,
+                    if (!personSaved) {
+                        Button(onClick = onSavePerson, enabled = personAgreed && p.name.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                            Text(tr("✓ Details are correct — add to register", "✓ जानकारी सही है — रजिस्टर में जोड़ें"), maxLines = 1) }
+                        if (!personAgreed) Text(tr("Tick \"The family agreed\" to enable the button.", "बटन चालू करने के लिए \"परिवार तैयार है\" पर निशान लगाएँ।"),
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else Text("✓ " + tr("Added to the register — in the due list: ", "रजिस्टर में जुड़ गया — बाकी सूची में: ") + personDue,
                         fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
                 } }
             }
@@ -1185,7 +1198,9 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                     ArogyaOfficialForms.fieldsFor(sp, column).take(12).forEach { Text("☐ " + it.label + if (it.hint.isNotBlank()) "  — ${it.hint}" else "", style = MaterialTheme.typography.bodySmall) }
                     Text(tr("…and ${ArogyaOfficialForms.fieldsFor(sp, column).size - 12} more rows", "…और ${ArogyaOfficialForms.fieldsFor(sp, column).size - 12} पंक्तियाँ"), style = MaterialTheme.typography.labelSmall)
                 }
-                if (onDeepLink != null) OutlinedButton(onClick = { onDeepLink("guided:${b.id}") }) { Text(tr("Open this visit ↗", "यह विज़िट खोलें ↗")) }
+                // Only when the real visit screen would open this same form for a saved person.
+                if (onDeepLink != null && data.beneficiaries.any { it.id == b.id } && ArogyaOfficialForms.formFor(b, data.forms).first.id == sp.id)
+                    OutlinedButton(onClick = { onDeepLink("guided:${b.id}") }) { Text(tr("Open this visit ↗", "यह विज़िट खोलें ↗")) }
             }
             "voice" -> {
                 DemoCard((if (transcriptLive) "🎤 " else "⌨ ") + tr("Voice note", "वॉइस नोट") + " · $transcriptEngine") {
@@ -1200,6 +1215,12 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                         Text((if (v.source == "ai") "✨ " else "⚙ ") + "${if (hindi) f.hi else f.label}: ${v.value}${if (f.type == QType.NUMBER && f.unit.isNotBlank()) " " + f.unit else ""}", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
                         Text("   ← “${v.evidence}”", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
                 }
+                val unusedNote = remember(filled, transcript) { if (transcript.isBlank() || filled.isEmpty()) emptyList() else ArogyaOfficialForms.unusedSentences(transcript, filled) }
+                if (unusedNote.isNotEmpty()) Text(tr("Not part of this form — kept in the visit note: ", "इस फ़ॉर्म का हिस्सा नहीं — विज़िट नोट में रखा: ") +
+                    unusedNote.joinToString(" · ") { "“$it”" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val unfilled = remember(filled, transcript) { if (transcript.isBlank()) emptyList() else ArogyaOfficialForms.mentionedFields(sp, column, transcript).filter { it.id !in filled } }
+                if (filled.isNotEmpty() && unfilled.isNotEmpty()) Text(tr("Mentioned in the note but not filled — please check: ", "नोट में बोला पर भरा नहीं — जाँचें: ") +
+                    unfilled.joinToString(", ") { if (hindi) it.hi else it.label }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 if (filled.isNotEmpty() && !formConfirmed) Button(onClick = onConfirmForm) { Text(tr("✓ Sunita confirms these values", "✓ सुनीता इन मानों को पक्का करती हैं")) }
                 if (formConfirmed) Text("✓ " + tr("Confirmed by Sunita — nothing saved before this.", "सुनीता ने पक्का किया — इससे पहले कुछ सेव नहीं।"),
                     fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)

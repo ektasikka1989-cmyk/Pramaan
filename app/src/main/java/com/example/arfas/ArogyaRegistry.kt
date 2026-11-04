@@ -43,7 +43,9 @@ data class Beneficiary(
     val sex: String = "F", val category: BenCategory = BenCategory.OTHER, val dob: String = "", val lmp: String = "", val deliveryDate: String = "",
     val deliveryPlace: String = "", val birthWeightKg: Double? = null, val preterm: Boolean = false, val sncuDischarge: String = "", val motherId: String = "",
     val rchId: String = "", val ancNumber: String = "", val familyPlanning: String = "", val notes: String = "", val active: Boolean = true, val mcp: McpCard = McpCard(),
-    val demo: Boolean = false, val createdAt: Long = System.currentTimeMillis(), val updatedAt: Long = System.currentTimeMillis()
+    val demo: Boolean = false, val createdAt: Long = System.currentTimeMillis(), val updatedAt: Long = System.currentTimeMillis(),
+    /** Aadhaar number (12 digits) as read from an official record: stored encrypted with the registry, always shown masked, never sent to the cloud. */
+    val aadhaar: String = ""
 )
 data class DiaryEntry(val id: String = java.util.UUID.randomUUID().toString(), val date: String = LocalDate.now().toString(), val kind: DiaryKind = DiaryKind.HOME_VISIT,
     val beneficiaryId: String = "", val note: String = "")
@@ -594,7 +596,7 @@ object ArogyaRegistryCodec {
     private fun ben(b: Beneficiary) = JSONObject().put("id", b.id).put("name", b.name).put("relative", b.relativeName).put("household", b.household).put("age", b.age).put("village", b.village).put("phone", b.phone)
         .put("sex", b.sex).put("category", b.category.name).put("dob", b.dob).put("lmp", b.lmp).put("deliveryDate", b.deliveryDate).put("deliveryPlace", b.deliveryPlace)
         .put("birthWeightKg", b.birthWeightKg ?: JSONObject.NULL).put("preterm", b.preterm).put("sncuDischarge", b.sncuDischarge).put("motherId", b.motherId)
-        .put("rchId", b.rchId).put("ancNumber", b.ancNumber).put("familyPlanning", b.familyPlanning).put("notes", b.notes).put("active", b.active).put("demo", b.demo)
+        .put("rchId", b.rchId).put("ancNumber", b.ancNumber).put("familyPlanning", b.familyPlanning).put("notes", b.notes).put("active", b.active).put("demo", b.demo).put("aadhaar", b.aadhaar)
         .put("createdAt", b.createdAt).put("updatedAt", b.updatedAt)
         .put("mcp", JSONObject().put("vaccines", JSONObject(b.mcp.vaccines)).put("anc", JSONObject(b.mcp.anc.mapKeys { it.key.toString() }))
             .put("weights", JSONArray().also { a -> b.mcp.weights.forEach { a.put(JSONObject().put("date", it.date).put("kg", it.kg)) } })
@@ -617,7 +619,7 @@ object ArogyaRegistryCodec {
                     (m.optJSONArray("weights") ?: JSONArray()).let { w -> (0 until w.length()).map { WeightEntry(w.getJSONObject(it).getString("date"), w.getJSONObject(it).getDouble("kg")) } },
                     (m.optJSONArray("td") ?: JSONArray()).let { t -> (0 until t.length()).map { t.getString(it) } }, m.optInt("ifa", 0),
                     (m.optJSONObject("ancDetails") ?: JSONObject()).let { ad -> ad.keys().asSequence().associate { k -> val x = ad.getJSONObject(k); k.toInt() to AncDetail(x.optString("w"), x.optString("bp"), x.optString("hb")) } }),
-                j.optBoolean("demo"), j.optLong("createdAt"), j.optLong("updatedAt")) } }
+                j.optBoolean("demo"), j.optLong("createdAt"), j.optLong("updatedAt"), j.optString("aadhaar")) } }
         val diary = arr("diary").let { a -> (0 until a.length()).map { i -> val j = a.getJSONObject(i)
             DiaryEntry(j.getString("id"), j.getString("date"), runCatching { DiaryKind.valueOf(j.getString("kind")) }.getOrDefault(DiaryKind.OTHER), j.optString("ben"), j.optString("note")) } }
         val stock = arr("stock").let { a -> (0 until a.length()).map { i -> val j = a.getJSONObject(i)

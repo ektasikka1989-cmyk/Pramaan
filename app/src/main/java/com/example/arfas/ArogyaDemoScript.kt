@@ -129,8 +129,8 @@ object ArogyaDemoScript {
         formOpens("From her LMP the app knows she is in the first trimester: MCP card ANC page, visit 1.", "LMP से ऐप जानता है कि वह पहली तिमाही में हैं: MCP कार्ड ANC पेज, विज़िट 1।"),
         voice("ANC page", "ANC पेज"),
         danger("For Sarita, the rules find no danger sign today.", "सरिता के लिए आज नियमों को कोई खतरे का लक्षण नहीं मिला।"),
-        ask("Sunita asks how many IFA tablets Sarita should take, and how.", "सुनीता पूछती हैं कि सरिता कितनी IFA गोलियाँ और कैसे लें।"),
-        explain("Sarita's family must understand the iron tablets and the food she needs.", "सरिता के परिवार को आयरन की गोलियाँ और ज़रूरी खाना समझना चाहिए।"),
+        ask("Sunita asks the guides which danger signs in pregnancy need urgent referral.", "सुनीता गाइड से पूछती हैं कि गर्भावस्था के कौन से खतरे के लक्षणों में तुरंत रेफ़र करना है।"),
+        explain("Sarita's family must know these danger signs and when to go to the hospital.", "सरिता के परिवार को ये खतरे के लक्षण और अस्पताल कब जाना है, पता होना चाहिए।"),
         save("The ANC page, the MCP card, the pregnancy register, the stock and the next due date update together.", "ANC पेज, MCP कार्ड, गर्भवती रजिस्टर, स्टॉक और अगली तारीख़ एक साथ अपडेट होते हैं।"),
         card("Her details fill page 3, and today's visit fills page 5.", "उनकी जानकारी पेज 3 पर, और आज की विज़िट पेज 5 पर भरी है।"),
         practice, summary))
@@ -163,8 +163,8 @@ object ArogyaDemoScript {
         formOpens("Rohan is unwell, so the app opens the sick-child form.", "रोहन बीमार है, इसलिए ऐप बीमार-बच्चा फ़ॉर्म खोलता है।"),
         voice("sick-child form", "बीमार-बच्चा फ़ॉर्म"),
         danger("Rohan has no general danger sign, so he is treated at home and seen again in 2 days.", "रोहन में कोई सामान्य खतरे का लक्षण नहीं है, इसलिए घर पर इलाज और 2 दिन बाद फिर जाँच।"),
-        ask("Sunita checks how to prepare ORS and give zinc.", "सुनीता जाँचती हैं कि ORS कैसे बनाएँ और ज़िंक कैसे दें।"),
-        explain("Rohan's mother must know how to give ORS and zinc at home.", "रोहन की माँ को पता होना चाहिए कि घर पर ORS और ज़िंक कैसे दें।"),
+        ask("Sunita checks in the guides how to prepare ORS at home.", "सुनीता गाइड में देखती हैं कि घर पर ORS कैसे बनाएँ।"),
+        explain("Rohan's mother must know how to prepare and give ORS at home.", "रोहन की माँ को पता होना चाहिए कि घर पर ORS कैसे बनाएँ और पिलाएँ।"),
         save("The form, the follow-up date and the stock register update together; zinc has now run out.", "फ़ॉर्म, अगली तारीख़ और स्टॉक रजिस्टर एक साथ अपडेट होते हैं; ज़िंक अब ख़त्म हो गया है।"),
         sc("refill", "Ask the ANM for a refill", "ANM से रिफिल माँगें",
             listOf("The app sees which kit items are out or low.", "It writes the refill request with exact balances, in a fixed format.", "Sunita sends it to the ANM on WhatsApp in one tap."),
@@ -193,12 +193,13 @@ object ArogyaDemoScript {
 
     /** The Ask SOP question and follow-up for each workflow. */
     fun question(wf: Int, hindi: Boolean): String = when (wf) {
-        1 -> if (hindi) "गर्भवती महिला को कितनी IFA गोलियाँ लेनी चाहिए, और कैसे?" else "How many IFA tablets should a pregnant woman take, and how?"
-        3 -> if (hindi) "दस्त वाले बच्चे के लिए ORS कैसे बनाएँ और ज़िंक कैसे दें?" else "How do I prepare ORS and give zinc to a child with diarrhoea?"
+        // Workflow questions are about procedures and referral from the official guides, never doses.
+        1 -> if (hindi) "गर्भावस्था के कौन से खतरे के लक्षणों में तुरंत रेफ़र करना चाहिए?" else "Which danger signs in pregnancy need urgent referral?"
+        3 -> if (hindi) "घर पर ORS कैसे बनाएँ?" else "How do I prepare ORS at home?"
         else -> if (hindi) QUESTION_HI else QUESTION_EN
     }
     fun followUp(wf: Int, hindi: Boolean): String = when (wf) {
-        1 -> if (hindi) "गर्भावस्था में खून की कमी के लिए कौन सा खाना अच्छा है?" else "Which foods help with anaemia in pregnancy?"
+        1 -> if (hindi) "ऐसा लक्षण दिखे तो आशा को क्या करना चाहिए?" else "What should the ASHA do if she finds one of these signs?"
         3 -> if (hindi) "दस्त वाले बच्चे को कब रेफ़र करना चाहिए?" else "When should a child with diarrhoea be referred?"
         else -> if (hindi) FOLLOWUP_HI else FOLLOWUP_EN
     }

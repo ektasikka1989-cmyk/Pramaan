@@ -32,7 +32,8 @@ object ArogyaPersonCsv {
         "deliverydate" to listOf("deliverydate", "dateofdelivery", "dod", "prasavtithi", "delivery", "प्रसवतिथि", "डिलीवरी"),
         "deliveryplace" to listOf("deliveryplace", "birthplace", "placeofbirth", "prasavsthan", "janmasthan", "प्रसवस्थान", "जन्मस्थान"),
         "weight" to listOf("weight", "birthweight", "wt", "vazan", "janmavazan", "वज़न", "वजन", "जन्मवज़न"),
-        "fp" to listOf("fp", "familyplanning", "fpmethod", "contraceptive", "method", "saadhan", "parivarniyojan", "परिवारनियोजन", "साधन")
+        "fp" to listOf("fp", "familyplanning", "fpmethod", "contraceptive", "method", "saadhan", "parivarniyojan", "परिवारनियोजन", "साधन"),
+        "aadhaar" to listOf("aadhaar", "aadhar", "adhaar", "adhar", "aadhaarno", "aadharno", "aadhaarnumber", "uid", "uidai", "आधार", "आधारनंबर")
     )
 
     fun normHeader(h: String): String = h.trim().lowercase().replace(Regex("[\\s_.\\-]+"), "")
@@ -46,7 +47,10 @@ object ArogyaPersonCsv {
             val take = key.isNotBlank() && key !in used
             if (take) used += key
             i to if (take) key else ""
-        }.toMap()
+        }.toMap().let { exact ->
+            // Headings in other wordings ("Contact details", "Husband's name"): the same meaning-based match as photos.
+            exact.mapValues { (i, k) -> if (k.isNotBlank()) k else ArogyaTableOcr.headerKey(headers[i]).takeIf { it.isNotBlank() && it !in used }?.also { used += it }.orEmpty() }
+        }
     }
 
     /** Minimal CSV parser: commas, quotes ("" escape), CR/LF tolerant. */
@@ -157,7 +161,10 @@ object ArogyaPersonCsv {
             birthWeightKg = row["weight"]?.toDoubleOrNull()?.takeIf { it in 0.3..8.0 },
             rchId = row["rch"].orEmpty().trim().take(30),
             ancNumber = row["anc"].orEmpty().trim().take(10),
-            familyPlanning = row["fp"].orEmpty().trim().take(60)
+            familyPlanning = row["fp"].orEmpty().trim().take(60),
+            // Columns the app has no field for are kept, not dropped ("Blood group: B+").
+            notes = row["notes"].orEmpty().trim().take(400),
+            aadhaar = row["aadhaar"].orEmpty().filter { it.isDigit() }.takeIf { it.length == 12 }.orEmpty()
         )
     }
 }
@@ -208,6 +215,7 @@ SEX:
 VILLAGE:
 HOUSEHOLD:
 PHONE:
+AADHAAR:
 RCH:
 LMP:
 ANC:
@@ -221,7 +229,7 @@ $ocr"""
     private val KEYMAP = mapOf("name" to "name", "relative" to "relative", "age" to "age", "dob" to "dob",
         "sex" to "sex", "village" to "village", "household" to "household", "phone" to "phone", "rch" to "rch",
         "lmp" to "lmp", "anc" to "anc", "deliverydate" to "deliverydate", "deliveryplace" to "deliveryplace",
-        "weight" to "weight", "fp" to "fp")
+        "weight" to "weight", "fp" to "fp", "aadhaar" to "aadhaar")
 
     fun parse(out: String): Map<String, String> {
         val m = mutableMapOf<String, String>()
@@ -260,4 +268,6 @@ $ocr"""
     private val AADHAAR = Regex("""\b\d{4}[\s-]?\d{4}[\s-]?\d{4}\b""")
     fun hasAadhaar(text: String): Boolean = AADHAAR.containsMatchIn(text)
     fun maskAadhaar(text: String): String = text.replace(AADHAAR, "[Aadhaar removed]")
+    /** How an Aadhaar number is shown on screen (UIDAI practice): only the last 4 digits. */
+    fun masked(aadhaar: String): String = aadhaar.filter { it.isDigit() }.takeIf { it.length == 12 }?.let { "XXXX XXXX " + it.takeLast(4) }.orEmpty()
 }

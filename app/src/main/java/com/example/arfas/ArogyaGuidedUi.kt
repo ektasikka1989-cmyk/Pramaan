@@ -112,7 +112,12 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
     var showCard by rememberSaveable { mutableStateOf(false) }
     val dueVaccines = remember(b) { if (b.category != BenCategory.CHILD) emptyList() else runCatching { LocalDate.parse(b.dob) }.getOrNull()?.let { dob ->
         ArogyaSchedule.VACCINE_CONTACTS.filter { !it.due(dob).isAfter(today.plusDays(7)) }.flatMap { it.codes }.filter { b.mcp.vaccines[it] == null } } ?: emptyList() }
-    val dangers = remember(values) { ArogyaOfficialForms.dangers(spec, values) }
+    // Fixed rules only: the danger-sign engine on her own words (even if no form row caught it) + the form's action rules.
+    val dangers = remember(values, note) { ArogyaDemoScript.dangerLines(note, spec, values, ArogyaVisit(name = b.name, date = today.toString(),
+        birthDate = if (b.category == BenCategory.CHILD) b.dob else "", kind = if (spec.id == "annex9") ArogyaKind.NEWBORN else if (b.category == BenCategory.CHILD) ArogyaKind.CHILD else ArogyaKind.FOLLOW_UP), hindi)
+        .map { it.removePrefix("⚠ ").removePrefix("• ") } }
+    // What she said that went into no row: kept in the visit note, shown so she can act on it.
+    val unused = remember(note, evidence) { ArogyaOfficialForms.unusedSentences(note, evidence.mapValues { FilledValue("", it.value, "ai") }) }
     val missing = remember(values) { ArogyaOfficialForms.missing(spec, column, values) }
     val next = remember { ArogyaOfficialForms.nextDue(spec, b, column, today) }
     val colName = spec.columns.getOrElse(column) { "" }
@@ -212,6 +217,21 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
                             } }
                         }
                         1 -> {
+                            val short = ArogyaOfficialForms.stockShortfalls(store.state.value, if (note.isBlank()) values else values + (ArogyaOfficialForms.NOTE_KEY to note))
+                            if (short.isNotEmpty()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                                Column(Modifier.padding(10.dp)) {
+                                    Text(tr("⚠ Not enough in the drug kit", "⚠ दवा किट में कम है"), fontWeight = FontWeight.Bold)
+                                    short.forEach { (item, give, have) -> Text(tr("$item: giving $give, kit has $have", "$item: दे रहे $give, किट में $have"), style = MaterialTheme.typography.bodySmall) }
+                                    Text(tr("Record the stock you received first (Drug kit → Receive), or saving will show a negative balance.", "पहले मिला स्टॉक दर्ज करें (दवा किट → प्राप्ति), नहीं तो बैलेंस माइनस दिखेगा।"),
+                                        style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            if (unused.isNotEmpty()) Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(tr("Not part of this form — kept in the visit note:", "इस फ़ॉर्म का हिस्सा नहीं — विज़िट नोट में रखा:"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                                unused.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                                Text(tr("Medicines and danger signs in it are still recorded (stock register, referral).", "इसमें दवाइयाँ और खतरे के लक्षण फिर भी दर्ज होते हैं (स्टॉक, रेफ़रल)।"),
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } }
                             if (dangers.isNotEmpty()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text(tr("⚠ REFER NOW", "⚠ तुरंत रेफ़र करें"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
@@ -221,7 +241,7 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
                                         OutlinedButton(onClick = { val ph = ArogyaShare.anmPhone(context); if (ph.isBlank()) Toast.makeText(context, tr("Add the ANM number in Escalate to ANM", "ANM नंबर जोड़ें"), Toast.LENGTH_LONG).show() else ArogyaShare.dial(context, ph) }) { Text("📞 ANM") }
                                         OutlinedButton(onClick = { ArogyaShare.whatsApp(context, ArogyaShare.anmPhone(context), "URGENT — ${b.name}, ${b.household} ${b.village} (${spec.columns.getOrElse(column) { "" }}): " + dangers.joinToString("; ") + ". Please advise. (ASHA via Pramaan)") }) { Text("💬") }
                                     }
-                                    Text(tr("Fixed action rules printed on the form — not AI.", "फ़ॉर्म पर छपे तय नियम — AI नहीं।"), style = MaterialTheme.typography.labelSmall)
+                                    Text(tr("Fixed danger rules from the official guides — not AI.", "सरकारी गाइड के तय नियम — AI नहीं।"), style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                             ArogyaOfficialForms.weightNote(prev, values)?.let { Text("⚖ $it", fontWeight = FontWeight.Medium, color = if (it.contains("fell")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary) }
@@ -300,7 +320,8 @@ fun ArogyaGuidedVisit(person: Beneficiary, hindi: Boolean, visits: List<ArogyaVi
                         1 -> step = 2
                         else -> {
                             val res = runCatching {
-                                ArogyaVisitSave.save(store, queue, b, spec, column, values, sources, vaccines, today, hindi)
+                                // The full note is kept with the visit (and medicines / danger signs in it are recorded too).
+                                ArogyaVisitSave.save(store, queue, b, spec, column, if (note.isBlank()) values else values + (ArogyaOfficialForms.NOTE_KEY to note), sources, vaccines, today, hindi)
                             }.onFailure { Toast.makeText(context, it.message ?: "Could not save", Toast.LENGTH_LONG).show() }
                             if (res.isSuccess) { saved = true; savedSummary = res.getOrDefault(""); android.util.Log.i("ArogyaDemo", "AROGYA_FORM_SAVED form=${spec.id} col=$column filled=${values.count { it.value.isNotBlank() }}/${rows.size} ai=${sources.count { it.value == "ai" }} danger=${dangers.size} next=$next model=\"$modelLabel\"") }
                         }

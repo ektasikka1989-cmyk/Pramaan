@@ -688,7 +688,8 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
      */
     suspend fun extractPersonFields(ocr: String): Triple<Map<String, String>, String, Long> = mutex.withLock {
         val t = System.currentTimeMillis()
-        val clean = ArogyaPersonExtract.maskAadhaar(ocr)
+        // The record's own Aadhaar is kept (stored encrypted, shown masked). This stays on the phone: never a cloud prompt.
+        val clean = ocr
         check(clean.trim().length >= 4) { "No readable text was found. Take a closer photo in good light." }
         val det = mutableMapOf<String, String>()
         Regex("""(?<!\d)(\d{10})(?!\d)""").find(clean)?.let { det["phone"] = it.groupValues[1] }
@@ -727,7 +728,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
      */
     suspend fun extractPersonList(ocr: String): Triple<List<Map<String, String>>, String, Long> = mutex.withLock {
         val t = System.currentTimeMillis()
-        val clean = ArogyaPersonExtract.maskAadhaar(ocr)
+        val clean = ocr
         check(clean.trim().length >= 4) { "No readable text was found. Take a closer photo in good light." }
         val blocks = ArogyaExtractSplit.splitBlocks(clean).ifEmpty { listOf(clean) }
         var by = "On-phone rules (offline): patterns"
@@ -795,6 +796,14 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         check(transcript.trim().length >= 4) { "Speak the stock change first." }
         var lines = ArogyaVoiceStock.ground(ArogyaVoiceStock.parseRules(transcript, catalog), transcript, catalog)
         var by = "On-phone rules (offline): patterns"
+        // Rules understood only part of it: the model reads the whole note too, and new items are added (rules win per item).
+        if (lines.isNotEmpty() && ArogyaVoiceStock.unmatched(transcript, catalog, lines).isNotEmpty()) {
+            val rulesLines = lines
+            val (more, label) = route("voice_stock", ArogyaVoiceStock.prompt(transcript, catalog), 400,
+                ArogyaVoiceStock.prompt(ArogyaOnlinePolicy.scrubGeneric(transcript), catalog), cloudTokens = 900, lang = ArogyaBudget.langOf(transcript)) { out ->
+                ArogyaVoiceStock.ground(ArogyaVoiceStock.parseModel(out), transcript, catalog).takeIf { it.isNotEmpty() } }
+            more?.let { m -> lines = rulesLines + m.filter { x -> rulesLines.none { it.item == x.item } }; by = "$by + $label" }
+        }
         if (lines.isEmpty()) {
             var lastRaw = ""
             val (opt, label) = route("voice_stock", ArogyaVoiceStock.prompt(transcript, catalog), 400,

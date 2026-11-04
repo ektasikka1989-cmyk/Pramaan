@@ -85,6 +85,16 @@ object ArogyaVoiceStock {
         return RECEIVE
     }
 
+    /**
+     * Spoken parts with a number that no saved line accounts for ("5 bandage rolls" when bandage is not a kit
+     * item): shown to the ASHA as "not understood", never dropped silently.
+     */
+    fun unmatched(transcript: String, catalog: List<String>, lines: List<VoiceStockLine>): List<String> =
+        normDigits(transcript).split(Regex(",| and | और |।|\\.|;|\\+")).map { it.trim() }.filter { clause ->
+            val q = qtyOf(clause)?.first ?: return@filter false
+            q > 0 && lines.none { it.qty == q }
+        }
+
     fun parseRules(transcript: String, catalog: List<String>): List<VoiceStockLine> {
         if (catalog.isEmpty()) return emptyList()
         return normDigits(transcript).split(Regex(",| and | और |।|\\.|;|\\+")).mapNotNull { clause ->

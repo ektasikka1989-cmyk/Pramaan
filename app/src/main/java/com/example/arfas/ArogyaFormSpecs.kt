@@ -428,12 +428,17 @@ object ArogyaOfficialForms {
     fun relevantFields(spec: FormSpec, column: Int, note: String): List<FieldSpec> {
         val all = fieldsFor(spec, column)
         if (all.size <= 20) return all
+        val hit = mentionedFields(spec, column, note)
+        return if (hit.size < 3) all else hit.take(24)
+    }
+
+    /** The form rows the note talks about (by their words). Rows mentioned but left unfilled are shown as "please check". */
+    fun mentionedFields(spec: FormSpec, column: Int, note: String): List<FieldSpec> {
         val n = ArogyaAiExtras.asciiDigits(note).lowercase()
-        val hit = all.filter { f ->
+        return fieldsFor(spec, column).filter { f ->
             val words = (ROW_WORDS[f.id].orEmpty() + Regex("[\\p{L}]{4,}").findAll(f.label.lowercase()).map { it.value }.filter { it !in ROW_STOP })
             words.any { mentions(n, it) }
         }
-        return if (hit.size < 3) all else hit.take(24)
     }
 
     fun prompt(spec: FormSpec, column: Int, transcript: String): String = """
@@ -521,7 +526,16 @@ object ArogyaOfficialForms {
         "g_vomit" to listOf("vomiting", "vomit", "उल्टी"), "g_fits" to listOf("fits", "convulsions", "दौरे"), "g_lethargic" to listOf("lethargic", "सुस्त"),
         "referred" to listOf("referred", "रेफ़र"))
     private val YES_PHRASES = mapOf("diarrhoea" to Regex("(?i)loose stools?|diarrh?oea|दस्त"), "s_feed" to Regex("(?i)feeding less|feeds? less|not feeding well|कम दूध"),
-        "s_cry" to Regex("(?i)cry (?:is )?weak|weak cry|रोना कमज़ोर"), "warm" to Regex("(?i)kept warm|गर्म रखा"))
+        "s_cry" to Regex("(?i)cry (?:is )?weak|weak cry|रोना कमज़ोर"), "warm" to Regex("(?i)kept warm|गर्म रखा"),
+        // Danger signs said in her words (sick child, pregnancy, newborn): fixed rules so a referral never depends on the AI.
+        "fast_breath" to Regex("(?i)fast breathing|breathing (?:very )?fast|rapid breathing|chest in-?drawing|तेज़? सा[ँं]स|सा[ँं]स तेज़?|पसली चल"),
+        "g_fits" to Regex("(?i)\\bfits?\\b|convulsions?|seizures?|दौरे|झटके"), "g_lethargic" to Regex("(?i)lethargic|unconscious|very sleepy|सुस्त|बेहोश"),
+        "g_vomit" to Regex("(?i)vomits everything|vomiting everything|सब कुछ उल्टी"), "g_drink" to Regex("(?i)not able to drink|unable to drink|cannot drink|not drinking|पी नहीं (?:पा )?रहा"),
+        "s_chest" to Regex("(?i)chest in-?drawing|पसली चल|छाती धँस"), "s_limp" to Regex("(?i)limbs? (?:are )?limp|floppy|ढीला"),
+        "s_umbilicus" to Regex("(?i)pus on (?:the )?(?:cord|umbilicus|navel)|नाल पर मवाद है"),
+        "d_bleed" to Regex("(?i)bleeding|खून आ|खून बह"), "d_headache" to Regex("(?i)severe headache|headache|blurr?ed vision|blurring of vision|सिरदर्द|धुंधला"),
+        "d_fever" to Regex("(?i)high fever|\\bfever\\b|तेज़ बुखार|बुखार"), "d_water" to Regex("(?i)water (?:bag )?(?:broke|burst|leaking)|पानी की थैली फट"),
+        "d_labour" to Regex("(?i)labour pains?|labor pains?|reduced (?:foetal|fetal) movements?|baby (?:is )?not moving|प्रसव दर्द|बच्चा हिल नहीं"))
     private val NO_PHRASES = mapOf("g_drink" to Regex("(?i)drinking well|ठीक से पी"), "fast_breath" to Regex("(?i)breathing (?:is )?normal|साँस सामान्य"),
         "eyes" to Regex("(?i)eyes (?:are )?clean|आँखें साफ़"), "s_umbilicus" to Regex("(?i)no pus on the cord|no pus on cord|नाल पर मवाद नहीं"))
 
@@ -559,7 +573,13 @@ object ArogyaOfficialForms {
             NO_WORDS.forEach { (id, ws) -> ws.forEach { w ->
                 val m = (if (w.all { it.code < 128 }) Regex("(?i)\\b(?:no|not)\\b[^,;]{0,20}?\\b" + Regex.escape(w) + "\\b") else Regex(Regex.escape(w) + "[^,;]{0,15}?नहीं")).find(s)
                 if (m != null) put(id, "No", m.value) } }
-            YES_PHRASES.forEach { (id, r) -> r.find(s)?.let { m -> if (!Regex("(?i)\\bno\\b|\\bnot\\b|नहीं").containsMatchIn(s.substring(0, m.range.first))) put(id, "Yes", m.value) } }
+            // Negation counts only inside the same clause: "no fever, bleeding since morning" → bleeding Yes, fever No.
+            s.split(Regex(",|;|\\bbut\\b|लेकिन")).forEach { clause ->
+                YES_PHRASES.forEach { (id, r) -> r.find(clause)?.let { m ->
+                    val before = clause.substring(0, m.range.first); val after = clause.substring(m.range.last + 1)
+                    val negated = Regex("(?i)\\bno\\b|\\bnot\\b|\\bwithout\\b|नहीं|ना ").containsMatchIn(before) || Regex("^\\s*(?:नहीं|nahi|nahin)").containsMatchIn(after)
+                    if (!negated) put(id, "Yes", m.value) } }
+            }
             NO_PHRASES.forEach { (id, r) -> r.find(s)?.let { m -> put(id, "No", m.value) } }
         }
         return out
@@ -808,9 +828,63 @@ object ArogyaOfficialForms {
         return r.copy(forms = forms)
     }
 
+    /** Key under which a visit's full spoken/typed note is kept with its form entry (never shown as a form row). */
+    const val NOTE_KEY = "_note"
+
+    /**
+     * Sentences of the ASHA's note that no form value came from: shown as "not part of this form" and kept in
+     * the visit note, so nothing she said is lost.
+     */
+    fun unusedSentences(note: String, filled: Map<String, FilledValue>): List<String> {
+        fun n(s: String) = ArogyaAiExtras.asciiDigits(s).lowercase().replace(Regex("\\s+"), " ").trim()
+        val ev = filled.values.map { n(it.evidence) }.filter { it.length >= 3 }
+        return note.split(Regex("(?<!\\d)\\.|\\.(?!\\d)|[।\\n]")).map { it.trim() }.filter { it.length >= 4 }
+            .filter { s -> val ns = n(s); ev.none { e -> ns.contains(e) || e.contains(ns) } }
+    }
+
+    /**
+     * Medicines this save would take out that the kit does not hold: (item, giving, in kit). Shown before saving
+     * ("Only 0 zinc in the kit") so stock never goes negative without the ASHA knowing.
+     */
+    fun stockShortfalls(r: RegistryData, values: Map<String, String>): List<Triple<String, Int, Int>> {
+        val bal = r.stock.groupBy { it.item }.mapValues { (_, l) -> l.sumOf { it.qty } }
+        val need = LinkedHashMap<String, Int>()
+        STOCK.forEach { (k, item) -> values[k]?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }?.let { need[item] = (need[item] ?: 0) + it } }
+        val note = values[NOTE_KEY].orEmpty()
+        if (note.isNotBlank()) ArogyaDemoScript.medicinesGiven(note, ArogyaRegistryLogic.catalog(r.stockItems).map { it.name })
+            .filter { it.item !in need }.forEach { need[it.item] = it.qty }
+        return need.mapNotNull { (item, q) -> val have = bal[item] ?: 0; if (q > have) Triple(item, q, have) else null }
+    }
+
+    /** Kit items this form already takes out of stock through its own rows (so the note's medicines are not counted twice). */
+    fun stockItemsInForm(values: Map<String, String>): Set<String> =
+        STOCK.filter { (k, _) -> (values[k]?.toDoubleOrNull() ?: 0.0) > 0 }.map { it.second }.toSet()
+
+    /**
+     * Medicines the note says were given that the form has no row for (e.g. HBNC: "gave mother 30 IFA"): each goes
+     * to the drug-kit stock through the "Give to person" path, for the person the note is about (the mother on an
+     * HBNC visit for a baby). Read by fixed rules; re-saving replaces, never doubles.
+     */
+    fun applyNoteMedicines(r: RegistryData, b: Beneficiary, spec: FormSpec, column: Int, values: Map<String, String>, today: LocalDate): RegistryData {
+        val note = values[NOTE_KEY].orEmpty(); if (note.isBlank()) return r
+        val inForm = stockItemsInForm(values)
+        val gives = ArogyaDemoScript.medicinesGiven(note, ArogyaRegistryLogic.catalog(r.stockItems).map { it.name }).filter { it.item !in inForm }
+        if (gives.isEmpty()) return r
+        val who = if (spec.id == "annex9" && b.category == BenCategory.CHILD && Regex("(?i)mother|माँ").containsMatchIn(note))
+            r.beneficiaries.firstOrNull { it.category == BenCategory.MOTHER && it.household == b.household && b.household.isNotBlank() } ?: b else b
+        var out = r
+        gives.forEach { g -> out = applyGive(out, who, g.item, g.qty, "note-${spec.id}-$column-${b.id}-${g.item.filter(Char::isLetterOrDigit)}", "visit note", today) }
+        return out
+    }
+
     /** The visit record for the schedule / monthly report. */
     fun visitRecord(b: Beneficiary, spec: FormSpec, column: Int, values: Map<String, String>, today: LocalDate = LocalDate.now()): ArogyaVisit {
-        val danger = dangers(spec, values)
+        // Danger signs from the form's rules AND, by the fixed danger-sign rules, from her own words (even if no row caught them).
+        val note = values[NOTE_KEY].orEmpty()
+        val noteDanger = if (note.isBlank()) emptyList() else ArogyaDangerSigns.evaluate(note, ArogyaVisit(name = b.name, date = today.toString(),
+            birthDate = if (b.category == BenCategory.CHILD) b.dob else "", kind = if (b.category == BenCategory.CHILD) ArogyaKind.NEWBORN else ArogyaKind.FOLLOW_UP))
+            .findings.filter { it.level == ArogyaDangerSigns.Level.URGENT }.map { it.sign.en }
+        val danger = (dangers(spec, values) + noteDanger).distinct()
         val next = nextDue(spec, b, column, today)
         val nextLabel = if (next == null) "" else when (spec.id) { "sick" -> "Follow-up after treatment"; "fp" -> "Family planning supply"; else -> spec.columns.getOrElse(column + 1) { "" } + " visit" }
         val summary = fieldsFor(spec, column).mapNotNull { f -> values[f.id]?.takeIf { it.isNotBlank() }?.let { "${f.label}: $it${if (f.type == QType.NUMBER && f.unit.isNotBlank()) " " + f.unit else ""}" } }
@@ -818,7 +892,8 @@ object ArogyaOfficialForms {
             protocolVersion = ArogyaWorkflow.OFFICIAL_FORM,
             kind = when (spec.id) { "annex9", "mcp_pnc", "mcp_baby" -> ArogyaKind.NEWBORN; "hbyc", "sick", "mcp_hbyc", "mcp_imm", "mcp_ifa" -> ArogyaKind.CHILD; else -> ArogyaKind.FOLLOW_UP },
             date = today.toString(), birthDate = if (b.category == BenCategory.CHILD) b.dob else "", homeBirth = b.deliveryPlace == "HOME",
-            notes = "${spec.title.substringBefore(" —")} · ${spec.columns.getOrElse(column) { "" }}. " + summary.joinToString("; ") + if (danger.isNotEmpty()) ". DANGER: " + danger.joinToString("; ") + "." else ".",
+            notes = "${spec.title.substringBefore(" —")} · ${spec.columns.getOrElse(column) { "" }}. " + summary.joinToString("; ") + (if (danger.isNotEmpty()) ". DANGER: " + danger.joinToString("; ") + "." else ".") +
+                (if (note.isNotBlank()) "\nVisit note: " + note.trim() else ""),
             nextDate = next?.toString().orEmpty(), nextReason = nextLabel, planConfirmed = true,
             referral = if (danger.isNotEmpty()) ArogyaReferral.NEEDED else ArogyaReferral.NONE, referralNote = if (danger.isNotEmpty()) "Refer: " + danger.joinToString("; ") else "",
             completed = true, reviewed = true, notesReviewedForDanger = true, demo = b.demo)

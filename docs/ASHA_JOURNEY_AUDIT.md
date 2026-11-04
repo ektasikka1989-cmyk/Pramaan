@@ -62,3 +62,23 @@ Phone-only steps are fed realistic inputs: ML Kit text with line positions, and 
 - The phone model's own answers: `AROGYA_FORM_FILL_SPLIT ai=… rules=…` shows how many rows the AI filled vs the rules.
 - The screens: the Open buttons, the viewer, the yellow highlights, the confirm-before-save step, and Hindi.
 - Ask SOP, Explain and Practice: these depend on the guide DB and the model on the phone.
+
+## Round 2: real-life scenarios (`tools/host-tests/RealLifeTest.kt`, 26 checks, all pass)
+| Scenario | Result |
+|---|---|
+| Same person registered twice | Duplicate found |
+| ANC visit 2 five weeks later | Next column; "last time: 49 kg" shown; card ANC-2 ticked; IFA total 60 |
+| Pregnancy danger said only in words, no AI (EN + HI): bleeding, severe headache / blurred vision | Rows filled by fixed rules → **refer**; "no bleeding but severe headache" handled |
+| Home delivery → HBNC Day 1 → Day 3 missed → Day 7, saved twice | Right columns; Day 3 left blank; no duplicates; mother's IFA counted once; MCP p.7 linked; next due Day 14 |
+| Sick child, fast breathing + chest indrawing + not drinking, no AI | Rows filled by fixed rules → **refer**; a well child is not flagged |
+| Medicine with an empty kit | Warned before saving (form rows and medicines in the note) |
+| Backup and restore | Forms, visit note, Aadhaar and stock identical |
+| Monthly report and incentives | Count real visits only (linked MCP entries are not extra visits) |
+| Hindi note | Same rows as English |
+
+**Fixed in this round:**
+- **Danger signs said in words now fill the danger rows by fixed rules,** in English and Hindi: fast breathing / chest indrawing, fits, lethargy, unable to drink, vomiting everything, bleeding, headache / blurred vision, fever, water broke, labour pain / reduced movements, limp, pus on the cord.
+- Negation now applies per clause.
+- An empty-kit warning appears in the guided visit and the demo.
+- The visit note is kept with the visit; sentences not used by the form are shown and kept; medicines in the note go to stock; danger signs in the note refer.
+- The demo's "Open this visit" button appears only when it opens the same form.

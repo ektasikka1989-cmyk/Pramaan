@@ -135,27 +135,32 @@ private fun PhotoPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (List<Be
                 }
                 val ocrProc = MLKitProcessor()
                 val (ocr, lines) = try { withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) to runCatching { ocrProc.recognizeLines(bmp) }.getOrDefault(emptyList()) } } finally { runCatching { ocrProc.close() } }
-                // A ruled register page: rebuild its rows from the line positions, one person per row (rules, no AI).
-                val tableRows = ArogyaTableOcr.people(lines).map { r -> r.mapValues { ArogyaPersonExtract.maskAadhaar(it.value) } }
+                // Fixed rules first: table rows (headings in any wording) and "Label: value" details; then the phone AI,
+                // reading the page with its layout kept, only for details the rules did not find. Rules win where both answer.
+                val tableRows = ArogyaTableOcr.people(lines)
+                val layout = ArogyaTableOcr.rowText(lines).ifBlank { ocr }
                 Log.i("ArogyaDemo", "AROGYA_REGISTER_ROWS lines=${lines.size} people=${tableRows.size}")
                 if (ocr.isBlank()) throw IllegalStateException(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
-                if (ArogyaPersonExtract.hasAadhaar(ocr)) msg = tr("Aadhaar number found and removed — it is never stored.", "आधार नंबर मिला और हटाया — वो कभी सेव नहीं होता।") + " "
-                msg += if (ai.isBusy) tr("Waiting for the AI to finish the current answer…", "AI पिछला उत्तर पूरा कर रहा है, रुकिए…")
+                msg = if (ai.isBusy) tr("Waiting for the AI to finish the current answer…", "AI पिछला उत्तर पूरा कर रहा है, रुकिए…")
                     else tr("Copying the details…", "जानकारी उतार रहे हैं…")
-                val blocks = ArogyaExtractSplit.splitBlocks(ArogyaPersonExtract.maskAadhaar(ocr))
-                val found = if (tableRows.isNotEmpty()) {
+                val blocks = ArogyaExtractSplit.splitBlocks(layout)
+                val found = if (tableRows.size > 1) {
                     msg = tr("Register page: ${tableRows.size} people read row by row on the phone.", "रजिस्टर पेज: ${tableRows.size} लोग पंक्ति-दर-पंक्ति फ़ोन पर पढ़े।")
                     tableRows.map { ArogyaPersonCsv.toBeneficiary(it) }
-                } else if (blocks.size > 1) {
+                } else if (tableRows.isEmpty() && blocks.size > 1 && ArogyaTableOcr.readPerson(lines).isEmpty()) {
                     msg = tr("Reading ${blocks.size} people…", "${blocks.size} लोगों को पढ़ रहे हैं…")
-                    ai.extractPersonList(ocr).first
+                    ai.extractPersonList(layout).first
                         .filter { !it["name"].isNullOrBlank() }
                         .map { ArogyaPersonCsv.toBeneficiary(it) }
                 } else {
-                    val (fields, _, _) = ai.extractPersonFields(ocr)
-                    if (fields.isEmpty()) throw IllegalStateException(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
+                    val rules = ArogyaTableOcr.readPerson(lines)
+                    val missing = ArogyaTableOcr.CORE.filter { rules[it].isNullOrBlank() }
+                    val fields = if (missing.isEmpty()) rules else ai.extractPersonFields(layout).first + rules
+                    Log.i("ArogyaDemo", "AROGYA_PERSON_READ rules=${rules.keys.joinToString(",")} ai_asked=${missing.isNotEmpty()} final=${fields.keys.joinToString(",")}")
+                    if (fields["name"].isNullOrBlank()) throw IllegalStateException(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
                     listOf(ArogyaPersonCsv.toBeneficiary(fields))
                 }
+                if (found.any { it.aadhaar.isNotBlank() }) msg = tr("Aadhaar number read — saved encrypted, shown masked (last 4 digits).", "आधार नंबर पढ़ा — सुरक्षित (एन्क्रिप्टेड) सेव, सिर्फ़ आखिरी 4 अंक दिखते हैं।")
                 if (found.isEmpty()) throw IllegalStateException(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
                 onDone(found)
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
@@ -243,9 +248,9 @@ private fun CsvPersonStep(hindi: Boolean, onDone: (List<Beneficiary>, String) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(h.ifBlank { "(${tr("blank", "खाली")})" }, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                     Box {
-                        OutlinedButton(onClick = { open = true }) { Text(mapping[i].ifNullOrBlank(tr("Ignore", "छोड़ें"))) }
+                        OutlinedButton(onClick = { open = true }) { Text(mapping[i].ifNullOrBlank(tr("Keep as note", "नोट में रखें"))) }
                         DropdownMenu(open, { open = false }) {
-                            (listOf("" to tr("Ignore", "छोड़ें")) + ArogyaPersonCsv.KEYS.map { it to it }).forEach { (k, label) ->
+                            (listOf("" to tr("Keep as note", "नोट में रखें")) + ArogyaPersonCsv.KEYS.map { it to it }).forEach { (k, label) ->
                                 DropdownMenuItem({ Text(label) }, { mapping = mapping + (i to k); open = false })
                             }
                         }
@@ -262,7 +267,11 @@ private fun CsvPersonStep(hindi: Boolean, onDone: (List<Beneficiary>, String) ->
             }
             Button(onClick = {
                 val list = rows.mapNotNull { r ->
-                    val map = mapping.entries.filter { it.value.isNotBlank() }.associate { it.value to r.getOrElse(it.key) { "" } }
+                    val map0 = mapping.entries.filter { it.value.isNotBlank() }.associate { it.value to r.getOrElse(it.key) { "" } }
+                    // Columns not matched to a field are kept in the person's notes, never dropped.
+                    val extra = hs.indices.filter { mapping[it].isNullOrBlank() && r.getOrElse(it) { "" }.isNotBlank() && hs[it].isNotBlank() }
+                        .joinToString("; ") { "${hs[it]}: ${r[it]}" }
+                    val map = if (extra.isBlank()) map0 else map0 + ("notes" to extra)
                     if (map["name"].isNullOrBlank()) null else ArogyaPersonCsv.toBeneficiary(map)
                 }
                 val skipped = rows.size - list.size
@@ -309,7 +318,7 @@ private fun PdfPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (List<Bene
                         } finally { runCatching { ocr.close() } }
                     } finally { temp.delete() }
                 }
-                val full = ArogyaPersonExtract.maskAadhaar(pageTexts.joinToString("\n"))
+                val full = pageTexts.joinToString("\n")
                 if (full.trim().length < 4) throw IllegalStateException(tr("No readable text in this PDF.", "PDF में पढ़ने लायक अक्षर नहीं मिले।"))
                 // Tabular first: a header line matching 2+ known columns, then data lines.
                 val lines = full.lines().map { it.trim() }.filter { it.isNotBlank() }

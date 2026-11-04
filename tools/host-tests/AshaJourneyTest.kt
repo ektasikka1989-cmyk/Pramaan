@@ -30,7 +30,8 @@ private fun cd(iso: String) = LocalDate.parse(iso).let { "%02d/%02d/%02d".format
 /** What the save step does (ArogyaVisitSave.save without the Android store/queue). */
 private fun save(r: RegistryData, b: Beneficiary, spec: FormSpec, col: Int, v: Map<String, String>, today: LocalDate): Pair<RegistryData, ArogyaVisit> {
     val rec = ArogyaOfficialForms.visitRecord(b, spec, col, v, today)
-    return ArogyaOfficialForms.apply(r, b, spec, col, v, v.mapValues { "voice" }, emptySet(), today) to rec
+    val a0 = ArogyaOfficialForms.apply(r, b, spec, col, v, v.mapValues { "voice" }, emptySet(), today)
+    return ArogyaOfficialForms.applyNoteMedicines(a0, b, spec, col, v, today) to rec
 }
 
 fun main() {
@@ -50,11 +51,13 @@ fun main() {
         L("Family consent taken: Yes", 153, 555, 300), L("Signature: ____________", 520, 553, 320))
     val rows = ArogyaTableOcr.people(slip)
     check("w1-slip-one-person", rows.size == 1, rows)
-    val row = rows.firstOrNull().orEmpty().mapValues { ArogyaPersonExtract.maskAadhaar(it.value) }
+    val row = ArogyaTableOcr.readPerson(slip)
+    check("w1-no-ai-needed", ArogyaTableOcr.CORE.all { !row[it].isNullOrBlank() }, row)
     val p0 = ArogyaPersonCsv.toBeneficiary(row)
     check("w1-slip-all-fields", p0.name == "Sarita Yadav" && p0.relativeName == "Ramesh Yadav" && p0.age == "23" && p0.phone == "9000000301" &&
         p0.household == "H-051" && p0.village == "Rampur" && p0.category == BenCategory.PREGNANT && p0.lmp == lmp.toString(), p0)
-    check("w1-aadhaar-not-stored", !p0.toString().contains("0000 1111 2222") && !p0.toString().contains("000011112222"))
+    check("w1-aadhaar-kept-masked", p0.aadhaar == "000011112222" && ArogyaPersonExtract.masked(p0.aadhaar) == "XXXX XXXX 2222", p0.aadhaar)
+    check("w1-aadhaar-never-to-cloud", !ArogyaOnlinePolicy.scrubGeneric("Aadhaar 0000 1111 2222").contains("2222"))
     val sarita = p0.copy(id = "demo-person-test", demo = true)
     r = r.copy(beneficiaries = r.beneficiaries + sarita)
     // 2. Registers show her.
@@ -72,7 +75,9 @@ fun main() {
     check("w1-no-danger", ArogyaDemoScript.dangerLines(ArogyaDemoScript.NOTE_W1_EN, F.MCP_ANC, v1, ArogyaVisit(name = sarita.name, date = today.toString()), false).isEmpty())
     // 6. Save.
     val ifa0 = bal(r, "IFA tablets (adult)"); val cal0 = bal(r, "Calcium tablets")
-    val (r1, rec1) = save(r, sarita, F.MCP_ANC, 0, v1, today); r = r1
+    val (r1, rec1) = save(r, sarita, F.MCP_ANC, 0, v1 + (F.NOTE_KEY to ArogyaDemoScript.NOTE_W1_EN), today); r = r1
+    check("w1-note-kept", rec1.notes.contains("Visit note:") && r.forms.any { it.beneficiaryId == sarita.id && it.values[F.NOTE_KEY] == ArogyaDemoScript.NOTE_W1_EN })
+    check("w1-unused-sentence-shown", F.unusedSentences(ArogyaDemoScript.NOTE_W1_EN, F.parse("", F.MCP_ANC, 0, ArogyaDemoScript.NOTE_W1_EN)).any { it.contains("14 weeks") })
     val s1b = r.beneficiaries.first { it.id == sarita.id }
     val e1 = r.forms.firstOrNull { it.beneficiaryId == sarita.id && it.formId == "mcp_anc" && it.column == 0 }
     check("w1-form-entry", e1 != null && e1.values["weight"] == "49" && e1.values["bp"] == "110/70" && e1.values["hb"] == "10.2", e1?.values)
@@ -131,9 +136,9 @@ fun main() {
     check("w2-danger-refer", d2.any { it.startsWith("⚠") }, d2)
     // 5. Save + the mother's medicines (Give to person).
     val ifa1 = bal(r, "IFA tablets (adult)"); val cal1 = bal(r, "Calcium tablets")
-    val (r2, rec2) = save(r, babyV, F.ANNEX9, 2, v2, today); r = r2
-    ArogyaDemoScript.medicinesGiven(ArogyaDemoScript.NOTE_EN, ArogyaRegistryLogic.DRUG_KIT).forEach { g ->
-        r = F.applyGive(r, mum, g.item, g.qty, "demo-w2-${g.item.filter(Char::isLetterOrDigit)}", "demo", today) }
+    val (r2, rec2) = save(r, babyV, F.ANNEX9, 2, v2 + (F.NOTE_KEY to ArogyaDemoScript.NOTE_EN), today); r = r2
+    // Re-saving the same visit must not take the mother's medicines out twice.
+    r = F.applyNoteMedicines(r, babyV, F.ANNEX9, 2, v2 + (F.NOTE_KEY to ArogyaDemoScript.NOTE_EN), today)
     check("w2-hbnc-entry", r.forms.any { it.beneficiaryId == baby.id && it.formId == "annex9" && it.column == 2 && it.values["temp"] == "38.4" })
     val mb = r.forms.firstOrNull { it.beneficiaryId == baby.id && it.formId == "mcp_baby" && it.column == 2 }
     check("w2-card-baby-7th-day", mb != null && mb.values["weight"] == "2.65" && mb.values["temp"] == "38.4" && mb.values["sucking"] == "Poor", mb?.values)
@@ -158,7 +163,7 @@ fun main() {
     check("w3-no-danger", ArogyaDemoScript.dangerLines(ArogyaDemoScript.NOTE_W3_EN, F.SICK, v3, ArogyaVisit(name = rohan.name, kind = ArogyaKind.CHILD, date = today.toString()), false).isEmpty())
     val ors0 = bal(r, "ORS"); val zinc0 = bal(r, "Zinc tablets")
     check("w3-zinc-before", zinc0 == 14, zinc0)
-    val (r3, rec3) = save(r, rohan, F.SICK, c3, v3, today); r = r3
+    val (r3, rec3) = save(r, rohan, F.SICK, c3, v3 + (F.NOTE_KEY to ArogyaDemoScript.NOTE_W3_EN), today); r = r3
     check("w3-stock-after", bal(r, "ORS") == ors0 - 4 && bal(r, "Zinc tablets") == 0, "ORS ${bal(r, "ORS")} zinc ${bal(r, "Zinc tablets")}")
     check("w3-follow-up-2-days", rec3.nextDate == today.plusDays(2).toString(), rec3.nextDate)
     val low = ArogyaRegistryLogic.lowItems(r.stock, r.stockItems, today)
@@ -179,6 +184,10 @@ fun main() {
     check("w3-stock-register-row", sreg.rows.any { it.cells[0] == "Zinc tablets" }, sreg.headers)
     check("w3-form-table", F.table(F.SICK, r.beneficiaries.first { it.id == rohan.id }, r.forms).rows.any { row3 -> row3.any { it == "14" } })
 
+    // A danger sign said in the note but caught by no form row still makes a referral (fixed rules on her words).
+    val nb = r.beneficiaries.first { it.name == "Baby of Ritu" }
+    val recD = F.visitRecord(nb, F.ANNEX9, 3, mapOf("weight" to "3.0", F.NOTE_KEY to "Baby had fits this morning and is not feeding."), today)
+    check("note-danger-refers", recD.referral == ArogyaReferral.NEEDED, recD.notes)
     println("AshaJourneyTest: $n passed, $fails failed")
     if (fails > 0) kotlin.system.exitProcess(1)
 }

@@ -22,7 +22,7 @@ object ArogyaVisitSave {
         queue.check(record)
         var summary = ""
         store.update { r ->
-            val a0 = ArogyaOfficialForms.apply(r, b, spec, column, values, sources, vaccines, today)
+            val a0 = ArogyaOfficialForms.applyNoteMedicines(ArogyaOfficialForms.apply(r, b, spec, column, values, sources, vaccines, today), b, spec, column, values, today)
             val next = ArogyaOfficialForms.nextDue(spec, b, column, today)?.toString().orEmpty()
             summary = ArogyaChangeSummary.diff(r, a0, b.id, hindi, next)
             ArogyaChangeSummary.attachDiary(a0, b.id, today.toString(), summary)

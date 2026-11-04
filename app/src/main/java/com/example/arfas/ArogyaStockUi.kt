@@ -233,6 +233,7 @@ fun VoiceStockDialog(hindi: Boolean, ai: ArogyaVisitAi?, items: List<StockItem>,
     var ms by remember { mutableStateOf(0L) }
     var err by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
+    var notUnderstood by remember { mutableStateOf<List<String>>(emptyList()) }
     fun parse(text: String) {
         busy = true; err = ""; lines = emptyList()
         scope.launch {
@@ -240,6 +241,7 @@ fun VoiceStockDialog(hindi: Boolean, ai: ArogyaVisitAi?, items: List<StockItem>,
                 val res = if (ai != null) withContext(Dispatchers.IO) { ai.voiceStock(text, catalog) }
                 else Triple(ArogyaVoiceStock.ground(ArogyaVoiceStock.parseRules(text, catalog), text, catalog), "On-phone rules (offline): patterns", 0L)
                 lines = res.first; engine = res.second; ms = res.third
+                notUnderstood = ArogyaVoiceStock.unmatched(text, catalog, res.first)
                 if (res.first.isEmpty()) err = tr("Could not hear a stock change. Try: “received 100 ORS”.", "स्टॉक बदलाव समझ नहीं आया। बोलें: “100 ORS मिला”।")
             } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
                 err = "${e.message?.take(160)}"
@@ -260,6 +262,9 @@ fun VoiceStockDialog(hindi: Boolean, ai: ArogyaVisitAi?, items: List<StockItem>,
             if (transcript.isNotBlank()) Text(tr("Heard: ", "सुना: ") + transcript, style = MaterialTheme.typography.bodySmall)
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (err.isNotBlank()) Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            if (notUnderstood.isNotEmpty()) Text(tr("Not understood — not saved: ", "समझ नहीं आया — सेव नहीं होगा: ") + notUnderstood.joinToString(" · ") { "“$it”" } +
+                tr(". Add the item to the kit first, or say it differently.", "। पहले दवा किट में जोड़ें, या दूसरे तरीके से बोलें।"),
+                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             if (lines.isNotEmpty()) {
                 AiResultChip(engine, !engine.contains("offline", ignoreCase = true), ms, hindi)
                 ConfirmChip(hindi)
@@ -400,6 +405,10 @@ fun MedScanDialog(hindi: Boolean, ai: ArogyaVisitAi, items: List<StockItem>,
                 ConfirmChip(hindi)
                 field(tr("Name", "नाम"), s.name); field(tr("Batch", "बैच"), s.batch)
                 field(tr("Expiry", "एक्सपायरी"), s.expiry); field(tr("Quantity", "मात्रा"), if (s.qty > 0) s.qty.toString() else "")
+                val notRead = listOf(tr("name", "नाम") to s.name, tr("batch", "बैच") to s.batch, tr("expiry", "एक्सपायरी") to s.expiry, tr("quantity", "मात्रा") to (if (s.qty > 0) "x" else ""))
+                    .filter { it.second.isBlank() }.map { it.first }
+                if (notRead.isNotEmpty()) Text(tr("Not read from the label: ", "लेबल से नहीं पढ़ा: ") + notRead.joinToString(", ") + tr(" — enter it on the next screen.", " — अगली स्क्रीन पर लिखें।"),
+                    color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 Text(if (matched.isNotBlank()) tr("Matches kit item: $matched", "किट की दवा मिली: $matched")
                     else tr("Not in your kit list — you can add it as a new item.", "किट सूची में नहीं है — नई दवा जोड़ सकती हैं।"),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)

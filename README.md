@@ -7,11 +7,25 @@ Android phone, **with or without internet**:
 - **Speak once, the forms fill** — one spoken visit note fills the official home-visit forms, the Mother and Child Protection (MCP) card and the registers. Every value shows the words it came from, and the ASHA confirms before anything is saved.
 - **Registers and drug kit on the phone** — village, pregnancy and immunization registers, stock register, refill requests and a monthly summary, encrypted on the phone with an encrypted backup to the user's own Google Drive.
 
-Built for the **Meta Global AI Developer Hackathon 2026**. Author: **Ekta Sikka**.
+Built for the **Meta Global AI Developer Hackathon 2026** (problem statement: **Build for Your World**). Author: **Ekta Sikka**.
+
+| | |
+|---|---|
+| 🎬 **Demo video (3 min)** | **DEMO_VIDEO_LINK** |
+| 📱 **Download the app** | [Latest release (APK)](https://github.com/ektasikka1989-cmyk/Pramaan/releases/latest) — install steps below |
+| 🧠 **Models and assets** | [MODELS.md](MODELS.md) — every model, where it comes from, how it reaches the phone |
+| 🛠 **What was built during the hackathon** | [see below](#what-was-built-during-the-hackathon-26-oct--4-nov-2026) |
 
 > All people in the sample village and demo are fictional. Form layouts follow the official documents; only the data is synthetic.
 
 ---
+
+## Scope — a job aid for trained health workers, not medical advice
+Pramaan is used by **government ASHA workers**, not by patients. It does their **paperwork and workflow**: forms,
+cards, registers, stock and reports. Its guide answers are **retrieved from official government ASHA training modules
+and cited to the page**; it does not diagnose, prescribe or suggest doses. Danger signs and visit schedules are
+**fixed rules from those guides**, and every AI-filled value is shown with its evidence and **approved by the ASHA**
+before it is saved.
 
 ## The problem
 An ASHA serves about 1,000 people. Each visit means a paper form, an MCP card, several registers and a drug-kit
@@ -42,6 +56,37 @@ to the phone automatically, so the whole visit works offline.
 | Drug-kit count from a photo | counted by hand | **SAM 3.1** |
 | Danger signs, visit schedules, stock, incentives | **Fixed government rules — never AI** | — |
 
+## Hackathon fit
+- **Problem statement — Build for Your World:** the author knows the ASHA's day first-hand: paper forms, cards and registers, often with no signal.
+- **Meta models, genuinely used** (each one is wired into a real step of the visit, not a demo-only call):
+
+| Meta model | Where it is used | Code |
+|---|---|---|
+| **Muse Spark 1.3** (Meta Model API) | Guide answers, voice-note → official form, family explanation, ANM message, daily practice (Cloud first) | `ArogyaModelClient.kt`, `ArogyaVisitAi.route()` |
+| **Muse Voice Transcribe** (Meta Model API) | Hindi / English voice notes | `ArogyaCloudUi.kt` (`ArogyaCloud.transcribe`) → `MetaModelApi.kt` |
+| **SAM 3.1** (Meta Model API) | Counting drug-kit items from a photo | `ArogyaCloudUi.kt` (`SamCountDialog`), `ArogyaDemoTour.kt` |
+| **Llama 3.2 3B Instruct** (Meta open weights, on the phone) | Everything above, offline, through llama.cpp | `LocalModelManager.kt`, `LlamaCppCore.kt`, `src/main/cpp/` |
+
+- **Agentic, multi-step workflow** rather than a single call: one spoken note → official form → danger rules → referral + ANM message → MCP card, registers, stock and next visit, with grounding checks and the ASHA's approval at each step.
+
+## What was built during the hackathon (26 Oct – 4 Nov 2026)
+**Existed before the event** (the author's own earlier work): the on-device LLM runtime (llama.cpp bridge and model
+manager) and the RAG retrieval engine (guide search over a local database).
+
+**Built during the event** — the whole Pramaan app on top of them:
+- the ASHA workflow: visit planning from official schedules, the guided visit, and the three demo workflows;
+- voice note → official forms (MCP card ANC / PNC / baby care / immunization, HBNC Annexure 9, HBYC, sick child, family planning) with evidence and a fixed-rule backup;
+- the official MCP card renderer and document/PDF output in the printed layouts;
+- registers (village, pregnancy, immunization, couples, vital events), drug-kit stock register, refill requests, monthly report and incentive estimates;
+- danger-sign rules, referral and the WhatsApp message to the ANM; family explanation; daily practice;
+- photo features: add a person from a slip or register page (rows read on the phone), MCP card reading, medicine-strip scan, SAM 3.1 kit count;
+- the single Local first / Cloud first routing with time limits and phone fallback; Meta Model API integration (Muse Spark, Muse Voice Transcribe, SAM 3.1); identifier scrubbing; encrypted storage and Drive backup;
+- **RAG changes for Pramaan:** citations to document and page with one-tap PDF, follow-up questions, Hindi/Hinglish queries, the 100 verified answers layer, answer proof checks and online cross-check;
+- the guide database built from official documents, the test suites in `tools/host-tests/`, and the demo photo generator.
+
+The git history starts on 1 Nov 2026: the first commit is a snapshot of the work from 26–31 Oct, and every later step is
+a separate commit. [`docs/batch_reports/`](docs/batch_reports) records each batch of work, with what changed and how it was tested.
+
 ## Safety and privacy
 - **Grounded AI:** a value is kept only if its evidence is in the ASHA's own words (or the document's text) and its numbers appear in that evidence. Fixed rules fill numbers the model misses; nothing is invented.
 - **The ASHA approves** every AI value before it is saved.
@@ -55,8 +100,8 @@ to the phone automatically, so the whole visit works offline.
 ## Try it (Android phone)
 **Phone:** Android 7.0+ (arm64), **6 GB RAM or more recommended**, about **3 GB free storage**.
 
-1. Download the APK from **[Releases](https://github.com/ektasikka1989-cmyk/pramaan/releases)** and install it (allow "install unknown apps").
-2. Put these two public model files in the phone's **Downloads** folder:
+1. Download the APK from **[Releases](https://github.com/ektasikka1989-cmyk/Pramaan/releases)** and install it (allow "install unknown apps").
+2. Put these two public model files in the phone's **Downloads** folder (details in [MODELS.md](MODELS.md)):
    - `Llama-3.2-3B-Instruct-Q4_K_M.gguf` (about 2 GB) — from [bartowski/Llama-3.2-3B-Instruct-GGUF](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF)
    - `ggml-small.bin` (Whisper, about 470 MB) — from [ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp)
 3. Open **Pramaan**. The setup wizard finds the files in Downloads and installs them with progress. The ASHA guide database is bundled with the app.
@@ -69,8 +114,8 @@ to the phone automatically, so the whole visit works offline.
 Requirements: a recent Android Studio (compileSdk 36), JDK 17+, Android SDK 36, **NDK 26.1.10909125**, CMake (via SDK Manager).
 
 ```bash
-git clone https://github.com/ektasikka1989-cmyk/pramaan.git
-cd pramaan
+git clone https://github.com/ektasikka1989-cmyk/Pramaan.git
+cd Pramaan
 ./gradlew :app:assembleDebug        # Windows: gradlew.bat :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```

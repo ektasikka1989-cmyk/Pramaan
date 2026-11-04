@@ -101,8 +101,13 @@ class MLKitProcessor {
             suspendCancellableCoroutine { cont ->
                 r.process(image)
                     .addOnSuccessListener { res ->
-                        cont.resume(res.textBlocks.flatMap { b -> b.lines }.mapNotNull { l ->
-                            l.boundingBox?.let { bb -> ArogyaTableOcr.Line(l.text, bb.left, bb.top, bb.right, bb.bottom) } })
+                        // ML Kit often joins a whole printed table row into one line ("Name Husband Age …"):
+                        // keep each word's position and split the line into cells at wide gaps.
+                        cont.resume(res.textBlocks.flatMap { b -> b.lines }.flatMap { l ->
+                            val words = l.elements.mapNotNull { e -> e.boundingBox?.let { bb -> ArogyaTableOcr.Line(e.text, bb.left, bb.top, bb.right, bb.bottom) } }
+                            if (words.isNotEmpty()) ArogyaTableOcr.cells(words)
+                            else listOfNotNull(l.boundingBox?.let { bb -> ArogyaTableOcr.Line(l.text, bb.left, bb.top, bb.right, bb.bottom) })
+                        })
                     }
                     .addOnFailureListener { e -> Log.w(TAG, "OCR lines failed: ${e.message}"); cont.resume(emptyList()) }
             }
