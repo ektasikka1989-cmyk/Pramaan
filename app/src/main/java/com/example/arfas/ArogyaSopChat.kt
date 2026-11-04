@@ -390,7 +390,7 @@ fun SopAnswerCard(
         if (showFamily && ai != null && !result.sourceOnly && !result.storedCopy && familyText.isNotBlank()) Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(tr("For the family", "परिवार के लिए"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                if (familyModel.isNotBlank()) AiResultChip(familyModel, !familyModel.startsWith("On-phone"), familyMs, hindi)
+                if (familyModel.isNotBlank()) AiResultChip(familyModel, ArogyaAiUsed.online(familyModel), familyMs, hindi)
                 if (familyBusy) Text(tr("✍️ Writing…", "✍️ लिखा जा रहा है…"), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
                 Text(familyText, style = MaterialTheme.typography.bodyLarge, fontSize = 20.sp, lineHeight = 29.sp)
                 Button(onClick = { onSpeak(familyText) }, modifier = Modifier.fillMaxWidth()) { Text(tr("🔊 Read to the family", "🔊 परिवार को सुनाएँ")) }

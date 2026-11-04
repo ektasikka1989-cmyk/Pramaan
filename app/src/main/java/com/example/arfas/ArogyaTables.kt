@@ -212,7 +212,11 @@ fun AiResultChip(provider: String, online: Boolean, ms: Long, hindi: Boolean) {
     // Tap → a small box naming each model behind this answer (ArogyaAiUsedUi); any other tap closes it.
     var open by remember { mutableStateOf(false) }
     Box {
-        AssistChip(onClick = { open = !open }, label = { Text("✨ ${provider.take(34)} · " + (if (online) tr("☁ online", "☁ ऑनलाइन") else tr("📴 offline", "📴 ऑफ़लाइन")) + " · $secs", style = MaterialTheme.typography.labelSmall) })
+        // The model that gave this answer (a cloud step that was tried but not used is marked, never shown as the answer).
+        val short = ArogyaAiUsed.short(provider)
+        val skipped = ArogyaAiUsed.steps(provider).any { it.notUsed }
+        AssistChip(onClick = { open = !open }, label = { Text((if (short.isNotBlank()) short else "✨ ${provider.take(34)} · " + (if (online) tr("☁ online", "☁ ऑनलाइन") else tr("📴 offline", "📴 ऑफ़लाइन"))) +
+            (if (skipped) tr(" · cloud not used (tap)", " · क्लाउड नहीं (दबाएँ)") else "") + " · $secs", style = MaterialTheme.typography.labelSmall) })
         if (open) AiStepsPopup(provider, hindi, ms, online) { open = false }
     }
 }

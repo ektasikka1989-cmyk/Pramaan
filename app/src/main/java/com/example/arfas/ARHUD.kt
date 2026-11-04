@@ -879,23 +879,7 @@ fun SettingsDialog(
                 // ── Cloud AI / Meta Llama API ─────────────────────────────────
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Online AI (optional)", color = Color(0xFF80D8FF), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Text("Choose who answers when there is internet. Each key is stored encrypted on this phone only; names and phone numbers are masked before anything is sent.", color = Color(0xFF9E9E9E), fontSize = 11.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        listOf(
-                            GroqKeyStore.Engine.GROQ to ("Groq · Qwen3.8 27B" to groqKeySaved),
-                            GroqKeyStore.Engine.META to ("Meta · Muse Spark" to metaKeySaved)
-                        ).forEach { (engine, info) ->
-                            val selected = onlineEngine == engine
-                            val label = info.first + if (info.second) " ✓" else ""
-                            if (selected) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(label, fontSize = 12.sp) }
-                            else OutlinedButton(onClick = { onOnlineEngineChanged?.invoke(engine) }, modifier = Modifier.weight(1f)) { Text(label, fontSize = 12.sp) }
-                        }
-                    }
-                    Text(
-                        if (onlineEngine == GroqKeyStore.Engine.GROQ) "Groq key (gsk_…): chat, knowledge-base answers and photos by Qwen3.8 27B, live web search by Groq."
-                        else "Meta Model API key (LLM|…): Muse Spark for chat, photos and web search, plus SAM 3.1 and Muse Voice.",
-                        color = Color(0xFF9E9E9E), fontSize = 11.sp
-                    )
+                    Text("Meta Model API key (LLM|…): Muse Spark for answers, photos and web search, plus SAM 3.1 and Muse Voice. Stored encrypted on this phone only; names and phone numbers are masked before anything is sent.", color = Color(0xFF9E9E9E), fontSize = 11.sp)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier.size(6.dp).background(
@@ -910,7 +894,7 @@ fun SettingsDialog(
                         value = groqKeyInput,
                         onValueChange = { groqKeyInput = it },
                         label = {
-                            val name = if (onlineEngine == GroqKeyStore.Engine.GROQ) "Groq API key (gsk_…)" else "Meta API key (LLM|…)"
+                            val name = "Meta API key (LLM|…)"
                             Text(if (groqKeyConfigured) "Replace $name" else name)
                         },
                         singleLine = true,

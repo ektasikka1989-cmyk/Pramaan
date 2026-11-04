@@ -14,10 +14,16 @@ fun main() {
     // No model at all (worst case on the phone): fixed rules still fill the form from her words.
     fun v(m: Map<String, FilledValue>) = m.mapValues { it.value.value }
     val w1 = v(F.parse("", F.MCP_ANC, 0, ArogyaDemoScript.NOTE_W1_EN))
-    check("w1-rules", w1["weight"] == "49" && w1["bp"] == "110/70" && w1["hb"] == "10.2" && w1["ifa"] == "30" && w1["calcium"] == "60" && w1["pog"] == "10" &&
+    check("w1-rules", w1["weight"] == "49" && w1["bp"] == "110/70" && w1["hb"] == "10.2" && w1["pog"] == "10" && w1["height"] == "152" && w1["pulse"] == "82" &&
+        w1["td"] == "Td-1" && w1["urine_albumin"] == "Nil" && w1["urine_sugar"] == "Nil" && w1["blood_group"] == "B+" && w1["hiv"] == "Yes" && w1["gravida"] == "1" &&
+        w1["pallor"] == "No" && w1["oedema"] == "No" && w1["delivery_institution"] == "CHC Mishrikh" && w1["complaints"] == "mild nausea" &&
+        w1["ifa"] == null && w1["calcium"] == null &&
         w1["d_bleed"] == "No" && w1["d_headache"] == "No" && w1["d_fever"] == "No", w1)
     val w1h = v(F.parse("", F.MCP_ANC, 0, ArogyaDemoScript.NOTE_W1_HI))
-    check("w1-hindi-rules", w1h["weight"] == "49" && w1h["bp"] == "110/70" && w1h["hb"] == "10.2" && w1h["ifa"] == "30" && w1h["calcium"] == "60" && w1h["pog"] == "10" &&
+    check("w1-hindi-rules", w1h["weight"] == "49" && w1h["bp"] == "110/70" && w1h["hb"] == "10.2" && w1h["pog"] == "10" && w1h["height"] == "152" && w1h["pulse"] == "82" &&
+        w1h["td"] == "Td-1" && w1h["urine_albumin"] == "Nil" && w1h["urine_sugar"] == "Nil" && w1h["blood_group"] == "B+" && w1h["hiv"] == "Yes" && w1h["gravida"] == "1" &&
+        w1h["pallor"] == "No" && w1h["oedema"] == "No" && w1h["delivery_institution"] == "CHC मिश्रिख" &&
+        w1h["ifa"] == null && w1h["calcium"] == null &&
         w1h["d_bleed"] == "No" && w1h["d_headache"] == "No" && w1h["d_fever"] == "No", w1h)
     val w2 = v(F.parse("", F.ANNEX9, 2, ArogyaDemoScript.NOTE_EN))
     check("w2-rules", w2["weight"] == "2.65" && w2["temp"] == "38.4" && w2["m_temp"] == "37" && w2["m_meals"] == "4" && w2["m_pads"] == "3" &&
@@ -41,8 +47,8 @@ fun main() {
     val pc = F.parse(cut, F.MCP_ANC, 0, ArogyaDemoScript.NOTE_W1_EN)
     check("partial-rescue", pc["weight"]?.source == "ai" && pc["hb"]?.source == "ai" && pc["bp"]?.value == "110/70", pc.mapValues { "${it.value.value}/${it.value.source}" })
     // The model wins where it answered; rules only fill gaps.
-    val ai = F.parse("""{"fields":[{"id":"calcium","value":"60","evidence":"60 calcium tablets"}]}""", F.MCP_ANC, 0, ArogyaDemoScript.NOTE_W1_EN)
-    check("ai-wins", ai["calcium"]?.source == "ai" && ai["ifa"]?.source == "rule")
+    val ai = F.parse("""{"fields":[{"id":"weight","value":"49","evidence":"weight 49 kg"}]}""", F.MCP_ANC, 0, ArogyaDemoScript.NOTE_W1_EN)
+    check("ai-wins", ai["weight"]?.source == "ai" && ai["bp"]?.source == "rule")
     // Nothing invented: a note without these words fills nothing by rules.
     check("no-invention", F.ruleValues(F.MCP_ANC, 0, "Visited the house, family was away.").isEmpty())
     check("negation-not-flipped", F.ruleValues(F.SICK, 0, "Loose stools. No loose stools after ORS? not sure").let { it["diarrhoea"]?.value == "Yes" })

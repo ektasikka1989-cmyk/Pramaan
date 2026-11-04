@@ -168,6 +168,18 @@ fun main() {
     val unrelated = listOf(ArogyaTableOcr.Line("SALE 50% OFF", 10, 10, 200, 40), ArogyaTableOcr.Line("Shop No. 12, Main Market", 10, 60, 300, 90), ArogyaTableOcr.Line("Open 10 am to 9 pm", 10, 110, 260, 140))
     check("unrelated-photo-empty", ArogyaTableOcr.readPerson(unrelated)["name"] == null, ArogyaTableOcr.readPerson(unrelated))
 
+    // ── Cloud first but the phone answered: the reason is shown, and the tag names the phone model ──
+    val why = ArogyaCloudOutcome.why("rejected:unsupported_numeric_claim", "Meta · Muse Spark")!!
+    val prov = "$why · Pramaan • offline (Llama-3.2-3B-Instruct-Q4_K_M)"
+    check("cloud-not-used-label", why.contains("a number not in the guide") && ArogyaAiUsed.short(prov) == "✨ Llama 3.2 3B Instruct 📴" &&
+        ArogyaAiUsed.steps(prov).first().let { it.notUsed && it.model == "Muse Spark 1.3" }, ArogyaAiUsed.steps(prov))
+    check("cloud-outcomes", ArogyaCloudOutcome.why("ok", "Meta · Muse Spark") == null && ArogyaCloudOutcome.why("unavailable", "none")!!.contains("no internet or no cloud key") &&
+        ArogyaCloudOutcome.why("timeout:first_token", "Groq · Qwen3.8 27B")!!.startsWith("Groq · Qwen3.8 27B • online — not used: no reply within 20 s"))
+
+    check("online-flag", !ArogyaAiUsed.online("Muse Spark 1.3 • online — not used: no Meta key saved · On-phone model (offline): Llama-3.2-3B") &&
+        ArogyaAiUsed.online("Muse Spark 1.3 — Meta Model API") && !ArogyaAiUsed.online("On-phone model (offline): Llama-3.2-3B") &&
+        ArogyaAiUsed.short("Muse Spark 1.3 • online — not used: no Meta key saved · On-phone model (offline): Llama-3.2-3B") == "✨ Llama 3.2 3B Instruct 📴")
+
     println("TableOcrTest: $n passed, $fails failed")
     if (fails > 0) kotlin.system.exitProcess(1)
 }

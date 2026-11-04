@@ -880,7 +880,7 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
     }
     reading?.let { r -> AlertDialog(onDismissRequest = { reading = null }, title = { Row(verticalAlignment = Alignment.CenterVertically) { Text(tr("Found on the card", "कार्ड पर मिला"), modifier = Modifier.weight(1f)); AiBadge("Read MCP card photo") } }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (readModel.isNotBlank()) AiResultChip("ML Kit text + $readModel", !readModel.startsWith("On-phone"), readMs, hindi)
+            if (readModel.isNotBlank()) AiResultChip("ML Kit text + $readModel", ArogyaAiUsed.online(readModel), readMs, hindi)
             ConfirmChip(hindi)
             if (r.fields.isEmpty()) Text(tr("Nothing could be confirmed from this photo. Take a closer, brighter photo with the card flat.", "इस फ़ोटो से कुछ पक्का नहीं हुआ। कार्ड सीधा रखकर पास से, रोशनी में फ़ोटो लें।"))
             else Text(tr("Untick anything that does not match the card.", "जो कार्ड से न मिले उसका निशान हटाएँ।"), style = MaterialTheme.typography.bodySmall)

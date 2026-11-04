@@ -48,7 +48,7 @@ fun main() {
     d(ArogyaDemoScript.flow(2).first { it.id == "mcpcard" }.narration.any { it.contains("official MCP card") }, "MCP scene names the official card")
     d(ArogyaDemoScript.flow(2).first { it.id == "plan" }.narration.any { it.contains("Neha") }, "W2 keeps the hero")
     // Notes carry the numbers the forms need (grounding) and the medicines given.
-    d(listOf("49", "110/70", "10.2", "30", "60").all { ArogyaDemoScript.NOTE_W1_EN.contains(it) && ArogyaDemoScript.NOTE_W1_HI.contains(it) }, "W1 note numbers in both languages")
+    d(listOf("49", "110/70", "10.2", "152", "82").all { ArogyaDemoScript.NOTE_W1_EN.contains(it) && ArogyaDemoScript.NOTE_W1_HI.contains(it) }, "W1 note numbers in both languages")
     d(listOf("37.2", "4 ORS", "14").all { ArogyaDemoScript.NOTE_W3_EN.contains(it) } && listOf("37.2", "4 ORS", "14").all { ArogyaDemoScript.NOTE_W3_HI.contains(it) }, "W3 note numbers in both languages")
     val cat = ArogyaRegistryLogic.DRUG_KIT
     val g2 = ArogyaDemoScript.medicinesGiven(ArogyaDemoScript.NOTE_EN, cat)

@@ -36,7 +36,7 @@ fun main() {
     check("anc2-last-time-shown", F.previous(s2, pw, r.forms, c2)["weight"]?.first == "49", F.previous(s2, pw, r.forms, c2))
     val (r2, v2) = save(r, r.beneficiaries.first { it.id == pw.id }, s2, c2, "15 weeks pregnant. Weight 51 kg, BP 112/72, Hb 10.8. No bleeding. Gave 30 IFA tablets and 60 calcium tablets.", d2); r = r2; visits += v2
     pw = r.beneficiaries.first { it.id == pw.id }
-    check("anc2-card", pw.mcp.anc[2] == d2.toString() && pw.mcp.ancDetails[2]?.weightKg == "51" && pw.mcp.ifaTablets == 60, pw.mcp)
+    check("anc2-card", pw.mcp.anc[2] == d2.toString() && pw.mcp.ancDetails[2]?.weightKg == "51" && pw.mcp.ifaTablets == 30, pw.mcp)
 
     // ── 2. Pregnancy danger said only in words (no AI): bleeding + headache with blurred vision → refer ──
     val dNote = "7 months pregnant. Bleeding since morning, no fever, severe headache and blurred vision."

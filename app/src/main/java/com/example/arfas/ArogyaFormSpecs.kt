@@ -524,7 +524,9 @@ object ArogyaOfficialForms {
 
     private val NO_WORDS = mapOf("d_bleed" to listOf("bleeding", "खून"), "d_headache" to listOf("headache", "सिरदर्द"), "d_fever" to listOf("fever", "बुखार"),
         "g_vomit" to listOf("vomiting", "vomit", "उल्टी"), "g_fits" to listOf("fits", "convulsions", "दौरे"), "g_lethargic" to listOf("lethargic", "सुस्त"),
-        "referred" to listOf("referred", "रेफ़र"))
+        "referred" to listOf("referred", "रेफ़र"),
+        // ANC examination (MCP p.5): "no pallor, no swelling".
+        "pallor" to listOf("pallor", "पीलापन"), "oedema" to listOf("swelling", "oedema", "edema", "सूजन"), "jaundice" to listOf("jaundice", "पीलिया"))
     private val YES_PHRASES = mapOf("diarrhoea" to Regex("(?i)loose stools?|diarrh?oea|दस्त"), "s_feed" to Regex("(?i)feeding less|feeds? less|not feeding well|कम दूध"),
         "s_cry" to Regex("(?i)cry (?:is )?weak|weak cry|रोना कमज़ोर"), "warm" to Regex("(?i)kept warm|गर्म रखा"),
         // Danger signs said in her words (sick child, pregnancy, newborn): fixed rules so a referral never depends on the AI.
@@ -567,6 +569,24 @@ object ArogyaOfficialForms {
                 Regex("(?i)(\\d{1,4})\\s+$k(?![a-z])").find(s)?.let { m -> put(id, m.groupValues[1], m.value) } }
             Regex("(?i)(\\d{1,2})\\s*(?:full\\s+)?meals|(\\d{1,2})\\s*बार पूरा खाना").find(s)?.let { m -> put("m_meals", m.groupValues[1].ifBlank { m.groupValues[2] }, m.value) }
             Regex("(?i)(\\d{1,2})\\s*(?:pads|पैड)").find(s)?.let { m -> put("m_pads", m.groupValues[1], m.value) }
+            // ANC page (MCP p.5): examination, tests and the Td dose, as the ANM's values are said.
+            Regex("(?i)(?:height|ऊँचाई|ऊंचाई|लंबाई)\\D{0,10}?(\\d{3})\\s*(?:cm|सेमी)?").find(s)?.let { m -> put("height", m.groupValues[1], m.value) }
+            Regex("(?i)(?:pulse|नब्ज़|नब्ज|नाड़ी)\\D{0,10}?(\\d{2,3})").find(s)?.let { m -> put("pulse", m.groupValues[1], m.value) }
+            Regex("(?i)\\b(?:td|tt)\\s*-?\\s*([12])\\b").find(s)?.let { m -> put("td", "Td-" + m.groupValues[1], m.value) }
+            Regex("(?i)\\b(?:td|tt)\\s+booster").find(s)?.let { m -> put("td", "Booster", m.value) }
+            Regex("(?i)(?:urine albumin|पेशाब में एल्बुमिन|पेशाब में एल्ब्यूमिन)\\s*:?\\s*(nil|negative|absent|trace|positive|\\+{1,3}|नहीं)").find(s)?.let { m ->
+                put("urine_albumin", m.groupValues[1].let { if (it == "नहीं" || it.equals("nil", true) || it.equals("negative", true) || it.equals("absent", true)) "Nil" else it }, m.value) }
+            Regex("(?i)(?:urine sugar|पेशाब में शुगर)\\s*:?\\s*(nil|negative|absent|trace|positive|\\+{1,3}|नहीं)").find(s)?.let { m ->
+                put("urine_sugar", m.groupValues[1].let { if (it == "नहीं" || it.equals("nil", true) || it.equals("negative", true) || it.equals("absent", true)) "Nil" else it }, m.value) }
+            Regex("(?i)(?:blood group|ब्लड ग्रुप)\\s*:?\\s*(AB|A|B|O)\\s*(\\+|-|positive|negative|pos|neg|पॉज़िटिव|नेगेटिव)").find(s)?.let { m ->
+                val rh = if (Regex("(?i)^(\\+|pos|पॉ)").containsMatchIn(m.groupValues[2])) "+" else "-"
+                put("blood_group", m.groupValues[1].uppercase() + rh, m.value) }
+            Regex("(?i)hiv\\s+(?:test|screening|जाँच|जांच)\\s*(?:was\\s+)?(?:done|हुई|हो गई)").find(s)?.let { m -> put("hiv", "Yes", m.value) }
+            Regex("(?i)first pregnancy|पहली गर्भावस्था|पहला गर्भ").find(s)?.let { m -> put("gravida", "1", m.value); put("prev_live_births", "0", m.value) }
+            Regex("(?i)gravida\\s*(\\d)").find(s)?.let { m -> put("gravida", m.groupValues[1], m.value) }
+            Regex("(?i)delivery (?:is )?(?:planned|plan) at ([A-Z][\\p{L} ]{2,40}?)\\s*$|प्रसव\\s+(.{2,30}?)\\s+में होगा").find(s.trim())?.let { m ->
+                put("delivery_institution", m.groupValues[1].ifBlank { m.groupValues[2] }.trim(), m.value) }
+            Regex("(?i)complains? of ([^,;]{3,60})|शिकायत\\s*:?\\s*([^,;]{3,40})").find(s)?.let { m -> put("complaints", m.groupValues[1].ifBlank { m.groupValues[2] }.trim(), m.value) }
             Regex("(?i)(?:temp(?:erature)?|तापमान)\\D{0,10}?(\\d{2,3}(?:\\.\\d)?)\\s*(°?\\s*[cf]\\b|डिग्री)?").find(s)?.let { m ->
                 val raw = m.groupValues[1] + if (m.groupValues[2].contains("f", true)) " F" else ""
                 put(if (Regex("(?i)mother|माँ").containsMatchIn(s)) "m_temp" else "temp", raw, m.value) }

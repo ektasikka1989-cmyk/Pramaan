@@ -359,7 +359,7 @@ fun MedScanDialog(hindi: Boolean, ai: ArogyaVisitAi, items: List<StockItem>,
             try {
                 val (net, key) = withContext(Dispatchers.IO) { MetaOnline.hasInternet(context) to MetaOnline.api(context).isConfigured }
                 if (!net || !key) { onlineNote = if (!net) tr("No internet on the phone. Connect to Wi-Fi or mobile data, then press again.", "फ़ोन पर इंटरनेट नहीं। Wi-Fi या मोबाइल डेटा जोड़कर फिर दबाएँ।")
-                    else tr("No Meta key saved. Add it in ✨ AI → Cloud settings (a Meta key, not a Groq gsk_ key), then press again.", "Meta key सेव नहीं। ✨ AI → Cloud सेटिंग में Meta key डालें (Groq gsk_ नहीं), फिर दबाएँ।"); return@launch }
+                    else tr("No Meta key saved. Add it in ✨ AI → Cloud settings (a Meta key, starting LLM|), then press again.", "Meta key सेव नहीं। ✨ AI → Cloud सेटिंग में Meta key डालें (Groq gsk_ नहीं), फिर दबाएँ।"); return@launch }
                 val t = System.currentTimeMillis()
                 val text = ArogyaPhotoVision.transcribe(context, bmp, emptyList(), ArogyaPhotoText.Kind.MEDICINE)
                 if (text == null) { onlineNote = tr("Muse Spark could not read this label.", "Muse Spark यह लेबल नहीं पढ़ पाया।"); return@launch }

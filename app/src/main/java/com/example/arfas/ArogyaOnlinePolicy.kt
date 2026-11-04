@@ -125,7 +125,7 @@ object ArogyaOnlinePolicy {
             val url=citation.optString("url");if(!officialUrl(url)) continue
             cites+=Citation(url,citation.optString("title",url),citation.optInt("start_index",-1),citation.optInt("end_index",-1))
         }
-        compose(msg.optString("content"),cites,root.optString("model","Groq browser search"),kb)
+        compose(msg.optString("content"),cites,root.optString("model","Online search"),kb)
     }.getOrNull()
     // Decimal-safe: "37.5°C" is one number, not a sentence end.
     private val SENTENCE=Regex("(?:[^.!?।\\n]|(?<=\\d)\\.(?=\\d))+[.!?।]?")

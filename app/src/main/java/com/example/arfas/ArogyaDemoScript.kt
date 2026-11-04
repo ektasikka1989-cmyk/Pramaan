@@ -23,10 +23,16 @@ object ArogyaDemoScript {
         "माँ को 30 IFA गोलियाँ और 60 calcium गोलियाँ दीं।"
 
     /** Workflow 1: new pregnancy, first ANC home visit (MCP card ANC page). */
-    const val NOTE_W1_EN = "Sarita Yadav, 10 weeks pregnant, first visit. No bleeding, no headache, no fever. " +
-        "ANM checked at VHSND: weight 49 kg, BP 110/70, Hb 10.2. Gave 30 IFA tablets and 60 calcium tablets. Next check-up at 14 weeks."
-    const val NOTE_W1_HI = "सरिता यादव, 10 हफ़्ते की गर्भवती, पहली विज़िट। खून नहीं, सिरदर्द नहीं, बुखार नहीं। " +
-        "VHSND पर ANM ने जाँचा: वज़न 49 kg, BP 110/70, Hb 10.2। 30 IFA गोलियाँ और 60 calcium गोलियाँ दीं। अगली जाँच 14 हफ़्ते पर।"
+    const val NOTE_W1_EN = "Sarita Yadav, 10 weeks pregnant, first pregnancy, first visit. Pregnancy confirmed with the test; used 1 pregnancy test kit. " +
+        "Complains of mild nausea. No bleeding, no headache, no fever. " +
+        "ANM checked at VHSND: weight 49 kg, height 152 cm, pulse 82, BP 110/70, Hb 10.2. No pallor, no swelling. " +
+        "Urine albumin nil, urine sugar nil. Blood group B positive. HIV test done. ANM gave Td-1 injection. " +
+        "Delivery planned at CHC Mishrikh. IFA and calcium start from the next visit, in the second trimester. Next check-up at 14 weeks."
+    const val NOTE_W1_HI = "सरिता यादव, 10 हफ़्ते की गर्भवती, पहली गर्भावस्था, पहली विज़िट। टेस्ट से गर्भ पक्का किया; 1 pregnancy test kit इस्तेमाल की। " +
+        "शिकायत: हल्की मतली। खून नहीं, सिरदर्द नहीं, बुखार नहीं। " +
+        "VHSND पर ANM ने जाँचा: वज़न 49 kg, ऊँचाई 152 cm, नब्ज़ 82, BP 110/70, Hb 10.2। पीलापन नहीं, सूजन नहीं। " +
+        "पेशाब में एल्बुमिन नहीं, पेशाब में शुगर नहीं। ब्लड ग्रुप B positive। HIV जाँच हुई। ANM ने Td-1 इंजेक्शन दिया। " +
+        "प्रसव CHC मिश्रिख में होगा। IFA और calcium अगली विज़िट से, दूसरी तिमाही में शुरू होंगे। अगली जाँच 14 हफ़्ते पर।"
 
     /** Workflow 3: sick child with diarrhoea (sick-child form; ORS and zinc leave the kit). */
     const val NOTE_W3_EN = "Child Rohan, 14 months. Loose stools 4 times since yesterday. Drinking well, no blood in stool, not lethargic, no vomiting, no fits. " +
@@ -228,6 +234,8 @@ object ArogyaDemoScript {
         if (dangers.isEmpty()) "" else "Danger signs found: " + dangers.joinToString("; ") { it.removePrefix("⚠ ").removePrefix("• ") } +
             ". Refer now: take the baby to the PHC today. Keep the baby warm and keep breastfeeding on the way."
 
+    /** A test kit used from the ASHA's drug kit ("used 1 pregnancy test kit") also leaves the stock; "used pads" does not. */
+    private val USED_KIT = Regex("(?i)\\bused\\b[^.;]*\\bkits?\\b|kit[^।;]*इस्तेमाल")
     private val GIVE_WORDS = Regex("(?i)\\b(gave|given|give|issued)\\b|दी|दिए|दिया|दीं")
 
     /**
@@ -235,7 +243,7 @@ object ArogyaDemoScript {
      * each "N <kit item>" in those sentences. Used where the form has no medicine rows (HBNC).
      */
     fun medicinesGiven(note: String, catalog: List<String>): List<VoiceStockLine> =
-        note.split(Regex("(?<!\\d)\\.|\\.(?!\\d)|[।\\n]")).filter { GIVE_WORDS.containsMatchIn(it) }
+        note.split(Regex("(?<!\\d)\\.|\\.(?!\\d)|[।\\n]")).flatMap { it.split(";") }.filter { GIVE_WORDS.containsMatchIn(it) || USED_KIT.containsMatchIn(it) }
             .flatMap { ArogyaVoiceStock.parseRules(it, catalog) }
             .map { it.copy(op = "give") }.distinctBy { it.item }
 }

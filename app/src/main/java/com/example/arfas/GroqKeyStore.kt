@@ -21,8 +21,11 @@ class GroqKeyStore(context: Context) {
     private val metaStore = MetaKeyStore(context)
     private val prefs = context.getSharedPreferences("fixsight_cloud_settings", Context.MODE_PRIVATE)
 
-    /** The Groq key, or "". */
-    fun groqKey(): String {
+    /** Pramaan: Groq is disabled; only Meta's models are used online. A saved Groq key is ignored, never sent. */
+    fun groqKey(): String = ""
+
+    @Suppress("unused")
+    private fun legacyGroqKey(): String {
         prefs.getString(LEGACY_PLAINTEXT_KEY, null)?.trim()?.takeIf { it.isNotBlank() }?.let { legacy ->
             runCatching { saveKey(legacy) }.onFailure { prefs.edit().remove(LEGACY_PLAINTEXT_KEY).apply(); return legacy.takeIf(::isGroqKey).orEmpty() }
         }
@@ -37,12 +40,13 @@ class GroqKeyStore(context: Context) {
 
     /** The engine chosen in Settings; without a choice, the one that has a key (Groq first). */
     fun engine(): Engine {
+        if (GROQ_DISABLED) return Engine.META
         val chosen = Engine.values().firstOrNull { it.id == prefs.getString(KEY_ENGINE, null) }
         if (chosen != null) return chosen
         return if (groqKey().isBlank() && metaKey().isNotBlank()) Engine.META else Engine.GROQ
     }
 
-    fun setEngine(engine: Engine) { prefs.edit().putString(KEY_ENGINE, engine.id).apply() }
+    fun setEngine(engine: Engine) { prefs.edit().putString(KEY_ENGINE, (if (GROQ_DISABLED) Engine.META else engine).id).apply() }
 
     fun keyFor(engine: Engine): String = if (engine == Engine.GROQ) groqKey() else metaKey()
 
@@ -53,6 +57,7 @@ class GroqKeyStore(context: Context) {
     fun saveKey(value: String) {
         val clean = value.trim()
         if (clean.isBlank()) return
+        if (GROQ_DISABLED && isGroqKey(clean)) return   // Pramaan: Groq keys are not accepted
         if (isGroqKey(clean)) {
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
@@ -111,6 +116,8 @@ class GroqKeyStore(context: Context) {
     }
 
     companion object {
+        /** Pramaan (hackathon build): Groq is switched off everywhere; Meta Muse Spark is the only online model. */
+        const val GROQ_DISABLED = true
         private const val KEY_ALIAS = "fixsight_groq_aes_v1"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val KEY_GROQ_CIPHER = "groq_api_ciphertext"

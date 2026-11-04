@@ -74,6 +74,8 @@ class PocketRagEngine(
          * back to the phone (D7's 300 s stays the outer net). The log names the limit.
          */
         const val CLOUD_FIRST_TOKEN_MS = 20_000L
+        /** Pramaan: why the last Cloud-first turn did or did not use the cloud answer ("ok", "unavailable", "timeout:…", "rejected:…"), for the answer label. */
+        @Volatile var lastCloudOutcome: String = ""
         /** Part B8: 120 s hard cap for a cloud answer (was 60 s). */
         const val CLOUD_TOTAL_MS = 120_000L
         /** Part B8: a cloud stream silent this long falls back to the phone. */
@@ -140,6 +142,7 @@ class PocketRagEngine(
         val cpacket = if (cloudMode == CloudMode.CLOUD_FIRST) (cloudPacket ?: packet) else packet
         val maxCloudOutput = outputBudget(cpacket, cloud = cloudMode != CloudMode.NONE)
 
+        if (cloudMode != CloudMode.NONE) lastCloudOutcome = ""
         if (cloudMode != CloudMode.NONE) {
             if (canUseCloud()) {
                 val reason = if (cloudMode == CloudMode.VERIFY) "check_online" else "cloud_first"
@@ -207,6 +210,7 @@ class PocketRagEngine(
                         else -> CLOUD_TOTAL_MS
                     }
                     Log.w(TAG, "POCKET_RAG_CLOUD_TIMEOUT mode=$cloudMode limit=$limitFired ms=$limitMs fallback=local")
+                    lastCloudOutcome = "timeout:$limitFired"
                     if ((limitFired == "first_token" || limitFired == "idle") && streamFlag?.didStream == true) runCatching { onDraftRejected?.invoke() }
                 }
                 if (cloudMode == CloudMode.VERIFY && cloudAnswer?.contains(NOT_IN_EVIDENCE) == true) {
@@ -223,12 +227,28 @@ class PocketRagEngine(
                     // may add newer information the KB does not have; the prompt makes Cloud label it.
                     val decision = if (cloudMode == CloudMode.CLOUD_FIRST) evalGate(packet.query, cloudAnswer, cpacket, "cloud_first")
                     else PocketRagQualityDecision(true, "cloud_verified")
-                    if (decision.acceptLocal) return acceptCloud(key, cpacket, cloudAnswer, "$reason:${decision.reason}")
+                    if (decision.acceptLocal) { lastCloudOutcome = "ok"; return acceptCloud(key, cpacket, cloudAnswer, "$reason:${decision.reason}") }
+                    // Pramaan: the same repairs a phone draft gets (drop only the sentence with a number or a swapped
+                    // term not in the guide) before giving up on the cloud answer.
+                    if (cloudMode == CloudMode.CLOUD_FIRST) {
+                        val repaired = when {
+                            decision.reason.startsWith("unsupported_numeric_claim") -> qualityGate.salvageUnsupportedNumericSentences(packet.query, cloudAnswer, cpacket)
+                            decision.reason.startsWith("term_swap") -> qualityGate.salvageSwappedTerms(cloudAnswer, cpacket)
+                            else -> null
+                        }
+                        if (!repaired.isNullOrBlank() && repaired != cloudAnswer && evalGate(packet.query, repaired, cpacket, "cloud_salvage").acceptLocal) {
+                            Log.i(TAG, "POCKET_RAG_CLOUD_SALVAGE_ACCEPT reason=${decision.reason}")
+                            lastCloudOutcome = "ok"
+                            return acceptCloud(key, cpacket, repaired, "$reason:cloud_salvage")
+                        }
+                    }
+                    lastCloudOutcome = "rejected:${decision.reason.substringBefore(':')}"
                     Log.w(TAG, "POCKET_RAG_CLOUD_REJECT mode=$cloudMode reason=${decision.reason}")
                     if ((cloud as? PocketRagCloudResolver)?.didStream == true) runCatching { onDraftRejected?.invoke() }
                 }
             } else {
                 Log.w(TAG, "POCKET_RAG_CLOUD_UNAVAILABLE mode=$cloudMode fallback=local")
+                lastCloudOutcome = "unavailable"
             }
             if (cloudMode == CloudMode.VERIFY) {
                 return PocketRagResult(

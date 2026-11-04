@@ -48,7 +48,9 @@ fun AiStepsPopup(engine: String, hindi: Boolean, ms: Long, onlineHint: Boolean?,
                 steps.forEachIndexed { i, s ->
                     val online = if (s.maker.isBlank() && onlineHint != null) onlineHint else s.online
                     val where = if (online) tr("☁ online", "☁ ऑनलाइन") else tr("📴 on the phone", "📴 फ़ोन पर")
-                    Text("${i + 1}. " + (if (s.ai) "✨ " else "⚙ ") + s.model + (if (s.maker.isNotBlank()) " · ${s.maker}" else "") + " · $where", fontSize = 12.sp)
+                    Text("${i + 1}. " + (if (s.notUsed) "✗ " else if (s.ai) "✨ " else "⚙ ") + s.model + (if (s.maker.isNotBlank()) " · ${s.maker}" else "") + " · $where" +
+                        (if (s.notUsed) tr(" — tried, not used: ", " — कोशिश की, इस्तेमाल नहीं: ") + s.why else ""), fontSize = 12.sp,
+                        color = if (s.notUsed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                 }
                 if (steps.size > 1) Text(tr("Steps run in this order; the last one gave the answer shown.", "कदम इसी क्रम में चले; दिखा उत्तर आखिरी कदम का है।"), fontSize = 11.sp)
                 if (ms > 0) Text(tr("Time: ", "समय: ") + if (ms < 1000) "<1 s" else "${ms / 1000} s", fontSize = 11.sp)

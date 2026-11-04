@@ -265,6 +265,17 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                 "village" -> viewDoc = tr("Village register", "गाँव रजिस्टर") to regDoc(tr("Village register", "गाँव रजिस्टर"), ArogyaRegisterTables.villageTable(reg.beneficiaries, today, demoHindi), parts.getOrNull(1))
                 "anc" -> viewDoc = tr("Pregnant women (ANC) register", "गर्भवती (ANC) रजिस्टर") to regDoc(tr("Pregnant women (ANC) register", "गर्भवती (ANC) रजिस्टर"), ArogyaRegisterTables.ancTable(reg.beneficiaries, today, demoHindi), parts.getOrNull(1))
                 "imm" -> viewDoc = tr("Immunization register", "टीकाकरण रजिस्टर") to regDoc(tr("Immunization register", "टीकाकरण रजिस्टर"), ArogyaRegisterTables.immunizationTable(reg.beneficiaries, java.time.YearMonth.from(today), today, demoHindi), parts.getOrNull(1))
+                "summary" -> {
+                    // The saved visit record (what the monthly report, due list and referral use), as a table.
+                    val v = queue.state.value.visits.firstOrNull { it.id == parts.drop(1).joinToString(":") } ?: error(tr("visit not saved yet", "विज़िट अभी सेव नहीं"))
+                    val rows = listOf(tr("Date", "तारीख") to v.date, tr("Person", "व्यक्ति") to v.name, tr("Recorded", "दर्ज") to v.notes.substringBefore("\nVisit note:"),
+                        tr("Referral", "रेफ़रल") to (if (v.referral == ArogyaReferral.NEEDED) v.referralNote else tr("Not needed", "ज़रूरत नहीं")),
+                        tr("Next due", "अगली तारीख़") to listOf(v.nextReason, v.nextDate).filter { it.isNotBlank() }.joinToString(" · "),
+                        tr("Visit note", "विज़िट नोट") to v.notes.substringAfter("\nVisit note:", "").trim())
+                        .filter { it.second.isNotBlank() }.map { RegRow(listOf(it.first, it.second)) }
+                    viewDoc = (tr("Visit summary — ", "विज़िट सारांश — ") + v.name) to store.tableDoc(ArogyaRegisterTables.toFormTable(tr("Visit summary", "विज़िट सारांश"),
+                        "Pramaan · " + today, RegTable(listOf(tr("Item", "विषय"), tr("Value", "मान")), rows), sample = true))
+                }
                 "stock" -> viewDoc = tr("Drug-kit stock register", "दवा किट स्टॉक रजिस्टर") to regDoc(tr("Drug-kit stock register", "दवा किट स्टॉक रजिस्टर"),
                     ArogyaRegistryLogic.stockRegister(reg.stock, reg.stockItems, java.time.YearMonth.from(today), today, demoHindi), null, stockDelta.map { it.substringBefore(":") }.toSet())
             }
@@ -397,7 +408,14 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                                 return t to "Whisper (on this phone, offline)"
                             } finally { withContext(NonCancellable + Dispatchers.IO) { recognizer.release() } }
                         }
-                        val heard = if (ArogyaCloud.cloudFirst(context)) (cloud() ?: phone()) else phone()
+                        val cloudFirstNow = ArogyaCloud.cloudFirst(context)
+                        val heardCloud = if (cloudFirstNow) cloud() else null
+                        // Cloud first but Muse Voice did not answer: the label says so and why (never a silent switch).
+                        val heard = heardCloud ?: phone()?.let { ph ->
+                            if (!cloudFirstNow) ph else {
+                                val why = withContext(Dispatchers.IO) { if (!MetaOnline.hasInternet(context)) "no internet" else if (!MetaOnline.api(context).isConfigured) "no Meta key saved" else "no reply in time or the call failed" }
+                                ph.first to "Muse Voice Transcribe • online — not used: $why · ${ph.second}"
+                            } }
                         val sttMs = System.currentTimeMillis() - tstt
                         if (heard == null) {
                             transcript = ArogyaDemoScript.note(wf, demoHindi)
@@ -405,7 +423,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                             transcriptLive = false
                         } else {
                             transcript = heard.first; transcriptEngine = heard.second
-                            val isCloud = heard.second.startsWith("Muse")
+                            val isCloud = ArogyaAiUsed.online(heard.second)
                             ticks += ArogyaAiTick("speech-to-text", "बोल → लिख", heard.second, sttMs, isCloud)
                             Log.i("ArogyaDemo", "AROGYA_DEMO_STT engine=\"${heard.second}\" ms=$sttMs chars=${heard.first.length}")
                         }
@@ -437,7 +455,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     anmModel = got?.second.orEmpty()
                     if (got != null && got.first.isNotBlank()) {
                         val by = got.second
-                        ticks += ArogyaAiTick("ANM message", "ANM संदेश", by, System.currentTimeMillis() - tanm, !by.startsWith("On-phone"))
+                        ticks += ArogyaAiTick("ANM message", "ANM संदेश", by, System.currentTimeMillis() - tanm, ArogyaAiUsed.online(by))
                     }
                 }
                 "explain" -> {
@@ -451,7 +469,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     val source = listOf(ArogyaDemoScript.referralAdvice(dangers), r?.text.orEmpty()).filter { it.isNotBlank() }.joinToString("\n")
                     val (txt, model, ms) = engine.familyExplainDetailed(source, r?.sources?.firstOrNull()?.excerpt.orEmpty(), true)
                     familyText = txt; familyModel = model
-                    ticks += ArogyaAiTick("family explanation", "परिवार को समझाना", model, ms, !model.startsWith("On-phone"))
+                    ticks += ArogyaAiTick("family explanation", "परिवार को समझाना", model, ms, ArogyaAiUsed.online(model))
                 }
                 "guides" -> { status = tr("Reading the guide library on this phone…", "फ़ोन की गाइड लाइब्रेरी पढ़ रहे हैं…")
                     if (guideDocs == null) guideDocs = withContext(Dispatchers.IO) { ai?.guideLibrary() } }
@@ -521,18 +539,27 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         updates = updates + listOfNotNull(
                             "✓ " + sp.title.substringBefore(" (").substringBefore(" —") + " · " + sp.columns.getOrElse(column) { "" },
                             if (sp.id == "mcp_anc") tr("✓ MCP card p.3 identification + p.5 ANC visit ${column + 1}", "✓ MCP कार्ड पेज 3 पहचान + पेज 5 ANC विज़िट ${column + 1}") else null,
+                            // Exactly what this visit wrote to her ANC page and card (only values that were filled).
+                            if (sp.id == "mcp_anc") listOf("weight" to "kg", "height" to "cm", "pulse" to "/min", "bp" to "", "hb" to "g/dl", "urine_albumin" to "", "urine_sugar" to "", "blood_group" to "")
+                                .mapNotNull { (k, u) -> vals[k]?.takeIf { it.isNotBlank() }?.let { v -> ArogyaOfficialForms.MCP_ANC.fields.firstOrNull { it.id == k }?.let { f -> (if (demoHindi) f.hi else f.label) + " " + v + (if (u.isNotBlank()) " $u" else "") } } }
+                                .takeIf { it.isNotEmpty() }?.let { tr("✓ ANC page values: ", "✓ ANC पेज के मान: ") + it.joinToString(" · ") } else null,
+                            vals["td"]?.takeIf { sp.id == "mcp_anc" && (it.startsWith("Td") || it == "Booster") }?.let { tr("✓ MCP card p.4 · $it injection recorded (${LocalDate.now()})", "✓ MCP कार्ड पेज 4 · $it इंजेक्शन दर्ज (${LocalDate.now()})") },
+                            vals["ifa"]?.takeIf { sp.id == "mcp_anc" && it.isNotBlank() }?.let { tr("✓ MCP card · IFA tablets given: $it", "✓ MCP कार्ड · IFA गोलियाँ दीं: $it") },
+                            if (sp.id == "mcp_anc") tr("✓ Pregnant women (ANC) register · ANC ${column + 1} on ${LocalDate.now()}", "✓ गर्भवती (ANC) रजिस्टर · ANC ${column + 1}, ${LocalDate.now()}") else null,
                             mcpCol?.let { tr("✓ MCP card p.7 · $it column (baby + mother)", "✓ MCP कार्ड पेज 7 · $it कॉलम (बच्चा + माँ)") },
                             vals["weight"]?.takeIf { it.isNotBlank() && sp.id != "mcp_anc" }?.let { tr("✓ Growth chart · $it kg", "✓ वज़न चार्ट · $it kg") },
                             savedVisit?.takeIf { it.referral == ArogyaReferral.NEEDED }?.let { tr("✓ Referral recorded · ", "✓ रेफ़रल दर्ज · ") + it.referralNote },
                             savedVisit?.nextDate?.takeIf { it.isNotBlank() }?.let { tr("✓ Next due: ", "✓ अगली तारीख़: ") + "${savedVisit?.nextReason.orEmpty()} ($it)" },
                             tr("✓ ASHA diary · home visit", "✓ आशा डायरी · गृह भ्रमण")) +
                             stockDelta.map { tr("✓ Stock register · ", "✓ स्टॉक रजिस्टर · ") + it }
-                        addOpens("saved", (tr("Official form · ", "सरकारी फ़ॉर्म · ") + sp.columns.getOrElse(column) { "" }) to "form:${sp.id}:${cur.id}:$column",
-                            tr("MCP card", "MCP कार्ड") to "card:${cur.id}")
-                        if (sp.id == "mcp_anc") addOpens("saved", tr("Pregnant women (ANC) register", "गर्भवती (ANC) रजिस्टर") to "anc:${cur.id}")
+                        addOpens("saved", (tr("Official form · ${sp.columns.getOrElse(column) { "" }} · ${vals.count { it.key != ArogyaOfficialForms.NOTE_KEY && it.value.isNotBlank() }} rows filled",
+                                "सरकारी फ़ॉर्म · ${sp.columns.getOrElse(column) { "" }} · ${vals.count { it.key != ArogyaOfficialForms.NOTE_KEY && it.value.isNotBlank() }} पंक्तियाँ भरीं")) to "form:${sp.id}:${cur.id}:$column",
+                            tr("MCP card · ${cur.name} · today's values highlighted", "MCP कार्ड · ${cur.name} · आज के मान पीले में") to "card:${cur.id}")
+                        if (sp.id == "mcp_anc") addOpens("saved", tr("Pregnant women (ANC) register · ${cur.name} · ANC ${column + 1}", "गर्भवती (ANC) रजिस्टर · ${cur.name} · ANC ${column + 1}") to "anc:${cur.id}")
+                        rec?.let { addOpens("saved", tr("Visit summary · referral, next due date, visit note", "विज़िट सारांश · रेफ़रल, अगली तारीख़, विज़िट नोट") to "summary:${it.id}") }
                         if (sp.id == "annex9") store.state.value.beneficiaries.firstOrNull { it.category == BenCategory.MOTHER && it.household == cur.household && cur.household.isNotBlank() }
                             ?.let { addOpens("saved", (tr("Mother's MCP card · ", "माँ का MCP कार्ड · ") + it.name) to "card:${it.id}") }
-                        if (stockDelta.isNotEmpty()) addOpens("saved", tr("Drug-kit stock register", "दवा किट स्टॉक रजिस्टर") to "stock")
+                        if (stockDelta.isNotEmpty()) addOpens("saved", tr("Drug-kit stock register · ", "दवा किट स्टॉक रजिस्टर · ") + stockDelta.joinToString(", ") to "stock")
                         if (filled.isEmpty()) updates = updates + tr("⚠ No values were filled — go back to the voice screen and check the note.", "⚠ कोई मान नहीं भरा — वॉइस स्क्रीन पर लौटकर नोट जाँचें।")
                         Log.i("ArogyaDemo", "AROGYA_DEMO_SAVED wf=$wf form=${sp.id} col=$column filled=${vals.size} dangers=${dangers.size} stock=${stockDelta.joinToString("; ")}")
                     }
@@ -544,14 +571,14 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     val prof = context.getSharedPreferences("arogya_profile", android.content.Context.MODE_PRIVATE)
                     val body = if (low.isEmpty()) tr("No kit item is below its minimum.", "किट की कोई दवा न्यूनतम से कम नहीं है।")
                         else ArogyaRegistryLogic.refillRequest(reg.stock, reg.stockItems, LocalDate.now(), demoHindi)
-                    addOpens("refill", tr("Drug-kit stock register", "दवा किट स्टॉक रजिस्टर") to "stock")
+                    addOpens("refill", tr("Drug-kit stock register · items below minimum", "दवा किट स्टॉक रजिस्टर · न्यूनतम से कम दवाएँ") to "stock")
                     refillText = ArogyaAnmTemplate.refillMessage(prof.getString("name", "").orEmpty(), prof.getString("village", "").orEmpty(), "",
                         "", java.time.LocalDateTime.now().withNano(0).toString().replace('T', ' '), body, demoHindi)
                 }
                 "practice" -> { status = tr("Making 3 questions from the guides…", "गाइड से 3 सवाल बना रहे हैं…")
                     val got = (ai ?: error("AI is not ready")).refresherDetailed(3)
                     quizItems = got.first; quizModel = got.second; quizMs = got.third
-                    ticks += ArogyaAiTick("daily practice", "रोज़ अभ्यास", got.second, got.third, !got.second.startsWith("On-phone")) }
+                    ticks += ArogyaAiTick("daily practice", "रोज़ अभ्यास", got.second, got.third, ArogyaAiUsed.online(got.second)) }
             }
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             status = tr("This step could not finish: ", "यह चरण पूरा नहीं हुआ: ") + (e.message ?: "")
@@ -580,7 +607,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
             try {
                 val (net, key) = withContext(Dispatchers.IO) { MetaOnline.hasInternet(context) to MetaOnline.api(context).isConfigured }
                 if (!net || !key) { onlineNote = if (!net) tr("No internet on the phone. Connect to Wi-Fi or mobile data, then press again.", "फ़ोन पर इंटरनेट नहीं। Wi-Fi या मोबाइल डेटा जोड़कर फिर दबाएँ।")
-                    else tr("No Meta key saved. Add it in ✨ AI → Cloud settings (a Meta key, not a Groq gsk_ key), then press again.", "Meta key सेव नहीं। ✨ AI → Cloud सेटिंग में Meta key डालें (Groq gsk_ नहीं), फिर दबाएँ।"); return@launch }
+                    else tr("No Meta key saved. Add it in ✨ AI → Cloud settings (a Meta key, starting LLM|), then press again.", "Meta key सेव नहीं। ✨ AI → Cloud सेटिंग में Meta key डालें (Groq gsk_ नहीं), फिर दबाएँ।"); return@launch }
                 val t = System.currentTimeMillis()
                 when (kind) {
                     "person" -> {
@@ -635,7 +662,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         cardChecked = got.first.fields.indices.toSet(); cardApplied = false
                         val by = got.second
                         ticks += ArogyaAiTick("card text reading + extraction", "कार्ड पढ़ना",
-                            "ML Kit text + $by", System.currentTimeMillis() - t, !by.startsWith("On-phone"))
+                            "ML Kit text + $by", System.currentTimeMillis() - t, ArogyaAiUsed.online(by))
                     }
                     "med" -> {
                         status = tr("Reading the label…", "लेबल पढ़ रहे हैं…")
@@ -968,7 +995,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                             cardApplied = true
                             if (vaccinesAdded.isNotEmpty()) updates = updates + tr("✓ MCP card immunization: ", "✓ MCP कार्ड टीकाकरण: ") + vaccinesAdded.joinToString()
                             // The immunization register lists only doses due this month, so the card itself is the proof here.
-                            addOpens("card", tr("MCP card · immunization page", "MCP कार्ड · टीकाकरण पेज") to "card:${b.id}")
+                            addOpens("card", tr("MCP card · immunization page · ", "MCP कार्ड · टीकाकरण पेज · ") + (vaccinesAdded.joinToString().ifBlank { tr("no new vaccine", "कोई नया टीका नहीं") }) +
+                                (if (weightAdded.isNotBlank()) tr(" · weight $weightAdded", " · वज़न $weightAdded") else "") to "card:${b.id}")
                         }, vaccinesAdded = vaccinesAdded, weightAdded = weightAdded,
                         onTakePhoto = { takePhoto(it) }, onChoosePhoto = { choosePhoto(it) },
                         medScan = medScan, medEngine = medEngine, medMs = medMs, medOcrLen = medOcrLen, medMatched = medMatched,
@@ -985,7 +1013,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                             medSaved = true
                             stockDelta = stockDelta + "$item: +${s.qty.coerceAtLeast(0)}"
                             updates = updates + tr("✓ Stock register · $item +${s.qty.coerceAtLeast(0)} (batch ${s.batch.ifBlank { "—" }})", "✓ स्टॉक रजिस्टर · $item +${s.qty.coerceAtLeast(0)} (बैच ${s.batch.ifBlank { "—" }})")
-                            addOpens("medscan", tr("Drug-kit stock register", "दवा किट स्टॉक रजिस्टर") to "stock")
+                            addOpens("medscan", tr("Drug-kit stock register · $item +${s.qty.coerceAtLeast(0)}", "दवा किट स्टॉक रजिस्टर · $item +${s.qty.coerceAtLeast(0)}") to "stock")
                         },
                         samBitmap = samBitmap, samMsg = samMsg,
                         saved = saved, savedReferral = savedReferral, shareMsg = shareMsg, onSharePdf = {
@@ -1015,8 +1043,10 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                             store.update { reg -> reg.copy(beneficiaries = reg.beneficiaries + np) }
                             if (wf == 1) { hero = np; spec = ArogyaOfficialForms.MCP_ANC; column = ArogyaOfficialForms.columnFor(np, "mcp_anc", store.state.value.forms)
                                 updates = updates + tr("✓ Village + pregnancy register: ${np.name} added from the slip photo", "✓ गाँव + गर्भवती रजिस्टर: ${np.name} पर्ची की फ़ोटो से जुड़ीं") }
-                            addOpens("addperson", tr("Village register", "गाँव रजिस्टर") to "village:${np.id}",
-                                tr("Pregnant women (ANC) register", "गर्भवती (ANC) रजिस्टर") to "anc:${np.id}", tr("MCP card · page 3", "MCP कार्ड · पेज 3") to "card:${np.id}")
+                            addOpens("addperson", tr("Village register · ${np.name} added (${np.household.ifBlank { "—" }})", "गाँव रजिस्टर · ${np.name} जुड़ीं (${np.household.ifBlank { "—" }})") to "village:${np.id}")
+                            if (np.category == BenCategory.PREGNANT) addOpens("addperson",
+                                tr("Pregnant women (ANC) register · ${np.name}" + (ArogyaRegistryLogic.edd(np)?.let { " · EDD $it" } ?: ""), "गर्भवती (ANC) रजिस्टर · ${np.name}" + (ArogyaRegistryLogic.edd(np)?.let { " · EDD $it" } ?: "")) to "anc:${np.id}")
+                            addOpens("addperson", tr("MCP card p.3 · identification filled", "MCP कार्ड पेज 3 · पहचान भरी") to "card:${np.id}")
                             personDue = ArogyaSchedule.forBeneficiary(np, emptyList(), LocalDate.now())
                                 .firstOrNull { !it.done }?.let { "${it.label} (${it.due})" }
                                 ?: tr("No dues — registered.", "कुछ बाकी नहीं — दर्ज हो गया।")
@@ -1051,7 +1081,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         },
                         onCloseCard = { cardDoc = null }, cardChanged = cardChanged, remembered = rememberedTimes,
                         updates = updates, stockDelta = stockDelta, refillText = refillText,
-                        opens = opensBy[scenes.getOrNull(scene)?.id.orEmpty()].orEmpty(), onOpen = { openDoc(it) }, formNote = formNote, personEngine = personEngine,
+                        opens = scenes.getOrNull(scene)?.id.let { id -> if (id == "summary") opensBy.values.flatten().distinctBy { it.second } else opensBy[id.orEmpty()].orEmpty() }, onOpen = { openDoc(it) }, formNote = formNote, personEngine = personEngine,
                         sopQ = ArogyaDemoScript.question(wf, demoHindi), sopF = ArogyaDemoScript.followUp(wf, demoHindi),
                         onConfirmSave = { formConfirmed = true; replay() }, onEditPerson = { personPreview = it },
                         personFields = personFields, personOcr = personOcr, onlineBusy = onlineBusy, onlineNote = onlineNote, onReadOnline = { readOnline(it) })
@@ -1190,9 +1220,6 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
         }
         if (sceneId == "saved" && saved && updates.isNotEmpty()) DemoCard(tr("Updated records", "अपडेट हुए रिकॉर्ड")) {
             updates.forEach { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium) }
-        }
-        if (opens.isNotEmpty()) DemoCard(tr("Open to check", "खोलकर जाँचें")) {
-            opens.forEach { (label, key) -> OutlinedButton(onClick = { onOpen(key) }, modifier = Modifier.fillMaxWidth()) { Text("📄 $label", maxLines = 1) } }
         }
         val parts = when (sceneId) { "plan" -> listOf("meet", "due"); "summary" -> listOf("aitable", "beforeafter"); else -> listOf(sceneId) }
         for (sid in parts) when (sid) {
@@ -1448,6 +1475,14 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                 } }
             }
             "mcpcard" -> {
+                // The card shows only what was saved: a visit not yet confirmed leaves ANC visit 1 empty. Say why.
+                if (!saved) DemoCard(tr("⚠ Today's visit is not saved yet", "⚠ आज की विज़िट अभी सेव नहीं हुई"), danger = true) {
+                    Text(tr("The card shows only saved values, so today's ANC visit is still empty. Go back to the Save screen, check the values and tap ✓ Confirm, then come back.",
+                        "कार्ड पर सिर्फ़ सेव हुए मान दिखते हैं, इसलिए आज की ANC विज़िट खाली है। सेव वाली स्क्रीन पर जाएँ, मान जाँचें और ✓ पक्का करें दबाएँ, फिर लौटें।"),
+                        style = MaterialTheme.typography.bodySmall)
+                    if (filled.isEmpty()) Text(tr("Also: no form values were filled from the voice note — check the voice screen first.", "साथ ही: वॉइस नोट से कोई मान नहीं भरा — पहले वॉइस स्क्रीन जाँचें।"),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
                 if (cardChanged >= 0) Text(
                     if (cardChanged == 0) tr("No field changed yet — run the voice note and save scenes first.", "अभी कोई खाना नहीं बदला — पहले वॉइस नोट और सेव वाले सीन चलाएँ।")
                     else tr("$cardChanged fields changed today — highlighted in yellow.", "आज $cardChanged खाने बदले — पीले रंग में।"),
@@ -1517,7 +1552,7 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                 if (onDeepLink != null) OutlinedButton(onClick = { onDeepLink("registers") }) { Text(tr("All registers in the app ↗", "ऐप के सभी रजिस्टर ↗"), maxLines = 1) }
             }
             "practice" -> {
-                if (quizModel.isNotBlank()) AiResultChip(quizModel, !quizModel.startsWith("On-phone"), quizMs, hindi)
+                if (quizModel.isNotBlank()) AiResultChip(quizModel, ArogyaAiUsed.online(quizModel), quizMs, hindi)
                 if (quizItems.isEmpty()) Text(tr("Making questions…", "सवाल बन रहे हैं…"))
                 quizItems.forEachIndexed { qi, item ->
                     DemoCard("${qi + 1}. ${item.question}") {
@@ -1626,6 +1661,12 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+        }
+        // Below every screen: what Sunita's action changed, each with a button to the card / register / summary it updated.
+        if (opens.isNotEmpty()) DemoCard(if (sceneId == "summary") tr("Everything this visit updated — open to check", "इस विज़िट से जो अपडेट हुआ — खोलकर जाँचें")
+            else tr("✓ Updated — open to check", "✓ अपडेट हुआ — खोलकर जाँचें")) {
+            opens.forEach { (label, key) -> OutlinedButton(onClick = { onOpen(key) }, modifier = Modifier.fillMaxWidth()) {
+                Text("📄 $label", maxLines = 2, style = MaterialTheme.typography.bodySmall) } }
         }
     }
 }

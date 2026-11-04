@@ -70,11 +70,11 @@ fun main() {
     check("w1-form-anc-1", s1.id == "mcp_anc" && c1 == 0 && F.columnFor(sarita, "mcp_anc", r.forms, today) == 0, "${s1.id}#$c1")
     // 4. Voice note with NO model (worst case on the phone): rules only.
     val v1 = F.parse("", F.MCP_ANC, 0, ArogyaDemoScript.NOTE_W1_EN).mapValues { it.value.value }
-    check("w1-voice-rules", listOf("weight", "bp", "hb", "ifa", "calcium", "pog", "d_bleed", "d_headache", "d_fever").all { it in v1 }, v1)
+    check("w1-voice-rules", listOf("weight", "bp", "hb", "pog", "height", "pulse", "td", "urine_albumin", "blood_group", "hiv", "d_bleed", "d_headache", "d_fever").all { it in v1 } && "ifa" !in v1, v1)
     // 5. Danger: none.
     check("w1-no-danger", ArogyaDemoScript.dangerLines(ArogyaDemoScript.NOTE_W1_EN, F.MCP_ANC, v1, ArogyaVisit(name = sarita.name, date = today.toString()), false).isEmpty())
     // 6. Save.
-    val ifa0 = bal(r, "IFA tablets (adult)"); val cal0 = bal(r, "Calcium tablets")
+    val ifa0 = bal(r, "IFA tablets (adult)"); val cal0 = bal(r, "Calcium tablets"); val ptk0 = bal(r, "Pregnancy test kit")
     val (r1, rec1) = save(r, sarita, F.MCP_ANC, 0, v1 + (F.NOTE_KEY to ArogyaDemoScript.NOTE_W1_EN), today); r = r1
     check("w1-note-kept", rec1.notes.contains("Visit note:") && r.forms.any { it.beneficiaryId == sarita.id && it.values[F.NOTE_KEY] == ArogyaDemoScript.NOTE_W1_EN })
     check("w1-unused-sentence-shown", F.unusedSentences(ArogyaDemoScript.NOTE_W1_EN, F.parse("", F.MCP_ANC, 0, ArogyaDemoScript.NOTE_W1_EN)).any { it.contains("14 weeks") })
@@ -82,9 +82,11 @@ fun main() {
     val e1 = r.forms.firstOrNull { it.beneficiaryId == sarita.id && it.formId == "mcp_anc" && it.column == 0 }
     check("w1-form-entry", e1 != null && e1.values["weight"] == "49" && e1.values["bp"] == "110/70" && e1.values["hb"] == "10.2", e1?.values)
     check("w1-card-anc-ticked", s1b.mcp.anc[1] == today.toString() && s1b.mcp.ancDetails[1]?.bp == "110/70" && s1b.mcp.ancDetails[1]?.weightKg == "49", s1b.mcp)
-    check("w1-card-ifa-total", s1b.mcp.ifaTablets == 30, s1b.mcp.ifaTablets)
-    check("w1-stock-ifa-calcium", bal(r, "IFA tablets (adult)") == ifa0 - 30 && bal(r, "Calcium tablets") == cal0 - 60, "${bal(r, "IFA tablets (adult)")} ${bal(r, "Calcium tablets")}")
-    check("w1-stock-line-to-person", r.stock.any { it.beneficiaryId == sarita.id && it.item == "IFA tablets (adult)" && it.qty == -30 })
+    // First trimester: Td-1 on the card; IFA / calcium not yet (they start in the second trimester); 1 pregnancy test kit used.
+    check("w1-card-td1", s1b.mcp.tdDates.contains(today.toString()) && s1b.mcp.ifaTablets == 0, s1b.mcp)
+    check("w1-stock-test-kit", bal(r, "Pregnancy test kit") == ptk0 - 1 && bal(r, "IFA tablets (adult)") == ifa0 && bal(r, "Calcium tablets") == cal0,
+        "${bal(r, "Pregnancy test kit")} vs ${ptk0 - 1}; IFA ${bal(r, "IFA tablets (adult)")}")
+    check("w1-stock-line-to-person", r.stock.any { it.beneficiaryId == sarita.id && it.item == "Pregnancy test kit" && it.qty == -1 })
     check("w1-diary", r.diary.any { it.beneficiaryId == sarita.id && it.kind == DiaryKind.HOME_VISIT && it.date == today.toString() })
     check("w1-next-due", rec1.nextDate.isNotBlank() && rec1.referral == ArogyaReferral.NONE, "${rec1.nextDate} ${rec1.nextReason} ${rec1.referral}")
     // 7. The official MCP card, from the real template.

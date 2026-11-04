@@ -1232,7 +1232,7 @@ fun ArogyaVisitScreen(
     if(quizOpen) AlertDialog(onDismissRequest={quizOpen=false},title={Row(verticalAlignment=Alignment.CenterVertically) { Text(tr("2-minute refresher","2 मिनट अभ्यास"),modifier=Modifier.weight(1f)); AiBadge("Daily practice") }},text={
         Column(Modifier.heightIn(max=540.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             if(quizBusy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(tr("Making 3 questions from your ASHA guide on this phone…","आपकी ASHA गाइड से फ़ोन पर 3 सवाल बन रहे हैं…")) }
-            if(quizModel.isNotBlank()) AiResultChip(quizModel,!quizModel.startsWith("On-phone"),quizMs,hindi)
+            if(quizModel.isNotBlank()) AiResultChip(quizModel,ArogyaAiUsed.online(quizModel),quizMs,hindi)
             if(quizError.isNotBlank()) Text(quizError,color=MaterialTheme.colorScheme.error)
             quizItems.forEachIndexed { qi,item ->
                 Text("${qi+1}. ${item.question}",fontWeight=FontWeight.Bold)

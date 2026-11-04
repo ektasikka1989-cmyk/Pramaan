@@ -81,6 +81,16 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         // Part B8: word-by-word deltas per engine; "" resets the shown draft when the turn
         // falls back to the other engine, so two half-answers never concatenate on screen.
         val emit: (String) -> Unit = { d -> if (d.isNotEmpty()) emitted = true; onDelta?.invoke(d) }
+        // Why the cloud did not answer (shown on the answer when Cloud first was on): never a silent switch to the phone.
+        var cloudWhy = when {
+            !cloud -> ""
+            ep != null && key.isNotBlank() -> ""
+            appContext == null -> "cloud not set up"
+            !MetaOnline.hasInternet(appContext) -> "no internet"
+            ArogyaCloud.textEndpoint(appContext)?.keyFor == "together" -> "no Together AI key saved for Muse Glimmer"
+            else -> "no Meta key saved"
+        }
+        Log.i(TAG, "AROGYA_ROUTE_DECISION feature=$feature cloudFirst=${c?.cloudFirst == true} cloudUsable=${ep != null && key.isNotBlank()} why=\"$cloudWhy\"")
         suspend fun cloud(): Pair<T?, String>? {
             if (!cloud || ep == null || key.isBlank()) return null
             val t = System.currentTimeMillis()
@@ -95,7 +105,10 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
                 else null
             }
             Log.i(TAG, "AROGYA_ROUTE feature=$feature engine=cloud model=${ep.model} ok=${raw != null} streamed=${onDelta != null} ms=${System.currentTimeMillis() - t}")
-            return raw?.let { r -> accept(r)?.let { it to ep.label } }
+            if (raw == null) { cloudWhy = "no reply within ${CLOUD_DEADLINE_MS / 1000} s or the call failed"; return null }
+            val ok = accept(raw)
+            if (ok == null) { cloudWhy = "its answer did not pass the check against the source"; return null }
+            return ok to ep.label
         }
         suspend fun phone(): Pair<T?, String>? = try {
             val model = readyModel(); val t = System.currentTimeMillis()
@@ -105,7 +118,14 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
             accept(raw)?.let { it to "On-phone model (offline): " + (model.loadedModelFileName?.substringBeforeLast('.') ?: "local") }
         } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.w(TAG, "AROGYA_ROUTE feature=$feature engine=phone failed ${e.message?.take(120)}"); null }
         for (engine in ArogyaRouting.order(c?.cloudFirst == true, cloud && ep != null && key.isNotBlank())) {
-            (if (engine == "cloud") cloud() else phone())?.let { return it }
+            (if (engine == "cloud") cloud() else phone())?.let { r ->
+                // Cloud first, but the phone answered: the label says which cloud model was tried and why it was not used.
+                if (engine == "phone" && c?.cloudFirst == true && cloud && cloudWhy.isNotBlank()) {
+                    val name = (ep ?: appContext?.let { ArogyaCloud.textEndpoint(it) })?.label?.substringBefore(" —") ?: "Muse Spark 1.3"
+                    return r.first to "$name • online — not used: $cloudWhy · ${r.second}"
+                }
+                return r
+            }
             if (emitted) { emitted = false; onDelta?.invoke("") }
         }
         return null to ""
@@ -370,7 +390,10 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val text = ArogyaAnswerFormat.stripCitationMarkers(turn.text.trim())
         val hasAnswer = text.isNotBlank()
         val provider = when (turn.provider) {
-            AndroBaselineRuntime.Provider.LOCAL -> "Pramaan • offline (${runtime.localModelManager?.loadedModelFileName?.substringBeforeLast('.') ?: "local model"})"
+            AndroBaselineRuntime.Provider.LOCAL -> "Pramaan • offline (${runtime.localModelManager?.loadedModelFileName?.substringBeforeLast('.') ?: "local model"})".let { local ->
+                // Cloud first was on but the phone answered: say why, so the switch is never silently ignored.
+                if (runtime.answerPolicy() != AnswerPolicy.CLOUD_FIRST || onlineCheck) local
+                else ArogyaCloudOutcome.why(PocketRagEngine.lastCloudOutcome, runtime.cloudEngineLabel(), runCatching { runtime.groqProviderStatus().name }.getOrDefault(""))?.let { "$it · $local" } ?: local }
             AndroBaselineRuntime.Provider.CLOUD -> runtime.cloudEngineLabel().let { if (it.contains("Muse")) "Muse Spark 1.3 (Meta) • online" else "$it • online" }
             else -> "Pramaan"
         }
@@ -925,6 +948,15 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         if (values == null) values = phone()
         if (!cloudFirst && cloudReady && values.orEmpty().none { it.value.source == "ai" }) cloud()?.let { values = it }
         if (values == null) { label = "Fixed patterns only (no model)"; values = ArogyaOfficialForms.parse("", spec, column, text) }
+        // Cloud first, but the cloud did not fill the form: the label names it and says why (never a silent switch).
+        if (cloudFirst && (endpoint == null || label != endpoint.label)) {
+            val why = when {
+                !cloudReady && appContext != null && !MetaOnline.hasInternet(appContext) -> "no internet"
+                !cloudReady -> "no Meta key saved"
+                else -> msg.substringAfter("Online model not used:", "the call failed").trim().substringBefore(" On-phone").ifBlank { "the call failed" }
+            }
+            label = "Muse Spark 1.3 • online — not used: $why · $label"
+        }
         val ms = System.currentTimeMillis() - t
         // Never silent: say how many rows came from the model and how many from the fixed rules.
         val aiN = values!!.count { it.value.source == "ai" }; val ruleN = values!!.size - aiN
