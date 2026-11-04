@@ -311,7 +311,11 @@ object ArogyaDocRender {
             "complications_ref" to "Any other Complications and Referral Requirements (Y/N)"), "ph-pnc")
         val cid = child?.id ?: ""
         val babySpec = ArogyaOfficialForms.MCP_BABY
-        val babyGrid = gridHtml(babySpec, cid, listOf("date" to "Date") + babySpec.fields.map { it.id to it.label }, "ph-pnc")
+        // Columns filled from the ASHA's HBNC visit (linked save) are labelled as such under the table.
+        val ashaCols = forms.filter { it.values["_src"] == "annex9" && ((it.beneficiaryId == cid && it.formId == "mcp_baby") || (it.beneficiaryId == mid && it.formId == "mcp_pnc")) }
+            .map { babySpec.columns.getOrElse(it.column) { "" } }.filter { it.isNotBlank() }.distinct()
+        val babyGrid = gridHtml(babySpec, cid, listOf("date" to "Date") + babySpec.fields.map { it.id to it.label }, "ph-pnc") +
+            (if (ashaCols.isEmpty()) "" else "<div class=\"kv\"><small>${esc(ashaCols.joinToString(", "))}: recorded at the ASHA's HBNC home visit (Annexure 9).</small></div>")
         // HBYC (card p.8), IFA (card p.27).
         val hbycSpec = ArogyaOfficialForms.MCP_HBYC
         val hbycGrid = gridHtml(hbycSpec, cid, listOf("date" to "Date") + hbycSpec.fields.map { it.id to it.label }, "")

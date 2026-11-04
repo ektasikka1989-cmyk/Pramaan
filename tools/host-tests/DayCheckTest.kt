@@ -25,7 +25,9 @@ fun main() {
     // Visit 2: Annexure 9 day-7 weight for the child.
     r = ArogyaOfficialForms.apply(r, ch, ArogyaOfficialForms.ANNEX9, 2,
         mapOf("weight" to "2.9"), mapOf("weight" to "voice"), emptySet(), today)
-    d(r.forms.size == 2, "visit 2 stored; two form entries")
+    d(r.forms.count { it.values["_src"] != "annex9" } == 2, "visit 2 stored; two form entries")
+    d(r.forms.any { it.beneficiaryId == ch.id && it.formId == "mcp_baby" && it.values["weight"] == "2.9" }, "visit 2 also on MCP card p.7 (7th Day)")
+    d(r.forms.none { it.beneficiaryId == pw.id && it.formId == "mcp_pnc" }, "a pregnant woman in the house gets no PNC entry")
     d(r.beneficiaries.first { it.id == "day-ch" }.mcp.weights.any { it.date == "2026-11-02" && it.kg == 2.9 },
         "visit 2: weight on the MCP card")
     // Give ORS 4 to the child (keyed id).
@@ -56,7 +58,7 @@ fun main() {
     // Re-saving visit 1 changes nothing anywhere.
     val r2 = ArogyaOfficialForms.apply(r, pw, ArogyaOfficialForms.MCP_ANC, 1,
         mapOf("ifa" to "30", "calcium" to "60"), mapOf("ifa" to "voice", "calcium" to "voice"), emptySet(), today)
-    d(r2.forms.size == 2 && L.stockBalance(r2.stock)["IFA tablets (adult)"] == 170 &&
+    d(r2.forms.count { it.values["_src"] != "annex9" } == 2 && L.stockBalance(r2.stock)["IFA tablets (adult)"] == 170 &&
         L.stockBalance(r2.stock)["Calcium tablets"] == 40 &&
         r2.beneficiaries.first { it.id == "day-pw" }.mcp.ifaTablets == 30, "re-save: forms, stock and card unchanged")
     println("DayCheckTest: $dp passed, $df failed")

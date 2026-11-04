@@ -120,7 +120,7 @@ private fun PhotoPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (List<Be
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
-    var shotUri by remember { mutableStateOf<Uri?>(null) }
+    var shotUri by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Uri?>(null) }
     fun run(uri: Uri, temp: Boolean) {
         if (ai == null) { msg = tr("AI is not ready.", "AI तैयार नहीं।"); return }
         busy = true; msg = tr("Reading the photo…", "फ़ोटो पढ़ रहे हैं…")
@@ -130,16 +130,23 @@ private fun PhotoPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (List<Be
                     val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
                     var sample = 1; while (maxOf(opts.outWidth, opts.outHeight) / sample > 2000) sample *= 2
-                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
-                        ?: throw IllegalStateException("Could not open the photo")
+                    (context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+                        ?: throw IllegalStateException("Could not open the photo")).let { ArogyaPhotoGuard.upright(context, uri, it) }
                 }
                 val ocrProc = MLKitProcessor()
-                val ocr = try { withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) } } finally { runCatching { ocrProc.close() } }
+                val (ocr, lines) = try { withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) to runCatching { ocrProc.recognizeLines(bmp) }.getOrDefault(emptyList()) } } finally { runCatching { ocrProc.close() } }
+                // A ruled register page: rebuild its rows from the line positions, one person per row (rules, no AI).
+                val tableRows = ArogyaTableOcr.people(lines).map { r -> r.mapValues { ArogyaPersonExtract.maskAadhaar(it.value) } }
+                Log.i("ArogyaDemo", "AROGYA_REGISTER_ROWS lines=${lines.size} people=${tableRows.size}")
                 if (ocr.isBlank()) throw IllegalStateException(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
                 if (ArogyaPersonExtract.hasAadhaar(ocr)) msg = tr("Aadhaar number found and removed — it is never stored.", "आधार नंबर मिला और हटाया — वो कभी सेव नहीं होता।") + " "
-                msg += tr("Copying the details…", "जानकारी उतार रहे हैं…")
+                msg += if (ai.isBusy) tr("Waiting for the AI to finish the current answer…", "AI पिछला उत्तर पूरा कर रहा है, रुकिए…")
+                    else tr("Copying the details…", "जानकारी उतार रहे हैं…")
                 val blocks = ArogyaExtractSplit.splitBlocks(ArogyaPersonExtract.maskAadhaar(ocr))
-                val found = if (blocks.size > 1) {
+                val found = if (tableRows.isNotEmpty()) {
+                    msg = tr("Register page: ${tableRows.size} people read row by row on the phone.", "रजिस्टर पेज: ${tableRows.size} लोग पंक्ति-दर-पंक्ति फ़ोन पर पढ़े।")
+                    tableRows.map { ArogyaPersonCsv.toBeneficiary(it) }
+                } else if (blocks.size > 1) {
                     msg = tr("Reading ${blocks.size} people…", "${blocks.size} लोगों को पढ़ रहे हैं…")
                     ai.extractPersonList(ocr).first
                         .filter { !it["name"].isNullOrBlank() }
@@ -160,14 +167,14 @@ private fun PhotoPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (List<Be
     val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { g ->
         if (g) { val u = runCatching { context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "person_${System.currentTimeMillis()}.jpg"); put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg") }) }.getOrNull()
-            if (u != null) { shotUri = u; runCatching { shoot.launch(u) } } }
+            if (u != null) { shotUri = u; ArogyaPhotoGuard.hold(context); runCatching { shoot.launch(u) } } }
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u -> if (u != null) run(u, false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(tr("Photograph the MCP card or register page. Only the picked photo is read; Aadhaar numbers are removed.", "MCP कार्ड या रजिस्टर पेज की फ़ोटो लें। सिर्फ़ चुनी फ़ोटो पढ़ी जाती है; आधार नंबर हटाए जाते हैं।"), style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { camPerm.launch(android.Manifest.permission.CAMERA) }, enabled = !busy) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
-            OutlinedButton(onClick = { pick.launch(arrayOf("image/*")) }, enabled = !busy) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
+            OutlinedButton(onClick = { ArogyaPhotoGuard.hold(context); pick.launch(arrayOf("image/*")) }, enabled = !busy) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (msg.isNotBlank()) Text(msg, style = MaterialTheme.typography.bodySmall)
@@ -224,7 +231,7 @@ private fun CsvPersonStep(hindi: Boolean, onDone: (List<Beneficiary>, String) ->
                     msg = if (ok) tr("Template saved in Downloads.", "टेम्पलेट Downloads में सेव।") else tr("Could not write the template.", "टेम्पलेट नहीं लिख पाए।")
                 }
             }) { Text(tr("Download template", "टेम्पलेट उतारें")) }
-            Button(onClick = { pick.launch(arrayOf("text/*", "application/vnd.ms-excel")) }, enabled = !busy) { Text(tr("Pick CSV file", "CSV फ़ाइल चुनें")) }
+            Button(onClick = { ArogyaPhotoGuard.hold(context); pick.launch(arrayOf("text/*", "application/vnd.ms-excel")) }, enabled = !busy) { Text(tr("Pick CSV file", "CSV फ़ाइल चुनें")) }
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (msg.isNotBlank()) Text(msg, style = MaterialTheme.typography.bodySmall)
@@ -332,7 +339,7 @@ private fun PdfPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (List<Bene
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(tr("Pick a due list or line list PDF (up to 6 pages). Only the picked file is read; Aadhaar numbers are removed.", "बाकी सूची या लाइन सूची की PDF चुनें (6 पेज तक)। सिर्फ़ चुनी फ़ाइल पढ़ी जाती है; आधार नंबर हटाए जाते हैं।"), style = MaterialTheme.typography.bodySmall)
-        Button(onClick = { pick.launch(arrayOf("application/pdf")) }, enabled = !busy) { Text(tr("Pick PDF file", "PDF फ़ाइल चुनें")) }
+        Button(onClick = { ArogyaPhotoGuard.hold(context); pick.launch(arrayOf("application/pdf")) }, enabled = !busy) { Text(tr("Pick PDF file", "PDF फ़ाइल चुनें")) }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (msg.isNotBlank()) Text(msg, style = MaterialTheme.typography.bodySmall)
     }

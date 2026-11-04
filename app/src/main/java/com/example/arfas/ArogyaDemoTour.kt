@@ -129,7 +129,9 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
     fun tr(en: String, hi: String) = if (demoHindi) hi else en
     val store = remember { ArogyaRegistryStore.get(context) }
     val data by store.state.collectAsState()
-    val scenes = ArogyaDemoScript.scenes
+    // Three complete workflows; the presenter picks one on the demo home screen.
+    var wf by remember { mutableStateOf(2) }
+    val scenes = remember(wf) { ArogyaDemoScript.flow(wf) }
     val n = scenes.size
     var scene by remember { mutableStateOf(0) }
     var ready by remember { mutableStateOf(false) }
@@ -203,9 +205,14 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
     var quizMs by remember { mutableStateOf(0L) }
     var openSource by remember { mutableStateOf<ArogyaSource?>(null) }
     var sourceErr by remember { mutableStateOf("") }
-    var photoFor by remember { mutableStateOf("") }
-    var shotUri by remember { mutableStateOf<Uri?>(null) }
+    var photoFor by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    var shotUri by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Uri?>(null) }
     val ticks = remember { mutableStateListOf<ArogyaAiTick>() }
+    // What this run changed: shown on the save and "Everything updated" screens (real values from the store).
+    var updates by remember { mutableStateOf<List<String>>(emptyList()) }
+    var stockBefore by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var stockDelta by remember { mutableStateOf<List<String>>(emptyList()) }
+    var refillText by remember { mutableStateOf("") }
     fun secs(ms: Long) = if (ms < 1000) tr("<1 s", "<1 से.") else tr("${ms / 1000} s", "${ms / 1000} से.")
     val online = MetaOnline.hasInternet(context)
     fun lines(): List<String> = if (scene >= n) listOf(tr("The demo is complete. Thank you.", "डेमो पूरा हुआ। धन्यवाद।"))
@@ -219,6 +226,16 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
     var cardBeforeHtml by remember { mutableStateOf("") }
     var cardChanged by remember { mutableStateOf(-1) }
     val aiScenes = remember { setOf("addperson", "voice", "danger", "explain", "sops", "card", "medscan", "practice") }
+    fun balances(): Map<String, Int> = store.state.value.stock.groupBy { it.item }.mapValues { (_, l) -> l.sumOf { it.qty } }
+    /** A fresh run of the chosen workflow: every result of the previous run is cleared. */
+    fun resetRun() {
+        ran = emptySet(); hero = null; spec = null; column = 0; filled = emptyMap(); formConfirmed = false; transcript = ""; transcriptEngine = ""
+        dangers = emptyList(); dangersRan = false; sop = null; sopFollow = null; sopOnline = null; sopOnlineSkip = false; anm = ""; anmModel = ""; demoMsg = ""
+        familyText = ""; personPreview = null; personMsg = ""; personAgreed = false; personSaved = false; personDue = ""; savedSummary = ""; cardDoc = null
+        card = null; cardApplied = false; vaccinesAdded = emptyList(); weightAdded = ""; medScan = null; medSaved = false; samBitmap = null; samMsg = ""
+        saved = false; savedVisit = null; savedReferral = ""; shareMsg = ""; quizItems = emptyList(); quizChoice = emptyMap()
+        updates = emptyList(); stockBefore = emptyMap(); stockDelta = emptyList(); refillText = ""; ticks.clear(); tickMark = 0; status = ""
+    }
     fun go(i: Int) { speech.stop(); manualJob?.cancel(); status = ""; aiWorkOpen = false; liveExpanded = false; tickMark = ticks.size; scene = i.coerceIn(0, n) }
     fun replay() { speech.stop(); manualJob?.cancel(); ran = ran - scene; status = ""; aiWorkOpen = false; liveExpanded = false; tickMark = ticks.size; replayTick++ }
 
@@ -232,23 +249,42 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
         rememberedTimes = ticks.fold(rememberedTimes) { m, t -> ArogyaDemoTicks.timesRecord(m, t) }
         demoPrefs.edit().putString("times", ArogyaDemoTicks.timesEncode(rememberedTimes)).apply()
     }
-    LaunchedEffect(scene, started) { if (started) demoPrefs.edit().putInt("last_scene", scene).apply() }
+    LaunchedEffect(scene, started) { if (started) demoPrefs.edit().putInt("last_scene_w$wf", scene).apply() }
 
     // Prepare after Start: fresh sample village, the hero baby, the guide counts, a warm model.
     LaunchedEffect(started) {
         if (!started || ready) return@LaunchedEffect
         busy = true; status = tr("Loading the sample village (fictional people)…", "नमूना गाँव लोड हो रहा है…")
         onLoadSample()
-        // Suspend until the store holds the hero (demo sample, today's dates) — no fixed sleep.
+        // Suspend until the store holds the fresh sample (today's dates) — no fixed sleep.
         var b: Beneficiary? = null
         for (i in 0 until 150) {
-            b = store.state.value.beneficiaries.firstOrNull { it.name.startsWith(ArogyaDemoScript.HERO_PREFIX) }
+            b = store.state.value.beneficiaries.firstOrNull { it.name.startsWith(ArogyaDemoScript.HERO_PREFIX) && it.demo }
             if (b != null) break
             delay(100)
         }
         if (b == null) { busy = false; status = tr("Sample village not found — load it from Home first.", "नमूना गाँव नहीं मिला — होम से लोड करें।"); return@LaunchedEffect }
-        val (sp, col) = ArogyaOfficialForms.formFor(b, store.state.value.forms); spec = sp; column = col; hero = b
-        cardBeforeHtml = runCatching { store.mcpDoc(b, store.state.value.beneficiaries, LocalDate.now()).html }.getOrDefault("")
+        // Who this workflow is about: W1 a newly registered pregnant woman (until the slip photo adds her, the
+        // slip's own details stand in, not yet saved), W2 Baby of Neha, W3 Child Rohan on the sick-child form.
+        when (wf) {
+            1 -> {
+                b = Beneficiary(id = "demo-person-w1", name = ArogyaDemoScript.W1_NAME, relativeName = ArogyaDemoScript.W1_RELATIVE, age = ArogyaDemoScript.W1_AGE,
+                    phone = ArogyaDemoScript.W1_PHONE, household = ArogyaDemoScript.W1_HOUSE, village = "Rampur", category = BenCategory.PREGNANT, sex = "F",
+                    lmp = LocalDate.now().minusWeeks(ArogyaDemoScript.W1_WEEKS).toString(), demo = true)
+                spec = ArogyaOfficialForms.MCP_ANC; column = 0
+            }
+            3 -> {
+                val rohan: Beneficiary = store.state.value.beneficiaries.firstOrNull { it.name == ArogyaDemoScript.W3_NAME && it.demo } ?: b
+                b = rohan
+                spec = ArogyaOfficialForms.SICK; column = ArogyaOfficialForms.columnFor(rohan, "sick", store.state.value.forms)
+            }
+            else -> { val nb: Beneficiary = b; val (s0, c0) = ArogyaOfficialForms.formFor(nb, store.state.value.forms); spec = s0; column = c0 }
+        }
+        val hb: Beneficiary = b ?: return@LaunchedEffect
+        hero = hb
+        stockBefore = balances()
+        val sp = spec ?: return@LaunchedEffect; val col = column
+        cardBeforeHtml = runCatching { store.mcpDoc(hb, store.state.value.beneficiaries, LocalDate.now()).html }.getOrDefault("")
         cardChanged = -1
         Log.i("ArogyaDemo", "AROGYA_DEMO_HERO form=${sp.id} column=$col(${sp.columns.getOrElse(col) { "" }})")
         status = tr("Reading the guide library on this phone…", "फ़ोन की गाइड लाइब्रेरी पढ़ रहे हैं…")
@@ -278,16 +314,17 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
         val sp = spec ?: return@LaunchedEffect
         busy = true; status = ""
         try {
-            when (ArogyaDemoScript.scenes.getOrNull(scene)?.id) {
+            when (scenes.getOrNull(scene)?.id) {
                 "voice" -> {
                     val voiceAsset = if (demoHindi) ArogyaDemoScript.VOICE_HI else ArogyaDemoScript.VOICE_EN
                     val choice = if (demoHindi) ArogyaLang.VOICE_HINDI else ArogyaLang.VOICE_ENGLISH
-                    val pcm = withContext(Dispatchers.IO) {
+                    // Only workflow 2 has a recording; workflows 1 and 3 use their typed note (labelled).
+                    val pcm = if (wf != 2) null else withContext(Dispatchers.IO) {
                         runCatching { context.assets.open(voiceAsset).use { ArogyaWav.decode(it.readBytes()) } }.getOrNull()
                             ?.takeIf { it.size > ArogyaWav.TARGET_RATE }
                     }
                     if (pcm == null) {
-                        transcript = if (demoHindi) ArogyaDemoScript.NOTE_HI else ArogyaDemoScript.NOTE_EN
+                        transcript = ArogyaDemoScript.note(wf, demoHindi)
                         transcriptEngine = tr("typed note (recording not bundled — speech-to-text skipped)",
                             "लिखा नोट (रिकॉर्डिंग नहीं है — बोल→लिख छोड़ा)")
                         transcriptLive = false
@@ -318,7 +355,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         val heard = if (ArogyaCloud.cloudFirst(context)) (cloud() ?: phone()) else phone()
                         val sttMs = System.currentTimeMillis() - tstt
                         if (heard == null) {
-                            transcript = if (demoHindi) ArogyaDemoScript.NOTE_HI else ArogyaDemoScript.NOTE_EN
+                            transcript = ArogyaDemoScript.note(wf, demoHindi)
                             transcriptEngine = tr("typed note (voice failed)", "लिखा नोट (आवाज़ नहीं चली)")
                             transcriptLive = false
                         } else {
@@ -330,7 +367,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     }
                     status = tr("AI is filling the form…", "AI फ़ॉर्म भर रहा है…")
                     val engine = ai ?: error("AI is not ready")
-                    val note = transcript.ifBlank { if (demoHindi) ArogyaDemoScript.NOTE_HI else ArogyaDemoScript.NOTE_EN }
+                    val note = transcript.ifBlank { ArogyaDemoScript.note(wf, demoHindi) }
                     val (v, ex) = engine.fillForm(b, sp, column, note)
                     filled = v; formModel = ex.modelLabel; formMs = ex.ms
                     ticks += ArogyaAiTick("form filling + evidence check", "फ़ॉर्म + सबूत जाँच", ex.modelLabel, ex.ms, ex.metaModel)
@@ -396,6 +433,12 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                 "saved" -> {
                     if (!saved) {
                         val vals = filled.mapValues { it.value.value }
+                        // Workflow 1 without the slip photo: the slip's details are registered now (labelled).
+                        if (store.state.value.beneficiaries.none { it.id == b.id }) {
+                            store.update { reg -> reg.copy(beneficiaries = reg.beneficiaries + b) }
+                            updates = updates + tr("✓ Village + pregnancy register: ${b.name} added (typed from the slip, photo skipped)",
+                                "✓ गाँव + गर्भवती रजिस्टर: ${b.name} जोड़ी गईं (पर्ची से लिखा, फ़ोटो नहीं)")
+                        }
                         val cur = store.state.value.beneficiaries.first { it.id == b.id }
                         savedSummary = ArogyaVisitSave.save(store, queue, cur, sp, column, vals, filled.mapValues { it.value.source }, emptySet())
                         saved = true
@@ -404,8 +447,42 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         savedReferral = if (rec == null) tr("Visit record not found after save.", "सेव के बाद विज़िट नहीं मिला।")
                             else if (rec.referral == ArogyaReferral.NEEDED) tr("Referral recorded: NEEDED — ", "रेफ़रल दर्ज: ज़रूरी — ") + rec.referralNote
                             else tr("Referral recorded: none needed.", "रेफ़रल दर्ज: ज़रूरत नहीं।")
-                        Log.i("ArogyaDemo", "AROGYA_DEMO_SAVED form=${sp.id} col=$column filled=${vals.size} dangers=${dangers.size}")
+                        // HBNC has no medicine rows: the medicines Sunita said she gave go through the drug kit's
+                        // "Give to person" path (stock line + diary + card IFA total), read by fixed rules from her note.
+                        if (sp.id == "annex9") {
+                            val mum = store.state.value.beneficiaries.firstOrNull { it.category == BenCategory.MOTHER && it.household == cur.household && cur.household.isNotBlank() }
+                            val gives = ArogyaDemoScript.medicinesGiven(transcript, ArogyaRegistryLogic.catalog(store.state.value.stockItems).map { it.name })
+                            if (mum != null) gives.forEach { g ->
+                                store.update { reg -> ArogyaOfficialForms.applyGive(reg, mum, g.item, g.qty, "demo-w2-${g.item.filter(Char::isLetterOrDigit)}", "demo") }
+                            }
+                        }
+                        val after = balances()
+                        stockDelta = (stockBefore.keys + after.keys).mapNotNull { k ->
+                            val a = stockBefore[k] ?: 0; val z = after[k] ?: 0
+                            if (a == z) null else "$k: $a → $z"
+                        }
+                        val mcpCol = if (sp.id == "annex9") ArogyaOfficialForms.mcpColumnForHbnc(column)?.let { ArogyaOfficialForms.MCP_BABY.columns[it] } else null
+                        updates = updates + listOfNotNull(
+                            "✓ " + sp.title.substringBefore(" (").substringBefore(" —") + " · " + sp.columns.getOrElse(column) { "" },
+                            if (sp.id == "mcp_anc") tr("✓ MCP card p.3 identification + p.5 ANC visit ${column + 1}", "✓ MCP कार्ड पेज 3 पहचान + पेज 5 ANC विज़िट ${column + 1}") else null,
+                            mcpCol?.let { tr("✓ MCP card p.7 · $it column (baby + mother)", "✓ MCP कार्ड पेज 7 · $it कॉलम (बच्चा + माँ)") },
+                            vals["weight"]?.takeIf { it.isNotBlank() && sp.id != "mcp_anc" }?.let { tr("✓ Growth chart · $it kg", "✓ वज़न चार्ट · $it kg") },
+                            savedVisit?.takeIf { it.referral == ArogyaReferral.NEEDED }?.let { tr("✓ Referral recorded · ", "✓ रेफ़रल दर्ज · ") + it.referralNote },
+                            savedVisit?.nextDate?.takeIf { it.isNotBlank() }?.let { tr("✓ Next due: ", "✓ अगली तारीख़: ") + "${savedVisit?.nextReason.orEmpty()} ($it)" },
+                            tr("✓ ASHA diary · home visit", "✓ आशा डायरी · गृह भ्रमण")) +
+                            stockDelta.map { tr("✓ Stock register · ", "✓ स्टॉक रजिस्टर · ") + it }
+                        Log.i("ArogyaDemo", "AROGYA_DEMO_SAVED wf=$wf form=${sp.id} col=$column filled=${vals.size} dangers=${dangers.size} stock=${stockDelta.joinToString("; ")}")
                     }
+                }
+                "refill" -> {
+                    // Fixed rule: kit items at or below their minimum, with exact balances, in the ANM template.
+                    val reg = store.state.value
+                    val low = ArogyaRegistryLogic.lowItems(reg.stock, reg.stockItems, LocalDate.now())
+                    val prof = context.getSharedPreferences("arogya_profile", android.content.Context.MODE_PRIVATE)
+                    val body = if (low.isEmpty()) tr("No kit item is below its minimum.", "किट की कोई दवा न्यूनतम से कम नहीं है।")
+                        else low.joinToString("\n") { "• ${it.name}: ${it.balance} " + tr("left (minimum ${it.min}) — please send ${maxOf(it.min * 2 - it.balance, it.min)}", "बचे (न्यूनतम ${it.min}) — कृपया ${maxOf(it.min * 2 - it.balance, it.min)} भेजें") }
+                    refillText = ArogyaAnmTemplate.refillMessage(prof.getString("name", "").orEmpty(), prof.getString("village", "").orEmpty(), "",
+                        "", java.time.LocalDateTime.now().withNano(0).toString().replace('T', ' '), body, demoHindi)
                 }
                 "practice" -> { status = tr("Making 3 questions from the guides…", "गाइड से 3 सवाल बना रहे हैं…")
                     val got = (ai ?: error("AI is not ready")).refresherDetailed(3)
@@ -423,8 +500,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
         var sample = 1; while (maxOf(opts.outWidth, opts.outHeight) / sample > 2000) sample *= 2
-        val raw = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
-            ?: throw IllegalStateException("Could not open the photo")
+        val raw = (context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+            ?: throw IllegalStateException("Could not open the photo")).let { ArogyaPhotoGuard.upright(context, uri, it) }
         val scale = maxDim.toFloat() / maxOf(raw.width, raw.height)
         if (scale < 1f) Bitmap.createScaledBitmap(raw, (raw.width * scale).toInt(), (raw.height * scale).toInt(), true) else raw
     }
@@ -469,12 +546,14 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         val t = System.currentTimeMillis()
                         val bmp = decodePhoto(uri, 2000)
                         val ocrProc = MLKitProcessor()
-                        val ocr = try { withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) } }
+                        val (ocr, lines) = try { withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) to runCatching { ocrProc.recognizeLines(bmp) }.getOrDefault(emptyList()) } }
                             finally { runCatching { ocrProc.close() } }
                         if (ocr.isBlank()) error(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
+                        val rows = ArogyaTableOcr.people(lines)
                         personMsg = if (ArogyaPersonExtract.hasAadhaar(ocr))
                             tr("Aadhaar number found and removed — it is never stored.", "आधार नंबर मिला और हटाया — वो कभी सेव नहीं होता।") else ""
-                        val (fields, eng, _) = (ai ?: error("AI is not ready")).extractPersonFields(ocr)
+                        val (fields, eng, _) = if (rows.isNotEmpty()) Triple(rows.first().mapValues { ArogyaPersonExtract.maskAadhaar(it.value) }, "On-phone rules (offline): register rows", 0L)
+                            else (ai ?: error("AI is not ready")).extractPersonFields(ocr)
                         if (fields.isEmpty()) error(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
                         personPreview = ArogyaPersonCsv.toBeneficiary(fields)
                         personAgreed = false; personSaved = false; personDue = ""
@@ -519,24 +598,24 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
             val u = runCatching { context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, "demo_${System.currentTimeMillis()}.jpg")
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg") }) }.getOrNull()
-            if (u != null) { shotUri = u; runCatching { shoot.launch(u) } }
+            if (u != null) { shotUri = u; ArogyaPhotoGuard.hold(context); runCatching { shoot.launch(u) } }
         }
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u -> if (u != null) handlePhoto(u, false) }
     fun takePhoto(forWhat: String) { photoFor = forWhat; camPerm.launch(android.Manifest.permission.CAMERA) }
-    fun choosePhoto(forWhat: String) { photoFor = forWhat; pick.launch(arrayOf("image/*")) }
+    fun choosePhoto(forWhat: String) { photoFor = forWhat; ArogyaPhotoGuard.hold(context); pick.launch(arrayOf("image/*")) }
 
     Dialog(onDismissRequest = { exitAsk = true }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
             if (!started) {
                 val (hiVoice, enVoice) = remember(tts) { speech.offlineVoices() }
-                val resumeAt = demoPrefs.getInt("last_scene", 0)
+                val resumeAt = demoPrefs.getInt("last_scene_w$wf", 0)
                 Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Spacer(Modifier.height(12.dp))
                     Text("Pramaan", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary)
-                    Text(tr("Guided demo · $n screens · every step runs live", "गाइडेड डेमो · $n स्क्रीन · हर चरण लाइव"),
+                    Text(tr("Guided demo · 3 workflows · every step runs live", "गाइडेड डेमो · 3 वर्कफ़्लो · हर चरण लाइव"),
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
                         Text(tr("Sample data · fictional village", "नमूना डेटा · काल्पनिक गाँव"),
@@ -561,12 +640,26 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     if (!hiVoice || !enVoice) TextButton(onClick = {
                         runCatching { context.startActivity(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)) }
                     }) { Text(tr("Install offline voice", "ऑफ़लाइन आवाज़ इंस्टॉल करें")) }
+                    Text(tr("Choose a workflow", "वर्कफ़्लो चुनें"), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    ArogyaDemoScript.workflows.forEach { w ->
+                        val sel = w.id == wf
+                        Card(Modifier.fillMaxWidth().clickable { wf = w.id },
+                            colors = CardDefaults.cardColors(containerColor = if (sel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text((if (sel) "● " else "○ ") + "${w.id}. " + (if (demoHindi) w.hi else w.title), fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleSmall)
+                                Text(if (demoHindi) w.lineHi else w.line, style = MaterialTheme.typography.bodySmall)
+                                Text(tr("${w.scenes.size} screens", "${w.scenes.size} स्क्रीन"), style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { scene = 0; started = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                    Button(onClick = { resetRun(); scene = 0; ready = false; started = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                         Text(if (resumeAt in 1 until n) tr("Start over", "शुरू से") else tr("Start the demo", "डेमो शुरू करें"),
                             style = MaterialTheme.typography.titleSmall)
                     }
-                    if (resumeAt in 1 until n) OutlinedButton(onClick = { scene = resumeAt; started = true }, modifier = Modifier.fillMaxWidth()) {
+                    if (resumeAt in 1 until n) OutlinedButton(onClick = { resetRun(); scene = resumeAt; ready = false; started = true }, modifier = Modifier.fillMaxWidth()) {
                         Text(tr("Resume at screen ${resumeAt + 1}", "स्क्रीन ${resumeAt + 1} से आगे"), maxLines = 1)
                     }
                     TextButton(onClick = onClose, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(tr("Close", "बंद")) }
@@ -601,6 +694,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedButton(onClick = { go(n - 1) }) { Text(tr("◀ Back", "◀ पीछे")) }
                         Spacer(Modifier.weight(1f))
+                        OutlinedButton(onClick = { speech.stop(); started = false; ready = false }) { Text(tr("Workflows", "वर्कफ़्लो")) }
+                        Spacer(Modifier.width(8.dp))
                         Button(onClick = onClose) { Text(tr("Close", "बंद")) }
                     }
                 }
@@ -655,7 +750,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                     val narrSize = 16.sp
                     val narrStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = narrSize, lineHeight = narrSize * 1.4)
                     val sceneTicks = ticks.drop(tickMark)
-                    val ruleScene = ArogyaDemoScript.scenes.getOrNull(scene)?.id in setOf("due", "form", "danger")
+                    val ruleScene = scenes.getOrNull(scene)?.id in setOf("due", "form", "danger", "refill")
                     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
                     @Composable fun sent(i: Int, s: String) {
                         val on = i == caption && narrate
@@ -664,6 +759,21 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                             modifier = Modifier.fillMaxWidth().background(
                                 if (on) MaterialTheme.colorScheme.primaryContainer
                                 else androidx.compose.ui.graphics.Color.Transparent).padding(vertical = 2.dp))
+                    }
+                    // Aim first (what this screen is for), then "How" (the narration, read aloud).
+                    @Composable fun aimCard() {
+                        val sc = scenes.getOrNull(scene) ?: return
+                        val aim = if (demoHindi) sc.aimHi else sc.aim
+                        if (aim.isBlank()) return
+                        Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+                            Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                Text("🎯 " + tr("Aim", "लक्ष्य"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                Text(aim, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                Text("⚙ " + tr("How it is done:", "कैसे होता है:"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.padding(top = 4.dp))
+                            }
+                        }
                     }
                     // Slim one-line AI chip row, expandable; nothing at all when the scene has no AI step.
                     @Composable fun aiChips() {
@@ -685,7 +795,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                                 (if (t.ms > 0) " · ${secs(t.ms)}" else ""), style = MaterialTheme.typography.bodySmall) }
                     }
                     val liveBody: @Composable () -> Unit = {
-                        DemoSceneBody(scene, demoHindi, tr = { en, hi -> tr(en, hi) }, data = data, visits = visits, b = b, sp = sp, column = column,
+                        DemoSceneBody(scenes.getOrNull(scene)?.id.orEmpty(), demoHindi, tr = { en, hi -> tr(en, hi) }, data = data, visits = visits, b = b, sp = sp, column = column,
                         filled = filled, formModel = formModel, formMs = formMs, formConfirmed = formConfirmed, onConfirmForm = { formConfirmed = true },
                         transcript = transcript, transcriptEngine = transcriptEngine, transcriptLive = transcriptLive,
                         dangers = dangers, sop = sop, sopFollow = sopFollow, sopOnline = sopOnline, sopOnlineSkip = sopOnlineSkip,
@@ -748,8 +858,12 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         onAgreePerson = { personAgreed = it }, personSaved = personSaved, personDue = personDue,
                         onSavePerson = {
                             val p = personPreview ?: return@DemoSceneBody
-                            val np = p.copy(id = "demo-person-${System.currentTimeMillis()}", demo = true)
+                            val np0 = p.copy(id = "demo-person-${System.currentTimeMillis()}", demo = true)
+                            // Workflow 1: the slip is a pregnancy registration; the ANC page follows from her LMP.
+                            val np = if (wf == 1 && np0.category != BenCategory.PREGNANT) np0.copy(category = BenCategory.PREGNANT) else np0
                             store.update { reg -> reg.copy(beneficiaries = reg.beneficiaries + np) }
+                            if (wf == 1) { hero = np; spec = ArogyaOfficialForms.MCP_ANC; column = ArogyaOfficialForms.columnFor(np, "mcp_anc", store.state.value.forms)
+                                updates = updates + tr("✓ Village + pregnancy register: ${np.name} added from the slip photo", "✓ गाँव + गर्भवती रजिस्टर: ${np.name} पर्ची की फ़ोटो से जुड़ीं") }
                             personDue = ArogyaSchedule.forBeneficiary(np, emptyList(), LocalDate.now())
                                 .firstOrNull { !it.done }?.let { "${it.label} (${it.due})" }
                                 ?: tr("No dues — registered.", "कुछ बाकी नहीं — दर्ज हो गया।")
@@ -782,13 +896,15 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                                 } finally { cardShareBusy = false }
                             }
                         },
-                        onCloseCard = { cardDoc = null }, cardChanged = cardChanged, remembered = rememberedTimes)
+                        onCloseCard = { cardDoc = null }, cardChanged = cardChanged, remembered = rememberedTimes,
+                        updates = updates, stockDelta = stockDelta, refillText = refillText)
                     }
                     val listState = rememberLazyListState()
                     LaunchedEffect(caption, scene) { if (caption in lines().indices) listState.animateScrollToItem(caption) }
                     if (!landscape) {
                         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState,
                             verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            item { aimCard() }
                             itemsIndexed(lines()) { i, s -> sent(i, s) }
                             if (narrDone) item {
                                 Text(tr("▶ Next when ready", "▶ तैयार हों तो Next"),
@@ -807,6 +923,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             LazyColumn(Modifier.weight(1f).fillMaxHeight(), state = listState,
                                 verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                item { aimCard() }
                                 itemsIndexed(lines()) { i, s -> sent(i, s) }
                                 if (narrDone) item {
                                     Text(tr("▶ Next when ready", "▶ तैयार हों तो Next"),
@@ -870,13 +987,13 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                 }) { Text(tr("Open guideline", "गाइडलाइन खोलें")) } },
                 dismissButton = { TextButton(onClick = { openSource = null; sourceErr = "" }) { Text(tr("Close", "बंद करें")) } }) }
             if (libraryOpen) ArogyaGuideLibrary(demoHindi, ai, store,
-                onAskGuide = { _, _ -> libraryOpen = false; go(ArogyaDemoScript.scenes.indexOfFirst { it.id == "sops" }) }, onClose = { libraryOpen = false })
+                onAskGuide = { _, _ -> libraryOpen = false; scenes.indexOfFirst { it.id == "sops" }.takeIf { it >= 0 }?.let { go(it) } }, onClose = { libraryOpen = false })
         }
     }
 }
 
 @Composable
-private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> String,
+private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) -> String,
     data: RegistryData, visits: List<ArogyaVisit>, b: Beneficiary, sp: FormSpec, column: Int,
     filled: Map<String, FilledValue>, formModel: String, formMs: Long, formConfirmed: Boolean, onConfirmForm: () -> Unit,
     transcript: String, transcriptEngine: String, transcriptLive: Boolean,
@@ -899,9 +1016,34 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
     personSaved: Boolean, personDue: String, onSavePerson: () -> Unit,
     savedSummary: String, cardDoc: ArogyaDocRender.FilledDoc?, onViewCard: () -> Unit, cardShareBusy: Boolean,
     onShareCard: () -> Unit, onPrintCard: () -> Unit, onCloseCard: () -> Unit,
-    cardChanged: Int = -1, remembered: Map<String, Pair<Long, Long>> = emptyMap()) {
+    cardChanged: Int = -1, remembered: Map<String, Pair<Long, Long>> = emptyMap(),
+    updates: List<String> = emptyList(), stockDelta: List<String> = emptyList(), refillText: String = "") {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        when (ArogyaDemoScript.scenes.getOrNull(scene)?.id) {
+        // "Updated": real changes this save made, shown on the save screen.
+        if (sceneId == "saved" && saved && updates.isNotEmpty()) DemoCard(tr("Updated", "अपडेट हुआ")) {
+            updates.forEach { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium) }
+        }
+        when (sceneId) {
+            "refill" -> {
+                if (refillText.isBlank()) Text(tr("Checking the kit…", "किट जाँच रहे हैं…"))
+                else DemoCard(tr("Refill request to the ANM (fixed template)", "ANM को रिफिल अनुरोध (तय प्रारूप)")) {
+                    Text(refillText, style = MaterialTheme.typography.bodySmall)
+                    Button(onClick = { onDemoMsg(tr("Not sent in demo — real use opens WhatsApp to the ANM.", "डेमो में नहीं भेजा — असल में ANM को WhatsApp खुलेगा।")) }) {
+                        Text(tr("💬 Send to ANM", "💬 ANM को भेजें"), maxLines = 1) }
+                    if (demoMsg.isNotBlank()) Text(demoMsg, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            "records" -> {
+                DemoCard(tr("Everything this visit updated", "इस विज़िट से जो अपडेट हुआ")) {
+                    if (updates.isEmpty()) Text(tr("Save the visit first (the save screen) — then every update shows here.", "पहले विज़िट सेव करें — फिर हर अपडेट यहाँ दिखेगा।"))
+                    updates.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
+                if (stockDelta.isNotEmpty()) DemoCard(tr("Drug-kit stock: before → after", "दवा किट स्टॉक: पहले → बाद")) {
+                    stockDelta.forEach { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold) }
+                }
+                if (onDeepLink != null) OutlinedButton(onClick = { onDeepLink("registers") }) {
+                    Text(tr("Open the registers in the app ↗", "ऐप में रजिस्टर खोलें ↗"), maxLines = 1) }
+            }
             "meet" -> DemoCard(tr("The problem", "समस्या")) {
                 Text("• " + tr("Visits to plan, paper forms, registers and MCP cards by hand", "विज़िट तय करना, कागज़ी फ़ॉर्म, रजिस्टर और MCP कार्ड हाथ से"))
                 Text("• " + run {
@@ -917,7 +1059,8 @@ private fun DemoSceneBody(scene: Int, hindi: Boolean, tr: (String, String) -> St
             "due" -> DemoCard(tr("Due this week (official schedules — rules, not AI)", "इस हफ़्ते बाकी (सरकारी शेड्यूल — नियम, AI नहीं)")) {
                 val due = remember(data, visits) { ArogyaSchedule.dueList(data.beneficiaries, visits, LocalDate.now(), 7).filter { !it.done } }
                 Text(tr("${due.size} visits due", "${due.size} विज़िट बाकी"), fontWeight = FontWeight.Bold)
-                due.sortedBy { if (it.name.startsWith(ArogyaDemoScript.HERO_PREFIX)) 0 else 1 }.take(5).forEach { Text("• ${it.name} — ${it.label} (${it.due})") }
+                if (due.none { it.name == b.name }) Text("• ${b.name} — " + sp.columns.getOrElse(column) { "" } + tr(" (today)", " (आज)"), fontWeight = FontWeight.Bold)
+                due.sortedBy { if (it.name == b.name) 0 else 1 }.take(5).forEach { Text("• ${it.name} — ${it.label} (${it.due})") }
             }
             "addperson" -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

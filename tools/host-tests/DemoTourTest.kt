@@ -16,21 +16,33 @@ fun main() {
     d(ArogyaDemoNav.label(0, n, false) == "Scene 1 of $n", "EN label")
     d(ArogyaDemoNav.label(0, n, true) == "सीन 1 / $n", "HI label")
     d(ArogyaDemoNav.label(n, n, false) == "Demo complete", "end label")
-    // 2. Script completeness: EN + HI everywhere, no blanks.
-    d(ArogyaDemoScript.scenes.all { it.id.isNotBlank() && it.title.isNotBlank() && it.hi.isNotBlank() }, "id + titles everywhere")
-    d(ArogyaDemoScript.scenes.all { it.narration.size in 3..6 && it.narrationHi.size in 3..6 }, "3-6 sentences per language")
-    d(ArogyaDemoScript.scenes.flatMap { it.narration + it.narrationHi }.all { it.isNotBlank() }, "no blank sentences")
-    val ids = ArogyaDemoScript.scenes.map { it.id }
-    d(ids == listOf("meet", "due", "addperson", "form", "voice", "danger", "explain", "guides", "sops", "card", "mcpcard", "medscan", "saved", "practice", "aitable", "beforeafter"),
-        "all 16 scenes in order (gold + setting removed): ${ids.joinToString(",")}")
-    d(ArogyaDemoScript.scenes.all { it.narration.size == 3 }, "demo UI pass: three short sentences per scene")
-    d(ArogyaDemoScript.scenes.all { it.screen.isNotBlank() && it.screenHi.isNotBlank() }, "every scene has an app-screen heading")
-    d(ArogyaDemoScript.scenes.flatMap { it.narration }.count { it.contains("confirm", ignoreCase = true) } <= 1, "'she confirms' said once, not every scene")
-    d(ArogyaDemoScript.scenes.all { it.narration.size == it.narrationHi.size }, "EN and HI sentence counts match")
+    // 2. Script completeness (three workflows): EN + HI everywhere, no blanks, Aim on every screen.
+    val all = ArogyaDemoScript.workflows.flatMap { it.scenes }
+    d(ArogyaDemoScript.workflows.map { it.id } == listOf(1, 2, 3), "three workflows, picked on the demo home screen")
+    d(all.all { it.id.isNotBlank() && it.title.isNotBlank() && it.hi.isNotBlank() }, "id + titles everywhere")
+    d(all.all { it.narration.size == 3 && it.narrationHi.size == 3 }, "three short sentences per screen, both languages")
+    d(all.flatMap { it.narration + it.narrationHi }.all { it.isNotBlank() }, "no blank sentences")
+    d(all.all { it.aim.isNotBlank() && it.aimHi.isNotBlank() }, "every screen states its aim first")
+    d(all.all { it.screen.isNotBlank() && it.screenHi.isNotBlank() }, "every scene has an app-screen heading")
+    d(ArogyaDemoScript.workflows.all { w -> w.scenes.map { it.id }.toSet().size == w.scenes.size }, "scene ids unique within a workflow")
+    d(ArogyaDemoScript.workflows.all { w -> w.scenes.flatMap { it.narration }.count { it.contains("confirm", ignoreCase = true) } <= 1 }, "'she confirms' said once per workflow")
+    d(ArogyaDemoScript.flow(1).map { it.id } == listOf("meet", "due", "addperson", "form", "voice", "saved", "mcpcard", "records", "beforeafter"), "workflow 1: register + first ANC")
+    d(ArogyaDemoScript.flow(2).map { it.id } == listOf("meet", "due", "card", "voice", "danger", "explain", "sops", "saved", "mcpcard", "records", "aitable", "beforeafter"), "workflow 2: newborn day 7")
+    d(ArogyaDemoScript.flow(3).map { it.id } == listOf("meet", "due", "voice", "saved", "refill", "medscan", "records", "beforeafter"), "workflow 3: sick child + drug kit")
+    d(ArogyaDemoScript.flow(9) == ArogyaDemoScript.flow(2) && ArogyaDemoScript.scenes == ArogyaDemoScript.flow(2), "unknown workflow falls back to 2")
     d(ArogyaDemoScript.GOLD_EN.contains("gaadha doodh") && ArogyaDemoScript.GOLD_HI.contains("गाढ़ा दूध"), "gold scene asks in her own words")
-    d(ArogyaDemoScript.scenes.first { it.id == "mcpcard" }.narration.any { it.contains("official MCP card") },
-        "MCP scene names the official card")
-    d(ArogyaDemoScript.scenes.first { it.id == "mcpcard" }.narration.any { it.contains("Neha") }, "MCP scene keeps the hero")
+    d(ArogyaDemoScript.flow(2).first { it.id == "mcpcard" }.narration.any { it.contains("official MCP card") }, "MCP scene names the official card")
+    d(ArogyaDemoScript.flow(2).first { it.id == "mcpcard" }.title.contains("Neha"), "MCP scene keeps the hero")
+    // Notes carry the numbers the forms need (grounding) and the medicines given.
+    d(listOf("49", "110/70", "10.2", "30", "60").all { ArogyaDemoScript.NOTE_W1_EN.contains(it) && ArogyaDemoScript.NOTE_W1_HI.contains(it) }, "W1 note numbers in both languages")
+    d(listOf("37.2", "4 ORS", "14").all { ArogyaDemoScript.NOTE_W3_EN.contains(it) } && listOf("37.2", "4 ORS", "14").all { ArogyaDemoScript.NOTE_W3_HI.contains(it) }, "W3 note numbers in both languages")
+    val cat = ArogyaRegistryLogic.DRUG_KIT
+    val g2 = ArogyaDemoScript.medicinesGiven(ArogyaDemoScript.NOTE_EN, cat)
+    d(g2.map { it.item to it.qty }.toSet() == setOf("IFA tablets (adult)" to 30, "Calcium tablets" to 60), "W2 medicines read by rules: $g2")
+    val g2h = ArogyaDemoScript.medicinesGiven(ArogyaDemoScript.NOTE_HI, cat)
+    d(g2h.map { it.item to it.qty }.toSet() == setOf("IFA tablets (adult)" to 30, "Calcium tablets" to 60), "W2 Hindi medicines read by rules: $g2h")
+    d(ArogyaDemoScript.medicinesGiven("Baby weight 2650 grams. Temperature 38.4.", cat).isEmpty(), "no medicine without 'gave'")
+    d(ArogyaDemoScript.note(1, false) == ArogyaDemoScript.NOTE_W1_EN && ArogyaDemoScript.note(3, true) == ArogyaDemoScript.NOTE_W3_HI && ArogyaDemoScript.note(2, false) == ArogyaDemoScript.NOTE_EN, "note per workflow")
     d(ArogyaDemoScript.QUESTION_EN.contains("cord stump") && ArogyaDemoScript.QUESTION_HI.contains("नाल"),
         "Ask SOP scene uses the slide example")
     // 3. AI table is built only from recorded ticks.

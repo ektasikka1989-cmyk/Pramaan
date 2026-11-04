@@ -282,7 +282,7 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, vision: M
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
     var prog by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    var shotUri by remember { mutableStateOf<Uri?>(null) }
+    var shotUri by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Uri?>(null) }
 
     fun engineLabel() = when (engine) {
         "mobilesam_dino" -> "MobileSAM + DINOv2 (estimate)"
@@ -365,8 +365,8 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, vision: M
                     val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
                     var sample = 1; while (maxOf(opts.outWidth, opts.outHeight) / sample > 2000) sample *= 2
-                    val raw = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
-                        ?: throw IllegalStateException("Could not open the photo")
+                    val raw = (context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+                        ?: throw IllegalStateException("Could not open the photo")).let { ArogyaPhotoGuard.upright(context, uri, it) }
                     val scale = 1280f / maxOf(raw.width, raw.height)
                     val b = if (scale < 1f) Bitmap.createScaledBitmap(raw, (raw.width * scale).toInt(), (raw.height * scale).toInt(), true) else raw
                     b to ByteArrayOutputStream().also { b.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
@@ -418,7 +418,7 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, vision: M
     val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { g ->
         if (g) { val u = runCatching { context.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, android.content.ContentValues().apply {
             put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "kit_${System.currentTimeMillis()}.jpg"); put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg") }) }.getOrNull()
-            if (u != null) { shotUri = u; runCatching { shoot.launch(u) } } }
+            if (u != null) { shotUri = u; ArogyaPhotoGuard.hold(context); runCatching { shoot.launch(u) } } }
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u -> if (u != null) run(u, false) }
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Row(verticalAlignment = Alignment.CenterVertically) { Text(tr("📷 Count stock from a photo", "📷 फ़ोटो से स्टॉक गिनें"), Modifier.weight(1f)); AiBadge("Count drug kit") } }, text = {
@@ -434,7 +434,7 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, vision: M
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { camPerm.launch(android.Manifest.permission.CAMERA) }, enabled = !busy) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
-                OutlinedButton(onClick = { pick.launch(arrayOf("image/*")) }, enabled = !busy) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
+                OutlinedButton(onClick = { ArogyaPhotoGuard.hold(context); pick.launch(arrayOf("image/*")) }, enabled = !busy) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
             }
             if (bitmap != null && (phase == "done" || phase == "manual" || phase == "teach")) {
                 OutlinedButton(onClick = { phase = "manual"; if (engine.isEmpty()) engine = "manual"
@@ -463,4 +463,25 @@ fun SamCountDialog(hindi: Boolean = false, balances: Map<String, Int>, vision: M
             onRecord(item, n, "Stock check by photo (${engineLabel()} found $foundN, confirmed ${dots.size})")
         }, enabled = !busy && (phase == "done" || phase == "manual")) { Text(tr("Save count", "गिनती सहेजें")) } },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(tr("Cancel", "रद्द करें")) } })
+}
+
+/**
+ * Photo / file pickers: with several GB of models loaded, Android may kill Pramaan while the camera
+ * or picker app is in front, and the result is lost (the same reason MainActivity holds the
+ * foreground before its pickers). Call this right before every camera or picker launch.
+ */
+object ArogyaPhotoGuard {
+    fun hold(c: android.content.Context) { runCatching { AndroVoiceAssistant.holdForeground(c) } }
+
+    /**
+     * Camera photos are often stored sideways with an EXIF rotation tag, which BitmapFactory ignores;
+     * ML Kit then reads little or no text. Returns [b] turned upright (unchanged when there is no tag).
+     */
+    fun upright(c: android.content.Context, uri: android.net.Uri, b: android.graphics.Bitmap): android.graphics.Bitmap = runCatching {
+        val o = c.contentResolver.openInputStream(uri)?.use { android.media.ExifInterface(it).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL) }
+            ?: android.media.ExifInterface.ORIENTATION_NORMAL
+        val deg = when (o) { android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f; android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f; else -> 0f }
+        if (deg == 0f) b else android.graphics.Bitmap.createBitmap(b, 0, 0, b.width, b.height, android.graphics.Matrix().apply { postRotate(deg) }, true)
+    }.getOrDefault(b)
 }

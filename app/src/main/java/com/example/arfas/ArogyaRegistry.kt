@@ -670,6 +670,9 @@ object ArogyaBackupCrypto {
 object ArogyaSampleVillage {
     data class Sample(val registry: RegistryData, val visits: List<ArogyaVisit>)
 
+    /** ASHA profile for the sample (real state/district, fictional sub-centre and people). Keys of the "arogya_profile" prefs. */
+    val PROFILE = listOf("state" to "Uttar Pradesh", "district" to "Sitapur", "block" to "Mishrikh", "subcentre" to "Rampur SC")
+
     fun build(today: LocalDate = LocalDate.now()): Sample {
         val bens = ArrayList<Beneficiary>(); val visits = ArrayList<ArogyaVisit>()
         val villages = listOf("Rampur", "Sundarpur")
@@ -702,9 +705,14 @@ object ArogyaSampleVillage {
         nbs.forEach { nb ->
             val hh = house(nb.name.removePrefix("Baby of ") + "'s family")
             val dob = today.minusDays(nb.days)
-            add(Beneficiary(name = nb.name.removePrefix("Baby of ") + " (mother)", household = hh, village = villages[0], category = BenCategory.MOTHER, sex = "F",
-                deliveryDate = dob.toString(), familyPlanning = "Counselled"))
-            val b = add(Beneficiary(name = nb.name, household = hh, village = villages[0], category = BenCategory.CHILD, sex = if (nb.days % 2L == 0L) "F" else "M",
+            // Complete identification (MCP card p.3) for every sample mother: husband, age, mobile, RCH ID, LMP.
+            val mi = nbs.indexOf(nb)
+            val husband = listOf("Mahesh Kumar", "Rajesh Kumar", "Dinesh Yadav", "Sanjay Verma", "Amit Singh", "Ravi Shankar")[mi]
+            add(Beneficiary(name = nb.name.removePrefix("Baby of ") + " (mother)", relativeName = husband, age = "${22 + mi}", phone = "90000002%02d".format(mi),
+                rchId = "1290%08d".format(26_000_010 + mi), lmp = dob.minusDays(280).toString(), household = hh, village = villages[0], category = BenCategory.MOTHER, sex = "F",
+                deliveryDate = dob.toString(), deliveryPlace = if (nb.home) "HOME" else "INSTITUTION", familyPlanning = "Counselled"))
+            val b = add(Beneficiary(name = nb.name, relativeName = nb.name.removePrefix("Baby of ") + " (mother)", rchId = "1290%08d".format(26_000_110 + mi),
+                household = hh, village = villages[0], category = BenCategory.CHILD, sex = if (nb.days % 2L == 0L) "F" else "M",
                 dob = dob.toString(), deliveryPlace = if (nb.home) "HOME" else "INSTITUTION", birthWeightKg = nb.kg, preterm = nb.kg < 2.5,
                 sncuDischarge = nb.sncu?.let { dob.plusDays(it).toString() }.orEmpty(),
                 mcp = McpCard(vaccines = if (nb.home) emptyMap() else mapOf("BCG" to dob.toString(), "OPV0" to dob.toString(), "HEPB0" to dob.toString()),
@@ -772,7 +780,8 @@ object ArogyaSampleVillage {
             rcvTxn(14, "Rapid diagnostic test (malaria)", 25, today.plusMonths(2).toString()),
             rcvTxn(15, "Calcium tablets", 300, "2027-08-31"),
             rcvTxn(16, "Cotton / bandage", 15, "2029-12-31"),
-            StockTxn("demo-g1", today.minusDays(6).toString(), "Zinc tablets", -85, ids[3], "Given", "give"),
+            // Zinc: 100 − 72 − 14 (sick child, seeded) = 14 left, so the demo's sick-child visit empties it and asks for a refill.
+            StockTxn("demo-g1", today.minusDays(6).toString(), "Zinc tablets", -72, ids[3], "Given", "give"),
             StockTxn("demo-g2", today.minusDays(3).toString(), "Paracetamol", -10, ids[5], "Given", "give"),
             StockTxn("demo-g3", today.minusDays(2).toString(), "Sanitary napkins", -5, ids[7], "Given", "give"))
         val vitals = nbs.mapIndexed { i, nb -> VitalEvent("demo-e$i", today.minusDays(nb.days).toString(), VitalKind.BIRTH, "", if (nb.home) "Home" else "PHC Rampur", nb.name) } + listOf(

@@ -1098,7 +1098,8 @@ class Phase1AttachmentManager(private val context: Context) {
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
         val decoded = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) } ?: return null
-        return scaleBitmapBounded(decoded, maxLongSide)
+        // Pramaan fix: camera photos carry an EXIF rotation that BitmapFactory ignores; OCR needs them upright.
+        return scaleBitmapBounded(ArogyaPhotoGuard.upright(appContext, uri, decoded), maxLongSide)
     }
 
     private fun decodeByteArrayBounded(bytes: ByteArray, maxLongSide: Int): Bitmap? {

@@ -638,7 +638,11 @@ object ArogyaOfficialForms {
         val d = today.toString()
         val next = nextDue(spec, b, column, today)?.toString().orEmpty()
         val entry = FormEntry(beneficiaryId = b.id, formId = spec.id, column = column, date = d, values = values.filterValues { it.isNotBlank() } + ("_next" to next), sources = sources)
-        val forms = r.forms.filterNot { it.beneficiaryId == b.id && it.formId == spec.id && it.column == column } + entry
+        val forms0 = r.forms.filterNot { it.beneficiaryId == b.id && it.formId == spec.id && it.column == column } + entry
+        // Linked save: an HBNC home visit (Annexure 9) also records its findings on the MCP card p.7 column of
+        // the same day, marked "_src=annex9", so the family's card shows the visit. An ANM entry already in that
+        // column is never overwritten.
+        val forms = if (spec.id == "annex9") linkHbncToMcp(r.copy(forms = forms0), b, column, values, d).forms else forms0
         val stock = STOCK.mapNotNull { (k, item) -> values[k]?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }?.let { StockTxn(date = d, item = item, qty = -it, beneficiaryId = b.id, note = stockNote(spec, column), kind = "give", source = "visit") } }
         // Re-saving a column replaces only that column's stock lines (keyed by form + column),
         // and clears them when the re-save drops the item — the card and the kit stay consistent.
@@ -671,6 +675,50 @@ object ArogyaOfficialForms {
         val diary = r.diary.filterNot { it.beneficiaryId == b.id && it.date == d && it.kind == DiaryKind.HOME_VISIT && it.note.startsWith("Form:") } +
             DiaryEntry(date = d, kind = DiaryKind.HOME_VISIT, beneficiaryId = b.id, note = "Form: ${spec.title.substringBefore(" —")} · ${spec.columns.getOrElse(column) { "" }}")
         return r.copy(beneficiaries = bens, stock = keptStock + stock, forms = forms, diary = diary)
+    }
+
+    /** Annexure 9 column → MCP card p.7 column (Day 1 → 1st Day, Day 3 → 3rd Day, Day 7 → 7th Day, Day 42 → 6th Week). */
+    fun mcpColumnForHbnc(annex9Column: Int): Int? = mapOf(0 to 0, 1 to 1, 2 to 2, 6 to 3)[annex9Column]
+
+    /** HBNC findings → MCP "Care of baby" and "Post-natal care (mother)" values for the same day. Only values that were recorded. */
+    fun hbncToMcp(values: Map<String, String>): Pair<Map<String, String>, Map<String, String>> {
+        fun v(k: String) = values[k].orEmpty().trim()
+        val baby = LinkedHashMap<String, String>()
+        v("weight").takeIf { it.isNotBlank() }?.let { baby["weight"] = it }
+        v("temp").takeIf { it.isNotBlank() }?.let { baby["temp"] = it }
+        when (v("s_feed")) { "Yes" -> baby["sucking"] = "Poor"; "No" -> baby["sucking"] = "Good" }
+        when (v("s_limp")) { "Yes" -> baby["activity"] = "Lethargic"; "No" -> baby["activity"] = "Good" }
+        when (v("s_chest")) { "Yes" -> baby["chest_indrawing"] = "Present"; "No" -> baby["chest_indrawing"] = "Absent" }
+        when (v("jaundice")) { "Yes", "No" -> baby["jaundice"] = v("jaundice") }
+        when (v("s_umbilicus")) { "Yes" -> baby["cord"] = "Pus on umbilicus"; "No" -> baby["cord"] = "Clean, no pus" }
+        val mother = LinkedHashMap<String, String>()
+        v("m_temp").takeIf { it.isNotBlank() }?.let { mother["temp"] = it }
+        v("m_pads").toDoubleOrNull()?.let { mother["bleeding"] = if (it > 5) "Excessive" else "Normal" }
+        when (v("m_discharge")) { "Yes" -> mother["lochia"] = "Foul Smelling"; "No" -> mother["lochia"] = "Healthy" }
+        if (v("m_fits") == "Yes") mother["complaints"] = "Fits / speaking abnormally"
+        if (v("m_breast") == "Yes") mother["complaints"] = listOfNotNull(mother["complaints"], "Cracked nipples / painful breast").joinToString("; ")
+        return baby to mother
+    }
+
+    /** Writes the HBNC visit onto the baby's and the mother's MCP card p.7 column (see [apply]). */
+    fun linkHbncToMcp(r: RegistryData, b: Beneficiary, annex9Column: Int, values: Map<String, String>, date: String): RegistryData {
+        val col = mcpColumnForHbnc(annex9Column) ?: return r
+        val hh = b.household
+        val child = if (b.category == BenCategory.CHILD) b else r.beneficiaries.firstOrNull { it.category == BenCategory.CHILD && hh.isNotBlank() && it.household == hh }
+        // The postnatal mother only: a pregnant woman in the same house is not this baby's mother on the PNC page.
+        val mother = if (b.category != BenCategory.CHILD) b.takeIf { it.category == BenCategory.MOTHER || it.deliveryDate.isNotBlank() }
+            else r.beneficiaries.firstOrNull { hh.isNotBlank() && it.household == hh && (it.category == BenCategory.MOTHER || (it.deliveryDate.isNotBlank() && it.deliveryDate == b.dob)) }
+        val (baby, mum) = hbncToMcp(values)
+        var forms = r.forms
+        fun put(person: Beneficiary?, formId: String, v: Map<String, String>) {
+            if (person == null || v.isEmpty()) return
+            val old = forms.firstOrNull { it.beneficiaryId == person.id && it.formId == formId && it.column == col }
+            if (old != null && old.values["_src"] != "annex9") return   // the ANM's own entry stays
+            forms = forms.filterNot { it === old } + FormEntry(beneficiaryId = person.id, formId = formId, column = col, date = date,
+                values = v + ("_src" to "annex9"), sources = v.mapValues { "HBNC home visit (Annexure 9)" })
+        }
+        put(child, "mcp_baby", baby); put(mother, "mcp_pnc", mum)
+        return r.copy(forms = forms)
     }
 
     /** The visit record for the schedule / monthly report. */
@@ -796,10 +844,8 @@ object ArogyaOfficialForms {
                 "weight" to "2.85", "urine" to "Yes", "stool" to "Yes", "diarrhoea" to "No", "vomiting" to "No",
                 "convulsions" to "No", "activity" to "Good", "sucking" to "Good", "breathing" to "Normal",
                 "chest_indrawing" to "Absent", "temp" to "36.9", "jaundice" to "No", "cord" to "Dry"))
-            // Birth vaccines given at the day-3 visit (home birth, so none at birth).
-            val v3 = dob.plusDays(2).toString()
-            save(nehaBaby, MCP_IMM, 0, dob.plusDays(2), mapOf("opv0" to v3, "hepb0" to v3, "bcg" to v3,
-                "next_vac_date" to dob.plusDays(42).toString()), setOf("BCG", "OPV0", "HEPB0"))
+            // Birth-dose vaccines (BCG, OPV-0, Hep B) were given by the ANM at the day-3 visit and written on the family's
+            // card only: the demo adds them from the card photo (Workflow 2), so they are deliberately not seeded here.
         }
         // Everything created here is sample data: mark it so "Reset sample village" replaces it instead of adding twice.
         val oldStock = r0.stock.map { it.id }.toSet(); val oldDiary = r0.diary.map { it.id }.toSet()

@@ -92,6 +92,26 @@ class MLKitProcessor {
         runOCR(InputImage.fromBitmap(bitmap, 0))
 
     /**
+     * Pramaan register photos: every OCR line with its position, so a table can be rebuilt row by
+     * row (ArogyaTableOcr). The Devanagari reader's lines are used when the page has Devanagari.
+     */
+    suspend fun recognizeLines(bitmap: Bitmap): List<ArogyaTableOcr.Line> {
+        val image = InputImage.fromBitmap(bitmap, 0)
+        suspend fun read(r: com.google.mlkit.vision.text.TextRecognizer): List<ArogyaTableOcr.Line> =
+            suspendCancellableCoroutine { cont ->
+                r.process(image)
+                    .addOnSuccessListener { res ->
+                        cont.resume(res.textBlocks.flatMap { b -> b.lines }.mapNotNull { l ->
+                            l.boundingBox?.let { bb -> ArogyaTableOcr.Line(l.text, bb.left, bb.top, bb.right, bb.bottom) } })
+                    }
+                    .addOnFailureListener { e -> Log.w(TAG, "OCR lines failed: ${e.message}"); cont.resume(emptyList()) }
+            }
+        val latin = read(textRecognizer)
+        val hindi = read(devanagariRecognizer)
+        return if (hindi.any { l -> l.text.any { it in '\u0900'..'\u097F' } }) hindi else latin
+    }
+
+    /**
      * Latin + Devanagari. The Devanagari result is used when it actually contains Devanagari
      * letters; its lines are merged after the Latin ones without duplicates.
      */

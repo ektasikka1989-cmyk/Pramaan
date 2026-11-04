@@ -98,8 +98,9 @@ fun main() {
     v(sm.forms.count { it.beneficiaryId == nm.id && it.formId == "mcp_anc" } == 4, "neha ANC x4")
     v(sm.forms.count { it.beneficiaryId == nm.id && it.formId == "mcp_pnc" } == 2, "neha PNC x2")
     v(sm.forms.count { it.beneficiaryId == nb.id && it.formId == "mcp_baby" } == 2, "baby BABY x2")
-    v(sm.forms.count { it.beneficiaryId == nb.id && it.formId == "mcp_imm" } == 1, "baby IMM x1")
-    v(setOf("BCG", "OPV0", "HEPB0").all { nb.mcp.vaccines.containsKey(it) }, "baby card carries birth vaccines")
+    // Birth-dose vaccines are on the family's paper card only: the demo adds them from the card photo (Workflow 2).
+    v(sm.forms.none { it.beneficiaryId == nb.id && it.formId == "mcp_imm" }, "baby IMM left for the card photo")
+    v(setOf("BCG", "OPV0", "HEPB0").none { nb.mcp.vaccines.containsKey(it) }, "baby birth vaccines come from the card photo")
     println(if (vf == 0) "ALL $vp PASS" else "$vf FAILED, $vp passed")
     if (vf > 0) kotlin.system.exitProcess(1)
 }

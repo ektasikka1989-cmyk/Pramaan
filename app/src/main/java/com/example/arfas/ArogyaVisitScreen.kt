@@ -153,7 +153,7 @@ fun ArogyaVisitScreen(
     var quizMs by remember { mutableStateOf(0L) }
     var practiceWeek by remember { mutableStateOf(ArogyaPractice.summarize(context.getSharedPreferences("arogya_practice", 0).getString("history", "").orEmpty(), LocalDate.now().toString())) }
     var quizRecorded by remember { mutableStateOf(false) }
-    var photoTarget by remember { mutableStateOf("") }
+    var photoTarget by rememberSaveable { mutableStateOf("") }
     // Finish Visit
     var modelSettingsOpen by remember { mutableStateOf(false) }
     var modeTick by remember { mutableStateOf(0) }
@@ -196,13 +196,19 @@ fun ArogyaVisitScreen(
         val sm=ArogyaSampleVillage.build()
         runCatching {
             registry.update { r -> r.copy(beneficiaries=r.beneficiaries.filterNot {it.demo}+sm.registry.beneficiaries,
-                diary=r.diary.filterNot {it.id.startsWith("demo-")}+sm.registry.diary, stock=r.stock.filterNot {it.id.startsWith("demo-")}+sm.registry.stock,
+                // Sample people's lines (ids "demo-…", or written for a demo person by a demo save) are replaced, never piled up.
+                diary=r.diary.filterNot {it.id.startsWith("demo-") || it.beneficiaryId.startsWith("demo-")}+sm.registry.diary,
+                stock=r.stock.filterNot {it.id.startsWith("demo-") || it.beneficiaryId.startsWith("demo-")}+sm.registry.stock,
                 vitals=r.vitals.filterNot {it.id.startsWith("demo-")}+sm.registry.vitals,
                 forms=r.forms.filterNot {f -> f.id.startsWith("demo-") || f.beneficiaryId.startsWith("demo-")}+sm.registry.forms) }
             queue.resetDemo(sm.visits)
         }.onSuccess { Toast.makeText(context,"Sample village loaded: 50 fictional people",Toast.LENGTH_SHORT).show()
             if (ashaName.isBlank()) { ashaName = "Sunita Devi"; ashaVillage = "Rampur"
-                profilePrefs.edit().putString("name", ashaName).putString("village", ashaVillage).apply() } }
+                profilePrefs.edit().putString("name", ashaName).putString("village", ashaVillage).apply() }
+            // The MCP card / form header (state, district, block, sub-centre) for the sample; a real profile is never overwritten.
+            val pe = profilePrefs.edit()
+            ArogyaSampleVillage.PROFILE.forEach { (k, v) -> if (profilePrefs.getString(k, "").isNullOrBlank()) pe.putString(k, v) }
+            pe.apply() }
          .onFailure { Toast.makeText(context,it.message ?: "Could not load the sample",Toast.LENGTH_LONG).show() }
     }
     fun clearSample() {
@@ -216,7 +222,7 @@ fun ArogyaVisitScreen(
          .onFailure { Toast.makeText(context,it.message ?: "Could not clear",Toast.LENGTH_LONG).show() }
     }
     LaunchedEffect(Unit) { registry.load(); registry.autoBackupIfDue() }
-    var photoUri by remember { mutableStateOf<Uri?>(null) }
+    var photoUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     // Load the model and select the guide as soon as Pramaan opens, so the first question does not wait for it.
     LaunchedEffect(knowledgeReady) { if(knowledgeReady) runCatching { ai?.warmUp(context.applicationContext) } }
     // Every Pramaan AI action follows the Settings order (Cloud first / Local first).
@@ -315,7 +321,7 @@ fun ArogyaVisitScreen(
         } }
     }
     val cameraPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if(granted) runCatching { camera.launch(null) }.onFailure { Toast.makeText(context,"Camera unavailable. Attach a photo instead.",Toast.LENGTH_LONG).show() }
+        if(granted) { ArogyaPhotoGuard.hold(context); runCatching { camera.launch(null) }.onFailure { Toast.makeText(context,"Camera unavailable. Attach a photo instead.",Toast.LENGTH_LONG).show() } }
     }
     val mic=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if(granted) voice=true else {autoOrganise=false;Toast.makeText(context,"Microphone permission was not granted. Type your observations below.",Toast.LENGTH_LONG).show()} }
     val pdf=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
@@ -375,7 +381,7 @@ fun ArogyaVisitScreen(
             put(MediaStore.Images.Media.DISPLAY_NAME,"arogya_${System.currentTimeMillis()}.jpg"); put(MediaStore.Images.Media.MIME_TYPE,"image/jpeg") }) }.getOrNull()
         if(uri==null) { toast("Camera unavailable. Choose a photo instead."); return }
         photoUri=uri
-        runCatching { takePhoto.launch(uri) }.onFailure { deleteTemp(uri); photoUri=null; toast("Camera unavailable. Choose a photo instead.") }
+        ArogyaPhotoGuard.hold(context); runCatching { takePhoto.launch(uri) }.onFailure { deleteTemp(uri); photoUri=null; toast("Camera unavailable. Choose a photo instead.") }
     }
     val photoPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if(granted) launchPhoto() else toast("Camera permission was not granted.") }
     fun startPhoto(target:String) { photoTarget=target; if(context.checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED) launchPhoto() else photoPermission.launch(Manifest.permission.CAMERA) }
@@ -624,15 +630,15 @@ fun ArogyaVisitScreen(
                             Text(tr("Take a photo of the card. Dates, weights and vaccines are read on this phone; you tick what is correct.","कार्ड की फ़ोटो लें। तारीख, वज़न और टीके फ़ोन पर पढ़े जाते हैं; सही को आप चुनें।"),style=MaterialTheme.typography.bodySmall)
                             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                 Button(onClick={startPhoto("card")},enabled=editable && !locked && !cardBusy && ai!=null,modifier=Modifier.weight(1f)) { Text(tr("📷 Photo of card","📷 कार्ड की फ़ोटो")) }
-                                OutlinedButton(onClick={cardFilePicker.launch(arrayOf("image/*","application/pdf"))},enabled=editable && !locked && !cardBusy && ai!=null,modifier=Modifier.weight(1f)) { Text(tr("Choose file","फ़ाइल चुनें")) }
+                                OutlinedButton(onClick={ArogyaPhotoGuard.hold(context);cardFilePicker.launch(arrayOf("image/*","application/pdf"))},enabled=editable && !locked && !cardBusy && ai!=null,modifier=Modifier.weight(1f)) { Text(tr("Choose file","फ़ाइल चुनें")) }
                             }
                             if(cardBusy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(tr("Reading the card on this phone…","फ़ोन पर कार्ड पढ़ा जा रहा है…"),style=MaterialTheme.typography.bodySmall) }
                         } }
                         if(showCards) Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick={attachmentVisitId=visit.id;pick.launch(arrayOf("image/*","application/pdf"))},enabled=editable && !locked && visit.attachments.size<8,modifier=Modifier.fillMaxWidth()) { Text(tr("Attach a card or document","कार्ड या दस्तावेज़ जोड़ें")) }
+                        OutlinedButton(onClick={attachmentVisitId=visit.id;ArogyaPhotoGuard.hold(context);pick.launch(arrayOf("image/*","application/pdf"))},enabled=editable && !locked && visit.attachments.size<8,modifier=Modifier.fillMaxWidth()) { Text(tr("Attach a card or document","कार्ड या दस्तावेज़ जोड़ें")) }
                         TextButton(onClick={
                             attachmentVisitId=visit.id
-                            if(context.checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED) runCatching { camera.launch(null) }.onFailure { Toast.makeText(context,"Camera unavailable",Toast.LENGTH_SHORT).show() }
+                            if(context.checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED) { ArogyaPhotoGuard.hold(context); runCatching { camera.launch(null) }.onFailure { Toast.makeText(context,"Camera unavailable",Toast.LENGTH_SHORT).show() } }
                             else cameraPermission.launch(Manifest.permission.CAMERA)
                         },enabled=editable && !locked && visit.attachments.size<8) { Text(tr("Photograph a card (preview quality)","कार्ड की फ़ोटो लें")) }
                         Text(tr("Ask permission first. Images and OCR remain on this phone. OCR may misread dates, handwriting and units; nothing is filled automatically.","पहले इजाज़त लें। फ़ोटो और पढ़ा पाठ इसी फ़ोन पर रहेगा। तारीख़, लिखावट और इकाई गलत पढ़ी जा सकती है; कुछ अपने आप नहीं भरेगा।"),style=MaterialTheme.typography.bodySmall)
@@ -1029,7 +1035,7 @@ fun ArogyaVisitScreen(
                         onStop={ stopAi() },
                         onMic={ questionDictation=true;if(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED) voice=true else mic.launch(Manifest.permission.RECORD_AUDIO) },
                         onPhoto={ startPhoto("question") },
-                        onFile={ questionFilePicker.launch(arrayOf("image/*","application/pdf")) })
+                        onFile={ ArogyaPhotoGuard.hold(context); questionFilePicker.launch(arrayOf("image/*","application/pdf")) })
                     Text(tr("Answers come from official guides. Not a diagnosis — check with your ANM.","उत्तर आधिकारिक गाइड से। यह निदान नहीं — ANM से पूछें।"),
                         style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier=Modifier.fillMaxWidth(),textAlign=androidx.compose.ui.text.style.TextAlign.Center)

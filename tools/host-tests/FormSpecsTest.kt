@@ -86,12 +86,15 @@ fun main() {
     check("demo history exists", sample.forms.isNotEmpty())
     check("demo history not future", sample.forms.all { !LocalDate.parse(it.date).isAfter(today) })
     // Review: all 6 pregnant women with ANC history are seeded now (was take(5)), so 21 people have forms.
-    check("demo 22 patients filled", sample.forms.map { it.beneficiaryId }.toSet().size == 22)
-    check("demo all 8 form types", sample.forms.map { it.formId }.toSet() == setOf("annex9", "hbyc", "mcp_anc", "sick", "fp", "mcp_pnc", "mcp_baby", "mcp_imm"))
+    // Linked save: HBNC visits also write the MCP card p.7 column ("_src" = annex9); those are counted apart.
+    val own = sample.forms.filter { it.values["_src"] != "annex9" }
+    check("demo 22 patients filled", own.map { it.beneficiaryId }.toSet().size == 22)
+    check("demo all 7 form types", own.map { it.formId }.toSet() == setOf("annex9", "hbyc", "mcp_anc", "sick", "fp", "mcp_pnc", "mcp_baby"))
+    check("demo HBNC visits linked to MCP p.7", sample.forms.any { it.values["_src"] == "annex9" && it.formId == "mcp_baby" })
     check("demo stock never negative", ArogyaRegistryLogic.stockBalance(sample.stock).values.all { it >= 0 })
     check("demo ANC card matches form", sample.beneficiaries.filter { b -> sample.forms.any { it.beneficiaryId == b.id && it.formId == "mcp_anc" } }.all { b ->
         b.mcp.anc.size == sample.forms.count { it.beneficiaryId == b.id && it.formId == "mcp_anc" } })
-    check("demo diary = form-days", sample.diary.count { it.kind == DiaryKind.HOME_VISIT } == sample.forms.map { it.beneficiaryId to it.date }.toSet().size)
+    check("demo diary = form-days", sample.diary.count { it.kind == DiaryKind.HOME_VISIT } == own.map { it.beneficiaryId to it.date }.toSet().size)
     val ritu = sample.beneficiaries.first { it.name.startsWith("Baby of Ritu") }
     check("early visit goes to next empty column", ArogyaOfficialForms.formFor(ritu, sample.forms, today).let { it.first.id == "annex9" && it.second == 3 } )
     val mom2 = sample.beneficiaries.first { it.category == BenCategory.MOTHER && it.name.startsWith("Asha") }

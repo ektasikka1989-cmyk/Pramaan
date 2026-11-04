@@ -14,7 +14,7 @@ object ArogyaPersonCsv {
     val KEYS = listOf("category", "name", "relative", "age", "dob", "sex", "village", "household",
         "phone", "rch", "lmp", "anc", "deliverydate", "deliveryplace", "weight", "fp")
 
-    private val SYNONYMS = mapOf(
+    val SYNONYMS = mapOf(
         "category" to listOf("category", "type", "group", "cat", "shreni", "prakar", "varg", "श्रेणी", "प्रकार", "वर्ग"),
         "name" to listOf("name", "fullname", "beneficiary", "beneficiaryname", "person", "naam", "pooraanaam", "labharthi", "नाम", "पूरानाम", "लाभार्थी", "व्यक्ति"),
         "relative" to listOf("relative", "husband", "mother", "father", "guardian", "husbandname", "mothername", "fathername", "husbandmother", "relativeguardian",

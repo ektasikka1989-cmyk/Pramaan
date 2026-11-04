@@ -687,7 +687,7 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
     var readModel by remember { mutableStateOf("") }
     var readMs by remember { mutableStateOf(0L) }
     var picked by remember { mutableStateOf(setOf<Int>()) }
-    var shotUri by remember { mutableStateOf<Uri?>(null) }
+    var shotUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     fun readUri(uri: Uri, temp: Boolean) {
         val engine = ai ?: return
         readBusy = true
@@ -701,7 +701,7 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
     val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { g ->
         if (g) { val u = runCatching { context.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, android.content.ContentValues().apply {
             put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "mcp_${System.currentTimeMillis()}.jpg"); put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg") }) }.getOrNull()
-            if (u != null) { shotUri = u; runCatching { shoot.launch(u) } } }
+            if (u != null) { shotUri = u; ArogyaPhotoGuard.hold(context); runCatching { shoot.launch(u) } } }
     }
     val pickCard = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u -> if (u != null) readUri(u, false) }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -723,7 +723,7 @@ private fun McpCardDialog(hindi: Boolean, b: Beneficiary, data: RegistryData, vi
                         Text(tr("Photograph the family's card; dates, vaccines and weights are filled here after you tick them.", "परिवार के कार्ड की फ़ोटो लें; तारीख़, टीके और वज़न निशान के बाद यहाँ भरेंगे।"), style = MaterialTheme.typography.bodySmall)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { camPerm.launch(android.Manifest.permission.CAMERA) }, enabled = !readBusy) { Text(tr("Take photo", "फ़ोटो लें")) }
-                            OutlinedButton(onClick = { pickCard.launch(arrayOf("image/*", "application/pdf")) }, enabled = !readBusy) { Text(tr("Choose file", "फ़ाइल चुनें")) }
+                            OutlinedButton(onClick = { ArogyaPhotoGuard.hold(context); pickCard.launch(arrayOf("image/*", "application/pdf")) }, enabled = !readBusy) { Text(tr("Choose file", "फ़ाइल चुनें")) }
                         }
                         if (readBusy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(tr("Reading the card on this phone…", "इसी फ़ोन पर कार्ड पढ़ रहे हैं…"), style = MaterialTheme.typography.bodySmall) }
                     }

@@ -344,7 +344,7 @@ fun MedScanDialog(hindi: Boolean, ai: ArogyaVisitAi, items: List<StockItem>,
     var ms by remember { mutableStateOf(0L) }
     var ocrText by remember { mutableStateOf("") }
     var err by remember { mutableStateOf("") }
-    var shotUri by remember { mutableStateOf<Uri?>(null) }
+    var shotUri by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Uri?>(null) }
     fun run(uri: Uri, temp: Boolean) {
         busy = true; err = ""; scan = null; ocrText = ""; phase = tr("Reading the label…", "लेबल पढ़ रहे हैं…")
         scope.launch {
@@ -354,8 +354,8 @@ fun MedScanDialog(hindi: Boolean, ai: ArogyaVisitAi, items: List<StockItem>,
                     val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
                     var sample = 1; while (maxOf(opts.outWidth, opts.outHeight) / sample > 2000) sample *= 2
-                    val raw = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
-                        ?: throw IllegalStateException("Could not open the photo")
+                    val raw = (context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+                        ?: throw IllegalStateException("Could not open the photo")).let { ArogyaPhotoGuard.upright(context, uri, it) }
                     val scale = 1600f / maxOf(raw.width, raw.height)
                     if (scale < 1f) Bitmap.createScaledBitmap(raw, (raw.width * scale).toInt(), (raw.height * scale).toInt(), true) else raw
                 }
@@ -364,7 +364,8 @@ fun MedScanDialog(hindi: Boolean, ai: ArogyaVisitAi, items: List<StockItem>,
                 val ocr = withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) }
                 if (ocr.isBlank()) throw IllegalStateException(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
                 ocrText = ocr
-                phase = tr("Finding name, batch and expiry…", "नाम, बैच और एक्सपायरी ढूँढ रहे हैं…")
+                phase = if (ai.isBusy) tr("Waiting for the AI to finish the current answer…", "AI पिछला उत्तर पूरा कर रहा है, रुकिए…")
+                    else tr("Finding name, batch and expiry…", "नाम, बैच और एक्सपायरी ढूँढ रहे हैं…")
                 val (res, eng, _) = withContext(Dispatchers.IO) { ai.scanMedicine(ocr) }
                 scan = res; engine = eng; ms = System.currentTimeMillis() - t
                 Log.i("ArogyaDemo", "AROGYA_MEDSCAN name=\"${res.name}\" batch=\"${res.batch}\" expiry=\"${res.expiry}\" qty=${res.qty} engine=$eng ms=$ms")
@@ -377,7 +378,7 @@ fun MedScanDialog(hindi: Boolean, ai: ArogyaVisitAi, items: List<StockItem>,
     val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { g ->
         if (g) { val u = runCatching { context.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, android.content.ContentValues().apply {
             put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "med_${System.currentTimeMillis()}.jpg"); put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg") }) }.getOrNull()
-            if (u != null) { shotUri = u; runCatching { shoot.launch(u) } } }
+            if (u != null) { shotUri = u; ArogyaPhotoGuard.hold(context); runCatching { shoot.launch(u) } } }
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u -> if (u != null) run(u, false) }
     val s = scan
@@ -389,7 +390,7 @@ fun MedScanDialog(hindi: Boolean, ai: ArogyaVisitAi, items: List<StockItem>,
             Text(tr("Photograph the strip or box so the name, batch and expiry are readable. Works offline.", "पत्ते या डिब्बे की फ़ोटो लें — नाम, बैच, एक्सपायरी साफ़ दिखे। ऑफ़लाइन चलता है।"), style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { camPerm.launch(android.Manifest.permission.CAMERA) }, enabled = !busy) { Text(tr("📷 Take photo", "📷 फ़ोटो लें")) }
-                OutlinedButton(onClick = { pick.launch(arrayOf("image/*")) }, enabled = !busy) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
+                OutlinedButton(onClick = { ArogyaPhotoGuard.hold(context); pick.launch(arrayOf("image/*")) }, enabled = !busy) { Text(tr("Choose photo", "फ़ोटो चुनें")) }
             }
             if (busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); if (phase.isNotBlank()) Text(phase, style = MaterialTheme.typography.bodySmall) }
             if (err.isNotBlank()) Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)

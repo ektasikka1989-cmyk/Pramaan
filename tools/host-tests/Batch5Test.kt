@@ -36,12 +36,13 @@ fun synthWav(rate: Int, channels: Int, float32: Boolean, frames: Int, withFact: 
 
 fun main() {
     // Script shape (demo UI pass): 16 scenes, 3-6 sentences per language, unique ids, one hero.
-    check("s-count", ArogyaDemoScript.scenes.size == 16)
-    check("s-ids", ArogyaDemoScript.scenes.map { it.id }.toSet().size == 16)
+    check("s-count", ArogyaDemoScript.scenes.size == 12)
+    check("s-ids", ArogyaDemoScript.scenes.map { it.id }.toSet().size == 12)
     check("s-titles-en", ArogyaDemoScript.scenes.all { it.title.isNotBlank() })
     check("s-titles-hi", ArogyaDemoScript.scenes.all { it.hi.isNotBlank() })
-    check("s-nar-en", ArogyaDemoScript.scenes.all { it.narration.size in 3..6 && it.narration.all { s -> s.endsWith('.') } })
-    check("s-nar-hi", ArogyaDemoScript.scenes.all { it.narrationHi.size in 3..6 && it.narrationHi.all { s -> s.endsWith('।') } })
+    val allScenes = ArogyaDemoScript.workflows.flatMap { it.scenes }
+    check("s-nar-en", allScenes.all { it.narration.size in 3..6 && it.narration.all { s -> s.endsWith('.') } })
+    check("s-nar-hi", allScenes.all { it.narrationHi.size in 3..6 && it.narrationHi.all { s -> s.endsWith('।') } })
     check("s-q-en", ArogyaDemoScript.QUESTION_EN == "What should be applied on the baby's cord stump?")
     check("s-q-hi", ArogyaDemoScript.QUESTION_HI == "बच्चे की नाल पर क्या लगाना चाहिए?")
     check("s-follow", ArogyaDemoScript.FOLLOWUP_EN.isNotBlank() && ArogyaDemoScript.FOLLOWUP_HI.isNotBlank())
