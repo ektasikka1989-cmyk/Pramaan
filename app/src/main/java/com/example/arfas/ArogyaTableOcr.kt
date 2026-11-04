@@ -91,21 +91,108 @@ object ArogyaTableOcr {
         val seen = HashSet<String>()
         data class Col(val key: String, val heading: String, val cx: Int)
         val cols = rs[headerIdx].map { c -> Col(headerKey(c.text).let { k -> if (k.isNotBlank() && seen.add(k)) k else "" }, c.text.trim(), c.cx) }
-        return rs.drop(headerIdx + 1).mapNotNull { r ->
+        val medianH = lines.filter { it.text.isNotBlank() }.map { it.h }.sorted().let { it[it.size / 2] }
+        fun colOf(cell: Line) = cols.minByOrNull { kotlin.math.abs(it.cx - cell.cx) }
+        data class Person(val m: LinkedHashMap<String, String> = LinkedHashMap(), val extra: LinkedHashMap<String, String> = LinkedHashMap(), var bottom: Int = 0)
+        val out = ArrayList<Person>()
+        for (r in rs.drop(headerIdx + 1)) {
             // A footer such as "Family consent taken: Yes" or "Signature:" is a label line, not a person.
-            if (r.any { it.text.contains(':') }) return@mapNotNull null
-            val m = LinkedHashMap<String, String>()
-            val extra = LinkedHashMap<String, String>()
+            if (r.any { it.text.contains(':') }) continue
+            // A cell written on two lines ("Sarita" / "Yadav") gives an extra OCR row just above or below. It belongs
+            // to the same person when it touches the previous row and either has no name cell (the values row of a
+            // name written above it) or is a short words-only row (the second line of the name and husband cells).
+            val prev = out.lastOrNull()
+            val touches = prev != null && r.minOf { it.top } - prev.bottom <= medianH * 0.8
+            val hasName = r.any { colOf(it)?.key == "name" }
+            val shortWords = r.none { c -> c.text.any(Char::isDigit) } && r.size <= maxOf(1, cols.size / 2)
+            val p = if (touches && (!hasName || shortWords)) prev!! else Person().also { out += it }
             r.forEach { cell ->
-                val col = cols.minByOrNull { kotlin.math.abs(it.cx - cell.cx) } ?: return@forEach
+                val col = colOf(cell) ?: return@forEach
                 when {
-                    col.key.isNotBlank() -> m[col.key] = listOfNotNull(m[col.key], cell.text.trim()).joinToString(" ")
-                    !isSerial(col.heading) && col.heading.isNotBlank() -> extra[col.heading] = listOfNotNull(extra[col.heading], cell.text.trim()).joinToString(" ")
+                    col.key.isNotBlank() -> p.m[col.key] = listOfNotNull(p.m[col.key], cell.text.trim()).joinToString(" ")
+                    !isSerial(col.heading) && col.heading.isNotBlank() -> p.extra[col.heading] = listOfNotNull(p.extra[col.heading], cell.text.trim()).joinToString(" ")
                 }
             }
-            if (extra.isNotEmpty()) m["notes"] = extra.entries.joinToString("; ") { "${it.key}: ${it.value}" }
-            m["name"]?.takeIf { it.any(Char::isLetter) }?.let { m }
+            p.bottom = maxOf(p.bottom, r.maxOf { it.bottom })
         }
+        return out.mapNotNull { p ->
+            if (p.extra.isNotEmpty()) p.m["notes"] = p.extra.entries.joinToString("; ") { "${it.key}: ${it.value}" }
+            p.m["name"]?.takeIf { it.any(Char::isLetter) }?.let { p.m }
+        }
+    }
+
+    // ── A table row with no heading row: each value is recognised by its form ──
+    private val DATE = Regex("""^\d{1,2}\s*[/.\-]\s*\d{1,2}\s*[/.\-]\s*\d{2,4}$""")
+    private val HOUSE = Regex("""^(?:[A-Za-z]{1,5}\.?\s*(?:No\.?)?\s*[-/]?\s*\d{1,4}[A-Za-z]?|[A-Za-z]\d{1,4})$""")
+    private val AGE = Regex("""^(\d{1,3})\s*(?:yrs?\.?|years?|y|वर्ष|साल)?$""", RegexOption.IGNORE_CASE)
+    private val SEX = Regex("""^(?:m|f|male|female|पुरुष|महिला|स्त्री|पु|म)$""", RegexOption.IGNORE_CASE)
+    private val CATEGORY = Regex("""pregnan|garbh|गर्भवती|mother|postnatal|माँ|child|infant|baby|बच्चा|शिशु|eligible|couple|दंपति""", RegexOption.IGNORE_CASE)
+    private fun digitsOnly(s: String) = s.all { it.isDigit() || it == ' ' || it == '-' || it == '+' }
+
+    /** What a cell's value is, from its form alone ("" when it is a word such as a name or a village). */
+    private fun formOf(v: String): String {
+        val t = v.trim(); val d = t.filter(Char::isDigit)
+        return when {
+            t.isEmpty() -> "?"
+            digitsOnly(t) && (d.length == 10 || (d.length == 12 && d.startsWith("91") && t.startsWith("+"))) -> "phone"
+            digitsOnly(t) && d.length == 12 -> "aadhaar"
+            DATE.matches(t) -> "date"
+            AGE.matchEntire(t)?.groupValues?.get(1)?.toIntOrNull()?.let { it in 0..110 } == true -> "age"
+            HOUSE.matches(t) && t.any(Char::isLetter) -> "household"
+            SEX.matches(t) -> "sex"
+            CATEGORY.containsMatchIn(t) && t.split(Regex("\\s+")).size <= 3 -> "category"
+            t.any(Char::isDigit) -> "?"
+            else -> ""
+        }
+    }
+
+    /**
+     * One person from a slip whose table has no heading row ("Sarita Yadav | Ramesh Yadav | 23 | 9000000301 |
+     * H-051 | Rampur | Pregnant | 26/08/2026"). The row with the most recognisable values (mobile, date, house
+     * number, category) is the person; cells written on two lines are joined by column. Values are copied as
+     * written: a 10-digit number is the mobile, a date the LMP (DOB for a child), a short number the age, and the
+     * word cells in order are the name, the husband / relative and the village. The ASHA checks each one.
+     */
+    fun headerlessRow(lines: List<Line>): Map<String, String>? {
+        val rs = rows(lines)
+        if (rs.isEmpty()) return null
+        val medianH = lines.filter { it.text.isNotBlank() }.map { it.h }.sorted().let { it[it.size / 2] }
+        fun hits(r: List<Line>) = if (r.any { ':' in it.text }) 0 else r.map { formOf(it.text) }.count { it in setOf("phone", "date", "household", "category") }
+        val ai = rs.indices.maxByOrNull { hits(rs[it]) } ?: return null
+        if (hits(rs[ai]) < 2 || rs[ai].size < 3) return null
+        // Join the OCR rows just above / below that belong to the same table row (a cell written on two lines).
+        var lo = ai; var hi = ai
+        fun near(a: List<Line>, b: List<Line>) = maxOf(a.minOf { it.top }, b.minOf { it.top }) - minOf(a.maxOf { it.bottom }, b.maxOf { it.bottom }) <= medianH * 0.8
+        while (lo > 0 && ai - lo < 2 && rs[lo - 1].none { ':' in it.text } && hits(rs[lo - 1]) == 0 && near(rs[lo - 1], rs[lo])) lo--
+        while (hi < rs.size - 1 && hi - ai < 2 && rs[hi + 1].none { ':' in it.text } && hits(rs[hi + 1]) == 0 && near(rs[hi + 1], rs[hi])) hi++
+        // Columns: cells that overlap horizontally are one cell of the table.
+        data class Col(var left: Int, var right: Int, val cells: MutableList<Line>)
+        val cols = ArrayList<Col>()
+        (lo..hi).flatMap { rs[it] }.sortedBy { it.left }.forEach { c ->
+            val col = cols.firstOrNull { c.left < it.right && c.right > it.left }
+            if (col != null) { col.cells += c; col.left = minOf(col.left, c.left); col.right = maxOf(col.right, c.right) }
+            else cols += Col(c.left, c.right, mutableListOf(c))
+        }
+        val values = cols.sortedBy { it.left }.map { col -> col.cells.sortedBy { it.top }.joinToString(" ") { it.text.trim() } }
+        val out = LinkedHashMap<String, String>()
+        val words = ArrayList<String>()
+        var date: String? = null
+        values.forEach { v ->
+            when (val f = formOf(v)) {
+                "" -> if (!isSerial(v)) words += v
+                "date" -> if (date == null) date = v
+                "age" -> out["age"] = v     // the last short number: a serial number comes first
+                "phone", "aadhaar", "household", "sex", "category" -> if (f !in out) out[f] = v
+            }
+        }
+        words.getOrNull(0)?.let { out["name"] = it }
+        words.getOrNull(1)?.let { out["relative"] = it }
+        words.getOrNull(2)?.let { out["village"] = it }
+        date?.let { d ->
+            val cat = out["category"].orEmpty().lowercase()
+            out[when { Regex("child|infant|baby|बच्चा|शिशु").containsMatchIn(cat) -> "dob"; Regex("mother|postnatal|माँ").containsMatchIn(cat) -> "deliverydate"; else -> "lmp" }] = d
+        }
+        return out.takeIf { !it["name"].isNullOrBlank() && it.size >= 3 }
     }
 
     /**
@@ -136,6 +223,9 @@ object ArogyaTableOcr {
         val table = people(lines).firstOrNull()
         val (kv, other) = keyValues(lines)
         if (table != null) return kv + table
+        // A slip whose table has no heading row: values are recognised by their form.
+        // Printed "Label: value" details (e.g. the Aadhaar line) win over values recognised by their form.
+        headerlessRow(lines)?.let { return it + kv }
         if (kv.isEmpty()) return emptyMap()
         val out = LinkedHashMap(kv)
         if (other.isNotEmpty()) out["notes"] = other.entries.joinToString("; ") { "${it.key}: ${it.value}" }

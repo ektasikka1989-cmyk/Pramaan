@@ -140,6 +140,21 @@ private fun PhotoPersonStep(hindi: Boolean, ai: ArogyaVisitAi?, onDone: (List<Be
                 val tableRows = ArogyaTableOcr.people(lines)
                 val layout = ArogyaTableOcr.rowText(lines).ifBlank { ocr }
                 Log.i("ArogyaDemo", "AROGYA_REGISTER_ROWS lines=${lines.size} people=${tableRows.size}")
+                // Online (Cloud first, or the phone's reading is incomplete): Muse Spark reads the photo like a person,
+                // Aadhaar blacked out first. Every person it finds goes to the same review; the phone's Aadhaar fills in.
+                val phoneRules = ArogyaTableOcr.readPerson(lines)
+                val phoneGood = tableRows.size > 1 || ArogyaTableOcr.CORE.all { !phoneRules[it].isNullOrBlank() }
+                if (ArogyaPhotoVision.wanted(context, phoneGood)) {
+                    msg = tr("Muse Spark is reading the photo…", "Muse Spark फ़ोटो पढ़ रहा है…")
+                    val seen = ArogyaPhotoVision.transcribe(context, bmp, lines, ArogyaPhotoText.Kind.PERSON)?.let { ArogyaPhotoText.people(it) }.orEmpty()
+                    Log.i("ArogyaDemo", "AROGYA_PERSON_READ vision_people=${seen.size} phone_rows=${tableRows.size}")
+                    if (seen.isNotEmpty()) {
+                        val withId = if (seen.size == 1) listOf(phoneRules.filterKeys { it == "aadhaar" } + seen[0]) else seen
+                        msg = tr("Photo read by Muse Spark online (Aadhaar blacked out on the phone before sending). Check each person.",
+                            "फ़ोटो Muse Spark ने ऑनलाइन पढ़ी (भेजने से पहले आधार काला किया)। हर व्यक्ति जाँचें।")
+                        onDone(withId.map { ArogyaPersonCsv.toBeneficiary(it) }); return@launch
+                    }
+                }
                 if (ocr.isBlank()) throw IllegalStateException(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
                 msg = if (ai.isBusy) tr("Waiting for the AI to finish the current answer…", "AI पिछला उत्तर पूरा कर रहा है, रुकिए…")
                     else tr("Copying the details…", "जानकारी उतार रहे हैं…")

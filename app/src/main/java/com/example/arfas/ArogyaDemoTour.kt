@@ -218,6 +218,12 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
     var viewDoc by remember { mutableStateOf<Pair<String, ArogyaDocRender.FilledDoc>?>(null) }
     var formNote by remember { mutableStateOf("") }
     var personEngine by remember { mutableStateOf("") }
+    // The photo just read, kept so the ASHA can have it read again online when the phone's reading was incomplete.
+    var personFields by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var personPhoto by remember { mutableStateOf<Pair<Bitmap, List<ArogyaTableOcr.Line>>?>(null) }
+    var medPhoto by remember { mutableStateOf<Bitmap?>(null) }
+    var onlineBusy by remember { mutableStateOf(false) }
+    var onlineNote by remember { mutableStateOf("") }
     fun secs(ms: Long) = if (ms < 1000) tr("<1 s", "<1 से.") else tr("${ms / 1000} s", "${ms / 1000} से.")
     val online = MetaOnline.hasInternet(context)
     fun lines(): List<String> = if (scene >= n) listOf(tr("The demo is complete. Thank you.", "डेमो पूरा हुआ। धन्यवाद।"))
@@ -563,6 +569,55 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
         if (scale < 1f) Bitmap.createScaledBitmap(raw, (raw.width * scale).toInt(), (raw.height * scale).toInt(), true) else raw
     }
 
+    // "Read online with Muse Spark": the phone's offline reading was incomplete, so the ASHA asks for the same photo
+    // to be read online. Nothing is sent before she presses it. The steps (phone first, then Meta) stay visible in
+    // the result's tag, so the demo shows exactly where each answer came from.
+    fun readOnline(kind: String) {
+        if (onlineBusy) return
+        scope.launch {
+            onlineBusy = true; onlineNote = ""
+            try {
+                if (!withContext(Dispatchers.IO) { MetaOnline.ready(context) }) {
+                    onlineNote = tr("No internet or no Meta key. Connect, then press again.", "इंटरनेट या Meta key नहीं। जोड़कर फिर दबाएँ।"); return@launch
+                }
+                val t = System.currentTimeMillis()
+                when (kind) {
+                    "person" -> {
+                        val (bmp, ls) = personPhoto ?: return@launch
+                        val seen = ArogyaPhotoVision.transcribe(context, bmp, ls, ArogyaPhotoText.Kind.PERSON)?.let { ArogyaPhotoText.people(it).firstOrNull() }
+                        if (seen == null) { onlineNote = tr("Muse Spark could not read more from this photo. Type the missing details.", "Muse Spark इस फ़ोटो से और नहीं पढ़ पाया। बाकी जानकारी लिखें।"); return@launch }
+                        personFields = personFields + seen
+                        personPreview = ArogyaPersonCsv.toBeneficiary(personFields)
+                        personEngine = listOf(personEngine, ArogyaPhotoVision.LABEL).filter { it.isNotBlank() }.joinToString(" · ")
+                        personAgreed = false
+                        personMsg = tr("Read again online by Muse Spark. Aadhaar was blacked out on the phone before sending.", "Muse Spark ने ऑनलाइन दोबारा पढ़ा। भेजने से पहले आधार फ़ोन पर काला किया गया।")
+                        ticks += ArogyaAiTick("add person from photo (online)", "फ़ोटो से नया व्यक्ति (ऑनलाइन)", ArogyaPhotoVision.LABEL, System.currentTimeMillis() - t, true)
+                    }
+                    "med" -> {
+                        val bmp = medPhoto ?: return@launch
+                        val text = ArogyaPhotoVision.transcribe(context, bmp, emptyList(), ArogyaPhotoText.Kind.MEDICINE)
+                        if (text == null) { onlineNote = tr("Muse Spark could not read this label. Enter it on the stock screen.", "Muse Spark लेबल नहीं पढ़ पाया। स्टॉक स्क्रीन पर लिखें।"); return@launch }
+                        val (res, eng0, _) = withContext(Dispatchers.IO) { (ai ?: error("AI is not ready")).scanMedicine(text) }
+                        medScan = res; medSaved = false; medMs = System.currentTimeMillis() - t
+                        medEngine = listOf(medEngine, ArogyaPhotoVision.LABEL, eng0).filter { it.isNotBlank() }.joinToString(" · ")
+                        medMatched = ArogyaMedScan.matchItem(res.name, ArogyaRegistryLogic.catalog(store.state.value.stockItems).map { it.name })
+                        ticks += ArogyaAiTick("medicine scan (online)", "दवा स्कैन (ऑनलाइन)", ArogyaPhotoVision.LABEL, medMs, true)
+                        Log.i("ArogyaDemo", "AROGYA_MEDSCAN online name=\"${res.name}\" batch=\"${res.batch}\" expiry=\"${res.expiry}\" qty=${res.qty}")
+                    }
+                    "card" -> {
+                        val got = (ai ?: error("AI is not ready")).readCardOnline()
+                        if (got == null) { onlineNote = tr("Muse Spark could not read more from this card.", "Muse Spark इस कार्ड से और नहीं पढ़ पाया।"); return@launch }
+                        card = got.first; cardModel = listOf(cardModel, got.second).filter { it.isNotBlank() }.joinToString(" · ")
+                        cardChecked = got.first.fields.indices.filter { !got.first.fields[it].value.contains("not readable") }.toSet(); cardApplied = false
+                        ticks += ArogyaAiTick("card reading (online)", "कार्ड पढ़ना (ऑनलाइन)", ArogyaPhotoVision.LABEL, System.currentTimeMillis() - t, true)
+                    }
+                }
+            } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                onlineNote = (e.message ?: "").take(160)
+            } finally { onlineBusy = false }
+        }
+    }
+
     // Manual photo steps (MCP card, medicine strip, SAM shelf): the presenter picks
     // the photo by hand; nothing is generated and nothing is searched for.
     fun handlePhoto(uri: Uri, temp: Boolean) {
@@ -575,7 +630,7 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         status = tr("AI is reading the card…", "AI कार्ड पढ़ रहा है…")
                         val t = System.currentTimeMillis()
                         val got = (ai ?: error("AI is not ready")).readCardDetailed(uri)
-                        card = got.first; cardModel = got.second
+                        card = got.first; cardModel = got.second; onlineNote = ""
                         cardChecked = got.first.fields.indices.toSet(); cardApplied = false
                         val by = got.second
                         ticks += ArogyaAiTick("card text reading + extraction", "कार्ड पढ़ना",
@@ -588,9 +643,17 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         val ocrProc = MLKitProcessor()
                         val ocr = try { withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) } }
                             finally { runCatching { ocrProc.close() } }
-                        if (ocr.isBlank()) error(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
-                        medOcrLen = ocr.length
-                        val (res, eng, _) = withContext(Dispatchers.IO) { (ai ?: error("AI is not ready")).scanMedicine(ocr) }
+                        val phoneScan = ArogyaMedScan.parse(ocr)
+                        medPhoto = bmp; onlineNote = ""
+                        // Online (Cloud first, or the phone's reading is incomplete): Muse Spark reads the label like a person.
+                        val seen = if (ArogyaPhotoVision.wanted(context, phoneScan.name.isNotBlank() && phoneScan.batch.isNotBlank() && phoneScan.expiry.isNotBlank())) {
+                            status = tr("Muse Spark is reading the label…", "Muse Spark लेबल पढ़ रहा है…")
+                            ArogyaPhotoVision.transcribe(context, bmp, emptyList(), ArogyaPhotoText.Kind.MEDICINE) } else null
+                        val text = seen ?: ocr
+                        if (text.isBlank()) error(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
+                        medOcrLen = text.length
+                        val (res, eng0, _) = withContext(Dispatchers.IO) { (ai ?: error("AI is not ready")).scanMedicine(text) }
+                        val eng = if (seen != null) ArogyaPhotoVision.LABEL + " · " + eng0 else eng0
                         medScan = res; medEngine = eng; medMs = System.currentTimeMillis() - t; medSaved = false
                         medMatched = ArogyaMedScan.matchItem(res.name,
                             ArogyaRegistryLogic.catalog(store.state.value.stockItems).map { it.name })
@@ -610,13 +673,21 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         // page with its layout kept, only for details still missing. Rules win where both answer.
                         val rules = ArogyaTableOcr.readPerson(lines)
                         val missing = ArogyaTableOcr.CORE.filter { rules[it].isNullOrBlank() }
-                        val (fields, eng) = if (missing.isEmpty()) rules to tr("On-phone rules (offline): every column read", "फ़ोन पर नियम (ऑफ़लाइन): हर कॉलम पढ़ा")
+                        // Online (Cloud first, or the phone's reading is incomplete): Muse Spark reads the photo like a
+                        // person, Aadhaar blacked out first. Its values win; the phone's fill gaps (e.g. the Aadhaar).
+                        val seen = if (ArogyaPhotoVision.wanted(context, missing.isEmpty())) { status = tr("Muse Spark is reading the photo…", "Muse Spark फ़ोटो पढ़ रहा है…")
+                            ArogyaPhotoVision.transcribe(context, bmp, lines, ArogyaPhotoText.Kind.PERSON)?.let { ArogyaPhotoText.people(it).firstOrNull() } } else null
+                        val (fields, eng) = if (seen != null) (rules + seen) to ArogyaPhotoVision.LABEL
+                            else if (missing.isEmpty()) rules to tr("On-phone rules (offline): every column read", "फ़ोन पर नियम (ऑफ़लाइन): हर कॉलम पढ़ा")
                             else { val got = (ai ?: error("AI is not ready")).extractPersonFields(ArogyaTableOcr.rowText(lines).ifBlank { ocr })
                                 (got.first + rules) to (if (rules.isEmpty()) got.second else tr("On-phone rules + ", "फ़ोन पर नियम + ") + got.second) }
                         Log.i("ArogyaDemo", "AROGYA_PERSON_READ rules=${rules.keys.joinToString(",")} ai_asked=${missing.isNotEmpty()} final=${fields.keys.joinToString(",")}")
                         if (fields["name"].isNullOrBlank()) error(tr("No person details found on this photo", "फ़ोटो में व्यक्ति की जानकारी नहीं मिली"))
-                        personMsg = if (!fields["aadhaar"].isNullOrBlank()) tr("Aadhaar number read — saved encrypted, shown masked.", "आधार नंबर पढ़ा — सुरक्षित सेव, छिपाकर दिखाया।") else ""
+                        personMsg = listOfNotNull(
+                            tr("Photo read by Muse Spark online. Aadhaar was blacked out on the phone before sending.", "फ़ोटो Muse Spark ने ऑनलाइन पढ़ी। भेजने से पहले आधार फ़ोन पर ही काला किया गया।").takeIf { seen != null },
+                            tr("Aadhaar number read on the phone — saved encrypted, shown masked.", "आधार नंबर फ़ोन पर पढ़ा — सुरक्षित सेव, छिपाकर दिखाया।").takeIf { !fields["aadhaar"].isNullOrBlank() }).joinToString(" ")
                         personPreview = ArogyaPersonCsv.toBeneficiary(fields); personEngine = eng
+                        personFields = fields; personPhoto = bmp to lines; onlineNote = ""
                         Log.i("ArogyaDemo", "AROGYA_DEMO_PERSON engine=\"$eng\" fields=${fields.keys.joinToString(",")}")
                         personAgreed = false; personSaved = false; personDue = ""
                         ticks += ArogyaAiTick("add person from photo", "फ़ोटो से नया व्यक्ति",
@@ -970,7 +1041,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                         updates = updates, stockDelta = stockDelta, refillText = refillText,
                         opens = opensBy[scenes.getOrNull(scene)?.id.orEmpty()].orEmpty(), onOpen = { openDoc(it) }, formNote = formNote, personEngine = personEngine,
                         sopQ = ArogyaDemoScript.question(wf, demoHindi), sopF = ArogyaDemoScript.followUp(wf, demoHindi),
-                        onConfirmSave = { formConfirmed = true; replay() }, onEditPerson = { personPreview = it })
+                        onConfirmSave = { formConfirmed = true; replay() }, onEditPerson = { personPreview = it },
+                        personFields = personFields, onlineBusy = onlineBusy, onlineNote = onlineNote, onReadOnline = { readOnline(it) })
                     }
                     val listState = rememberLazyListState()
                     LaunchedEffect(caption, scene) { if (caption in lines().indices) listState.animateScrollToItem(caption) }
@@ -1095,7 +1167,8 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
     cardChanged: Int = -1, remembered: Map<String, Pair<Long, Long>> = emptyMap(),
     updates: List<String> = emptyList(), stockDelta: List<String> = emptyList(), refillText: String = "",
     opens: List<Pair<String, String>> = emptyList(), onOpen: (String) -> Unit = {}, formNote: String = "", personEngine: String = "",
-    sopQ: String = "", sopF: String = "", onConfirmSave: () -> Unit = {}, onEditPerson: (Beneficiary) -> Unit = {}) {
+    sopQ: String = "", sopF: String = "", onConfirmSave: () -> Unit = {}, onEditPerson: (Beneficiary) -> Unit = {},
+    personFields: Map<String, String> = emptyMap(), onlineBusy: Boolean = false, onlineNote: String = "", onReadOnline: (String) -> Unit = {}) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // "Updated": real changes this save made, shown on the save screen.
         if (sceneId == "saved" && !saved) DemoCard(tr("Confirm before saving", "सेव से पहले पक्का करें")) {
@@ -1156,7 +1229,7 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                 }
                 if (personMsg.isNotBlank()) Text(personMsg, style = MaterialTheme.typography.bodySmall)
                 personPreview?.let { p -> DemoCard(tr("✨ Check the details — correct anything, then confirm", "✨ जानकारी जाँचें — गलत हो तो सुधारें, फिर पक्का करें")) {
-                    if (personEngine.isNotBlank()) Text(tr("Read by: ", "पढ़ा: ") + personEngine, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AiUsedTag("ML Kit text · $personEngine", hindi)
                     // Every field is editable: the photo reading is a proposal until Sunita confirms it.
                     @Composable fun field(label: String, value: String, onChange: (String) -> Unit) = OutlinedTextField(value = value, onValueChange = onChange,
                         label = { Text(label) }, singleLine = true, enabled = !personSaved, modifier = Modifier.fillMaxWidth())
@@ -1177,6 +1250,12 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                         tr("House", "मकान") to p.household, tr("Village", "गाँव") to p.village, "LMP" to p.lmp).filter { it.second.isBlank() }.map { it.first }
                     if (missing.isNotEmpty() && !personSaved) Text(tr("Not read from the photo: ", "फ़ोटो से नहीं पढ़ा: ") + missing.joinToString(", ") + tr(" — type them above if you have them.", " — हों तो ऊपर लिखें।"),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    // Offline reading incomplete → say what was captured and offer the online reading (Muse Spark).
+                    if (!personSaved && !personEngine.contains("Muse Spark")) {
+                        val got = ArogyaTableOcr.CORE.filter { !personFields[it].isNullOrBlank() }
+                        ReadOnlineOffer(got.map { personFieldLabel(it, hindi) }, (ArogyaTableOcr.CORE - got.toSet()).map { personFieldLabel(it, hindi) },
+                            hindi, onlineBusy, onlineNote) { onReadOnline("person") }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(personAgreed, onAgreePerson, enabled = !personSaved)
                         Text(tr("The family agreed to be registered", "परिवार पंजीकरण के लिए तैयार है"), style = MaterialTheme.typography.bodySmall)
@@ -1204,12 +1283,14 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
             }
             "voice" -> {
                 DemoCard((if (transcriptLive) "🎤 " else "⌨ ") + tr("Voice note", "वॉइस नोट") + " · $transcriptEngine") {
+                    AiUsedTag(transcriptEngine, hindi)
                     Text("“${transcript.ifBlank { tr("Listening…", "सुन रहे हैं…") }}”", style = MaterialTheme.typography.bodySmall) }
                 if (formNote.isNotBlank()) Text(formNote, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 if (transcript.isNotBlank() && formModel.isNotBlank() && filled.isEmpty()) DemoCard(tr("⚠ Nothing could be read from this note", "⚠ इस नोट से कुछ नहीं पढ़ा जा सका"), danger = true) {
                     Text(tr("Replay this screen, or fill the form by hand in the visit.", "यह स्क्रीन दोबारा चलाएँ, या विज़िट में फ़ॉर्म हाथ से भरें।"), style = MaterialTheme.typography.bodySmall) }
                 if (filled.isNotEmpty()) DemoCard(tr("${filled.size} rows filled (✨ ${filled.count { it.value.source == "ai" }} by AI · ⚙ ${filled.count { it.value.source != "ai" }} by rules) · $formModel · ${secs(formMs)}",
                     "${filled.size} पंक्तियाँ भरीं (✨ AI ${filled.count { it.value.source == "ai" }} · ⚙ नियम ${filled.count { it.value.source != "ai" }}) · $formModel · ${secs(formMs)}")) {
+                    AiUsedTag(formModel, hindi, formMs)
                     ConfirmChip(hindi)
                     filled.forEach { (id, v) -> val f = sp.fields.firstOrNull { it.id == id } ?: return@forEach
                         Text((if (v.source == "ai") "✨ " else "⚙ ") + "${if (hindi) f.hi else f.label}: ${v.value}${if (f.type == QType.NUMBER && f.unit.isNotBlank()) " " + f.unit else ""}", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
@@ -1251,6 +1332,7 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
             "anm" -> {
                 if (anm.isBlank()) Text(tr("Drafting the message…", "संदेश लिख रहे हैं…"))
                 else DemoCard(tr("✨ WhatsApp to the ANM (AI draft, she edits before sending)", "✨ ANM को WhatsApp (AI ड्राफ़्ट, भेजने से पहले बदल सकती हैं)") + if (anmModel.isNotBlank()) " · $anmModel" else "") {
+                    AiUsedTag(anmModel, hindi)
                     Text(anm, style = MaterialTheme.typography.bodySmall)
                     Button(onClick = { onDemoMsg(tr("Not sent in demo — real use opens WhatsApp to the ANM with this text.", "डेमो में नहीं भेजा — असल में यह संदेश ANM को WhatsApp पर खुलेगा।")) }) {
                         Text(tr("💬 Send on WhatsApp", "💬 WhatsApp पर भेजें"), maxLines = 1) }
@@ -1261,6 +1343,7 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                 if (familyText.isBlank()) Text(tr("Explaining…", "समझा रहे हैं…"))
                 else DemoCard(tr("✨ For the family (Hindi, from the guide)", "✨ परिवार के लिए (हिंदी, गाइड से)") +
                     if (familyModel.isNotBlank()) " · $familyModel" else "") {
+                    AiUsedTag(familyModel, hindi)
                     Text(familyText, style = MaterialTheme.typography.bodyMedium)
                 }
                 if (familyText.isNotBlank()) Button(onClick = onReadFamily) {
@@ -1314,6 +1397,7 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                 cardDoc?.let { d -> ArogyaDocPdf.Viewer(d, tr("MCP card — ", "MCP कार्ड — ") + b.name,
                     cardShareBusy, hindi, onCloseCard, onShareCard, onPrintCard) }
                 card?.let { r -> DemoCard(tr("✨ Read from the card (${r.fields.size} values, each found in the card's text)", "✨ कार्ड से पढ़ा (${r.fields.size})") + if (cardModel.isNotBlank()) " · $cardModel" else "") {
+                    AiUsedTag("ML Kit text · $cardModel", hindi)
                     ConfirmChip(hindi)
                     r.fields.forEachIndexed { i, f -> Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(cardChecked.contains(i), { onCheckCard(i, it) })
@@ -1325,6 +1409,11 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                         Text(if (vaccinesAdded.isEmpty()) tr("Vaccines already on the card — due list unchanged", "टीके कार्ड पर पहले से — बाकी सूची वैसी ही")
                             else tr("Added to MCP card (they leave the due list): ", "MCP कार्ड में जोड़े (बाकी सूची से हटे): ") + vaccinesAdded.joinToString())
                         if (weightAdded.isNotBlank()) Text(tr("Weight added: ", "वज़न जोड़ा: ") + weightAdded)
+                    }
+                    if (!cardApplied && !cardModel.contains("Muse Spark")) {
+                        val bad = r.fields.filter { it.value.contains("not readable") }
+                        ReadOnlineOffer(r.fields.filter { it !in bad }.map { it.label }, bad.map { it.label + tr(" (date)", " (तारीख)") }.ifEmpty { if (r.fields.isEmpty()) listOf(tr("vaccines and dates", "टीके और तारीखें")) else emptyList() },
+                            hindi, onlineBusy, onlineNote) { onReadOnline("card") }
                     }
                 } }
             }
@@ -1360,6 +1449,11 @@ private fun DemoSceneBody(sceneId: String, hindi: Boolean, tr: (String, String) 
                         if (!medSaved) Button(onClick = onSaveMed) {
                             Text(if (medMatched.isNotBlank()) tr("Save as Stock received", "स्टॉक मिला — सहेजें") else tr("Add as new item", "नई दवा जोड़ें")) }
                         else Text("✓ " + tr("In the stock register", "स्टॉक रजिस्टर में"), fontWeight = FontWeight.Bold)
+                        if (!medSaved && !medEngine.contains("Muse Spark")) {
+                            val parts = listOf(tr("Name", "नाम") to s.name, tr("Batch", "बैच") to s.batch, tr("Expiry", "एक्सपायरी") to s.expiry, tr("Quantity", "मात्रा") to (if (s.qty > 0) "x" else ""))
+                            ReadOnlineOffer(parts.filter { it.second.isNotBlank() }.map { it.first }, parts.filter { it.second.isBlank() }.map { it.first },
+                                hindi, onlineBusy, onlineNote) { onReadOnline("med") }
+                        }
                     }
                 }
                 DemoCard("☁ " + tr("Drug-kit count · Meta SAM 3.1 (online only)", "दवा किट गिनती · Meta SAM 3.1 (सिर्फ़ ऑनलाइन)")) {
@@ -1512,8 +1606,7 @@ private fun DemoSopAnswer(r: ArogyaAiResult, hindi: Boolean, tr: (String, String
     // Demo UI pass: chat answer layout (guide avatar, answer with tappable citations, one-tap PDF).
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SopAssistantHeader(hindi)
-        Text((if (r.online) "☁ " else "📱 ") + r.provider + " · " + secs(r.elapsedMs),
-            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AiResultChip(r.provider, r.online, r.elapsedMs, hindi)
         SopAnswerText(r.text, r.segments, emptySet()) { id -> r.sources.firstOrNull { it.id == id }?.let(onOpenSource) }
         r.sources.firstOrNull()?.let { s0 ->
             Row(verticalAlignment = Alignment.CenterVertically) {

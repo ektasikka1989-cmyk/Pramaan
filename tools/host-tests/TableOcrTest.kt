@@ -77,6 +77,56 @@ fun main() {
     val heard = ArogyaOfficialForms.mentionedFields(ArogyaOfficialForms.MCP_ANC, 0, ArogyaDemoScript.NOTE_W1_EN).map { it.id }
     check("voice-note-mentioned-rows", listOf("weight", "bp", "hb", "ifa", "calcium").all { it in heard }, heard)
     check("no-header-no-people", ArogyaTableOcr.people(listOf(L("Paracetamol 500 mg", 10, 10), L("Batch AB12", 10, 50))).isEmpty())
+    // ── Phone test 4 Nov: the slip table had NO heading row and the names were written on two lines ──
+    val noHead = listOf(
+        L("PREGNANCY REGISTRATION — VILLAGE RAMPUR", 90, 70, 380),
+        L("Sub-centre: Rampur SC", 65, 108, 150), L("ASHA: Sunita Devi", 235, 108, 140),
+        L("Sarita", 65, 150, 45), L("Ramesh", 120, 150, 50),
+        L("23", 172, 162, 16), L("9000000301", 190, 162, 85), L("H-051", 280, 162, 40), L("Rampur", 325, 162, 50), L("Pregnant", 380, 162, 60), L("26/08/2026", 445, 162, 70),
+        L("Yadav", 70, 174, 40), L("Yadav", 125, 174, 40),
+        L("Aadhaar No.: 0000 1111 2222", 65, 205, 220),
+        L("Family consent taken: Yes", 65, 245, 170), L("Signature: ______", 235, 245, 150))
+    for (seed in 1..5) {
+        val p = ArogyaTableOcr.readPerson(noHead.shuffled(java.util.Random(seed.toLong())))
+        check("no-heading-slip-$seed", p["name"] == "Sarita Yadav" && p["relative"] == "Ramesh Yadav" && p["age"] == "23" && p["phone"] == "9000000301" &&
+            p["household"] == "H-051" && p["village"] == "Rampur" && p["category"] == "Pregnant" && p["lmp"] == "26/08/2026" && p["aadhaar"] == "0000 1111 2222", p)
+    }
+    val nb = ArogyaPersonCsv.toBeneficiary(ArogyaTableOcr.readPerson(noHead))
+    check("no-heading-beneficiary", nb.category == BenCategory.PREGNANT && nb.lmp == "2026-08-26" && nb.aadhaar.filter(Char::isDigit) == "000011112222", nb)
+    check("no-heading-all-core", ArogyaTableOcr.CORE.all { !ArogyaTableOcr.readPerson(noHead)[it].isNullOrBlank() })
+    // Same slip WITH headings, names on two lines: still ONE person, not "Sarita" + "Yadav".
+    val withHead = noHead.filter { !it.text.startsWith("Aadhaar") } + listOf(L("Name", 65, 128, 40), L("Husband", 120, 128, 50), L("Age", 172, 128, 16),
+        L("Mobile", 190, 128, 60), L("House No.", 280, 128, 40), L("Village", 325, 128, 50), L("Category", 380, 128, 60), L("LMP", 445, 128, 40))
+    val wp = ArogyaTableOcr.people(withHead)
+    check("two-line-cells-one-person", wp.size == 1 && wp[0]["name"] == "Sarita Yadav" && wp[0]["relative"] == "Ramesh Yadav" && wp[0]["phone"] == "9000000301", wp)
+    check("plain-text-not-a-row", ArogyaTableOcr.headerlessRow(listOf(L("Gave 30 IFA tablets", 10, 10, 200), L("Next visit soon", 10, 50, 200))) == null)
+
+    // ── Muse Spark transcript (online "read like a person") → the phone's own readers ──
+    val vis = ArogyaPhotoText.clean("```\nName: Sarita Yadav\nHusband: Ramesh Yadav\nAge: 23\nMobile: 9000000301\nHouse No.: H-051\nVillage: Rampur\nCategory: Pregnant\nLMP: 26/08/2026\nRCH ID: [unreadable]\nAadhaar: 0000 1111 2222\n```")!!
+    val vp = ArogyaPhotoText.people(vis)
+    check("vision-one-person", vp.size == 1 && vp[0]["name"] == "Sarita Yadav" && vp[0]["relative"] == "Ramesh Yadav" && vp[0]["phone"] == "9000000301" && vp[0]["lmp"] == "26/08/2026", vp)
+    check("vision-unreadable-dropped", vp.firstOrNull()?.get("rch") == null && !vis.contains("unreadable"))
+    check("vision-never-keeps-aadhaar", !vis.contains("0000 1111 2222") && vp.firstOrNull()?.get("aadhaar").isNullOrBlank())
+    val many = ArogyaPhotoText.people("Name: Pooja Kumari\nHusband/Father: Sanjay Kumar\nAge: 22\n\nName: Aarav Kumar\nMother: Pooja Kumari\nAge: 2\nCategory: Child\n\nName: Meena Singh\nAge: 31")
+    check("vision-register-three-people", many.size == 3 && many[1]["relative"] == "Pooja Kumari" && many[1]["category"] == "Child", many)
+    check("vision-no-text", ArogyaPhotoText.clean("NO_TEXT") == null && ArogyaPhotoText.clean(null) == null)
+    check("vision-card-rows", ArogyaPhotoText.cardText("Birth | BCG | 31/10/2026\nBirth | OPV-0 | 31/10/2026") == "Birth  BCG  31/10/2026\nBirth  OPV-0  31/10/2026")
+    // Aadhaar is blacked out before the photo leaves the phone: the number cell, and a label cell holding it.
+    val hid = ArogyaPhotoText.hiddenBoxes(noHead + listOf(L("Aadhaar", 65, 300, 60), L("0000 1111", 140, 300, 80), L("2222", 230, 300, 40)))
+    check("aadhaar-boxes-hidden", hid.any { it.text.startsWith("Aadhaar No.") } && hid.any { it.text == "0000 1111" } && hid.any { it.text == "2222" } &&
+        hid.none { it.text == "9000000301" || it.text == "Sarita" }, hid.map { it.text })
+
+    // ── "Which model answered?" tag: real engine labels the app records ──
+    val U = ArogyaAiUsed
+    check("used-phone-then-spark", U.steps("ML Kit text · On-phone rules + On-phone model (offline): Llama-3.2-3B-Instruct-Q4_K_M · " + "Muse Spark 1.3 (Meta, online): read the photo").map { it.model } ==
+        listOf("ML Kit text recognition", "Fixed rules (not AI)", "Llama 3.2 3B Instruct", "Muse Spark 1.3"), U.steps("ML Kit text · On-phone rules + On-phone model (offline): Llama · Muse Spark 1.3 (Meta, online): read the photo"))
+    check("used-short-cloud-wins", U.short("ML Kit text · On-phone rules (offline): regex · Muse Spark 1.3 (Meta, online): read the photo") == "✨ Muse Spark 1.3 ☁", U.short("ML Kit text · Muse Spark"))
+    check("used-short-phone", U.short("On-phone model (offline): Llama-3.2-3B-Instruct-Q4_K_M") == "✨ Llama 3.2 3B Instruct 📴")
+    check("used-rules-not-ai", U.short("On-phone rules (offline): every column read") == "⚙ Fixed rules (not AI) 📴" && !U.steps("On-phone rules (offline): patterns")[0].ai)
+    check("used-sop-labels", U.short("Muse Spark 1.3 (Meta) • online") == "✨ Muse Spark 1.3 ☁" && U.short("Pramaan • offline (Llama-3.2-3B-Instruct-Q4_K_M)") == "✨ Llama 3.2 3B Instruct 📴")
+    check("used-meta-models", U.steps("SAM 3.1 (Meta, online)")[0].model == "SAM 3.1" && U.steps("Muse Glimmer 30B — Together AI")[0].model == "Muse Glimmer 30B" &&
+        U.steps("Whisper base (offline)")[0].model.startsWith("Whisper") && U.steps("same day rules")[0].model != "SAM 3.1")
+
     println("TableOcrTest: $n passed, $fails failed")
     if (fails > 0) kotlin.system.exitProcess(1)
 }

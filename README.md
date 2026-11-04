@@ -52,7 +52,7 @@ to the phone automatically, so the whole visit works offline.
 | Answers from the guides | **Llama 3.2 3B Instruct** (Q4_K_M, llama.cpp) + multilingual-e5-small search + mMiniLMv2 re-ranker | **Muse Spark 1.3** (Meta Model API) |
 | Voice note → official form, family explanation, ANM message, daily practice | Llama 3.2 3B | Muse Spark 1.3 |
 | Speech to text (Hindi / English) | Whisper (whisper.cpp) | **Muse Voice Transcribe** |
-| Photo text (slips, registers, MCP cards, medicine strips) | Google ML Kit (Latin + Devanagari) | — |
+| Reading photos (slips, registers, MCP cards, medicine strips) | Google ML Kit (Latin + Devanagari) + table rules + Llama 3.2 3B | **Muse Spark 1.3 vision**: reads the whole photo; Aadhaar blacked out on the phone first |
 | Drug-kit count from a photo | counted by hand | **SAM 3.1** |
 | Danger signs, visit schedules, stock, incentives | **Fixed government rules — never AI** | — |
 
@@ -63,6 +63,7 @@ to the phone automatically, so the whole visit works offline.
 | Meta model | Where it is used | Code |
 |---|---|---|
 | **Muse Spark 1.3** (Meta Model API) | Guide answers, voice-note → official form, family explanation, ANM message, daily practice (Cloud first) | `ArogyaModelClient.kt`, `ArogyaVisitAi.route()` |
+| **Muse Spark 1.3 vision** (Meta Model API) | Reading slip, register, MCP card and medicine photos (handwriting, any layout). Aadhaar boxes are blacked out on the phone before sending; the transcript goes through the same checks and the ASHA's review | `ArogyaPhotoVision.kt`, `ArogyaPhotoText.kt` |
 | **Muse Voice Transcribe** (Meta Model API) | Hindi / English voice notes | `ArogyaCloudUi.kt` (`ArogyaCloud.transcribe`) → `MetaModelApi.kt` |
 | **SAM 3.1** (Meta Model API) | Counting drug-kit items from a photo | `ArogyaCloudUi.kt` (`SamCountDialog`), `ArogyaDemoTour.kt` |
 | **Llama 3.2 3B Instruct** (Meta open weights, on the phone) | Everything above, offline, through llama.cpp | `LocalModelManager.kt`, `LlamaCppCore.kt`, `src/main/cpp/` |

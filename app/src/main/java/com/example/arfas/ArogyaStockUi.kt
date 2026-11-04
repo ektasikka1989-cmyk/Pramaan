@@ -350,8 +350,27 @@ fun MedScanDialog(hindi: Boolean, ai: ArogyaVisitAi, items: List<StockItem>,
     var ocrText by remember { mutableStateOf("") }
     var err by remember { mutableStateOf("") }
     var shotUri by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Uri?>(null) }
+    var onlineNote by remember { mutableStateOf("") }
+    // "Read online with Muse Spark": the same label photo, read again online when the phone's reading was incomplete.
+    fun readOnline() {
+        val bmp = bitmap ?: return
+        busy = true; onlineNote = ""; phase = tr("Muse Spark is reading the label…", "Muse Spark लेबल पढ़ रहा है…")
+        scope.launch {
+            try {
+                if (!withContext(Dispatchers.IO) { MetaOnline.ready(context) }) { onlineNote = tr("No internet or no Meta key. Connect, then press again.", "इंटरनेट या Meta key नहीं। जोड़कर फिर दबाएँ।"); return@launch }
+                val t = System.currentTimeMillis()
+                val text = ArogyaPhotoVision.transcribe(context, bmp, emptyList(), ArogyaPhotoText.Kind.MEDICINE)
+                if (text == null) { onlineNote = tr("Muse Spark could not read this label.", "Muse Spark यह लेबल नहीं पढ़ पाया।"); return@launch }
+                val (res, eng0, _) = withContext(Dispatchers.IO) { ai.scanMedicine(text) }
+                scan = res; ocrText = text; ms = System.currentTimeMillis() - t
+                engine = listOf(engine, ArogyaPhotoVision.LABEL, eng0).filter { it.isNotBlank() }.joinToString(" · ")
+                Log.i("ArogyaDemo", "AROGYA_MEDSCAN online name=\"${res.name}\" batch=\"${res.batch}\" expiry=\"${res.expiry}\" qty=${res.qty}")
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { onlineNote = "${e.message?.take(160)}" }
+            finally { busy = false; phase = "" }
+        }
+    }
     fun run(uri: Uri, temp: Boolean) {
-        busy = true; err = ""; scan = null; ocrText = ""; phase = tr("Reading the label…", "लेबल पढ़ रहे हैं…")
+        busy = true; err = ""; scan = null; ocrText = ""; onlineNote = ""; phase = tr("Reading the label…", "लेबल पढ़ रहे हैं…")
         scope.launch {
             val ocrProc = MLKitProcessor()
             try {
@@ -366,12 +385,19 @@ fun MedScanDialog(hindi: Boolean, ai: ArogyaVisitAi, items: List<StockItem>,
                 }
                 bitmap = bmp
                 val t = System.currentTimeMillis()
-                val ocr = withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) }
+                val phoneOcr = withContext(Dispatchers.IO) { ocrProc.recognizeText(bmp) }
+                val phoneScan = ArogyaMedScan.parse(phoneOcr)
+                // Online (Cloud first, or the phone's reading is incomplete): Muse Spark reads the label like a person.
+                val seen = if (ArogyaPhotoVision.wanted(context, phoneScan.name.isNotBlank() && phoneScan.batch.isNotBlank() && phoneScan.expiry.isNotBlank())) {
+                    phase = tr("Muse Spark is reading the label…", "Muse Spark लेबल पढ़ रहा है…")
+                    ArogyaPhotoVision.transcribe(context, bmp, emptyList(), ArogyaPhotoText.Kind.MEDICINE) } else null
+                val ocr = seen ?: phoneOcr
                 if (ocr.isBlank()) throw IllegalStateException(tr("No readable text on this photo", "फ़ोटो में पढ़ने लायक अक्षर नहीं मिले"))
                 ocrText = ocr
                 phase = if (ai.isBusy) tr("Waiting for the AI to finish the current answer…", "AI पिछला उत्तर पूरा कर रहा है, रुकिए…")
                     else tr("Finding name, batch and expiry…", "नाम, बैच और एक्सपायरी ढूँढ रहे हैं…")
-                val (res, eng, _) = withContext(Dispatchers.IO) { ai.scanMedicine(ocr) }
+                val (res, eng0, _) = withContext(Dispatchers.IO) { ai.scanMedicine(ocr) }
+                val eng = if (seen != null) ArogyaPhotoVision.LABEL + " · " + eng0 else eng0
                 scan = res; engine = eng; ms = System.currentTimeMillis() - t
                 Log.i("ArogyaDemo", "AROGYA_MEDSCAN name=\"${res.name}\" batch=\"${res.batch}\" expiry=\"${res.expiry}\" qty=${res.qty} engine=$eng ms=$ms")
             } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
@@ -409,6 +435,10 @@ fun MedScanDialog(hindi: Boolean, ai: ArogyaVisitAi, items: List<StockItem>,
                     .filter { it.second.isBlank() }.map { it.first }
                 if (notRead.isNotEmpty()) Text(tr("Not read from the label: ", "लेबल से नहीं पढ़ा: ") + notRead.joinToString(", ") + tr(" — enter it on the next screen.", " — अगली स्क्रीन पर लिखें।"),
                     color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                if (notRead.isNotEmpty() && !engine.contains("Muse Spark")) {
+                    val all = listOf(tr("name", "नाम") to s.name, tr("batch", "बैच") to s.batch, tr("expiry", "एक्सपायरी") to s.expiry, tr("quantity", "मात्रा") to (if (s.qty > 0) "x" else ""))
+                    ReadOnlineOffer(all.filter { it.second.isNotBlank() }.map { it.first }, notRead, hindi, busy, onlineNote) { readOnline() }
+                }
                 Text(if (matched.isNotBlank()) tr("Matches kit item: $matched", "किट की दवा मिली: $matched")
                     else tr("Not in your kit list — you can add it as a new item.", "किट सूची में नहीं है — नई दवा जोड़ सकती हैं।"),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)

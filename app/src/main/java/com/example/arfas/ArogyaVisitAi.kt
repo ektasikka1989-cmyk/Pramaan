@@ -371,7 +371,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val hasAnswer = text.isNotBlank()
         val provider = when (turn.provider) {
             AndroBaselineRuntime.Provider.LOCAL -> "Pramaan • offline (${runtime.localModelManager?.loadedModelFileName?.substringBeforeLast('.') ?: "local model"})"
-            AndroBaselineRuntime.Provider.CLOUD -> "Pramaan • online"
+            AndroBaselineRuntime.Provider.CLOUD -> "Muse Spark 1.3 (Meta) • online"
             else -> "Pramaan"
         }
         // Sources exactly as Pramaan presents them: document rows (title, pages, official link) and the
@@ -633,6 +633,7 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         try {
             // A card page is a table: ML Kit's plain text lists it column by column, so a vaccine and its date land on
             // different lines and the date cannot be trusted. Rebuild the rows from line positions when it is a photo.
+            var photo: Pair<android.graphics.Bitmap, List<ArogyaTableOcr.Line>>? = null
             val rowText = runCatching {
                 val ctx = appContext ?: return@runCatching ""
                 val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -640,12 +641,21 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
                 var sample = 1; while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2400) sample *= 2
                 val raw = ctx.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) }
                     ?: return@runCatching ""
+                val up = ArogyaPhotoGuard.upright(ctx, uri, raw)
                 val ocr = MLKitProcessor()
-                try { ArogyaTableOcr.rowText(ocr.recognizeLines(ArogyaPhotoGuard.upright(ctx, uri, raw))) } finally { runCatching { ocr.close() } }
+                try { val ls = ocr.recognizeLines(up); photo = up to ls; ArogyaTableOcr.rowText(ls) } finally { runCatching { ocr.close() } }
             }.getOrDefault("")
             val plain = listOf(staged.extractedText, staged.localVisualContext).filter { it.isNotBlank() }.joinToString("\n").trim()
-            val text = if (rowText.length >= 15) rowText else plain
-            Log.i(TAG, "AROGYA_CARD_TEXT rows=${rowText.lines().size} using=${if (rowText.length >= 15) "rows" else "plain"}")
+            // Online (Cloud first): Muse Spark reads the card like a person (handwritten dates stay on their vaccine's
+            // row), Aadhaar blacked out first. Its transcript goes through the same card reader and checks.
+            suspend fun vision(): String? {
+                val ctx = appContext ?: return null; val (bmp, ls) = photo ?: return null
+                return ArogyaPhotoVision.transcribe(ctx, bmp, ls, ArogyaPhotoText.Kind.CARD)?.let { ArogyaPhotoText.cardText(it) }?.takeIf { it.length >= 15 }
+            }
+            lastCardPhoto = photo
+            var seen = if (appContext != null && photo != null && ArogyaPhotoVision.wanted(appContext, rowText.length >= 15)) vision() else null
+            val text = seen ?: if (rowText.length >= 15) rowText else plain
+            Log.i(TAG, "AROGYA_CARD_TEXT rows=${rowText.lines().size} using=${when { seen != null -> "vision"; rowText.length >= 15 -> "rows"; else -> "plain" }}")
             check(text.length >= 15) { "No readable text was found. Take a closer photo in good light, card flat." }
             // Only values found in the card's own text are kept. Local-only: a card photo
             // is identifiers by design, and names must never reach a cloud prompt.
@@ -670,9 +680,35 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
                     Log.i(TAG, "AROGYA_EXTRACT_SPLIT feature=card_read parts=2 fields=${fields.size}")
                 }
             }
+            // Local first: the phone found nothing on the card → Muse Spark reads the photo (when online), same checks.
+            if (fields.isEmpty() && seen == null && appContext != null && photo != null && ArogyaPhotoVision.wanted(appContext, false)) {
+                vision()?.let { v ->
+                    val (o2, by2) = route("card_read", ArogyaAiExtras.cardPrompt(v), 900, cloud = false, cloudTokens = 1500, lang = ArogyaBudget.langOf(v)) { out ->
+                        ArogyaAiExtras.parseCard(out, v).takeIf { it.isNotEmpty() } }
+                    if (!o2.isNullOrEmpty()) { fields = o2; by = ArogyaPhotoVision.LABEL + " · " + by2; seen = v }
+                }
+            }
+            if (seen != null && !by.startsWith(ArogyaPhotoVision.LABEL)) by = ArogyaPhotoVision.LABEL + " · " + by
             Log.i(TAG, "AROGYA_TIMING event=card_read ms=${System.currentTimeMillis() - t} ocrChars=${text.length} fields=${fields.size}")
-            ArogyaCardReading(text, fields) to by
+            ArogyaCardReading(seen ?: text, fields) to by
         } finally { mgr.releaseTurnAttachments(claimed.map { it.id }, consumed = true) }
+    }
+
+    /** The last card photo read (bitmap + ML Kit lines), so the ASHA can have it read again online. */
+    @Volatile private var lastCardPhoto: Pair<android.graphics.Bitmap, List<ArogyaTableOcr.Line>>? = null
+
+    /**
+     * "Read online with Muse Spark" on a card the phone read incompletely: the same photo (Aadhaar blacked out)
+     * read by Muse Spark, then the same card reader and checks. Null when offline, no key, or nothing read.
+     */
+    suspend fun readCardOnline(): Pair<ArogyaCardReading, String>? = mutex.withLock {
+        val ctx = appContext ?: return@withLock null
+        val (bmp, ls) = lastCardPhoto ?: return@withLock null
+        val v = ArogyaPhotoVision.transcribe(ctx, bmp, ls, ArogyaPhotoText.Kind.CARD)?.let { ArogyaPhotoText.cardText(it) }?.takeIf { it.length >= 15 } ?: return@withLock null
+        val (o, by) = route("card_read", ArogyaAiExtras.cardPrompt(v), 900, cloud = false, cloudTokens = 1500, lang = ArogyaBudget.langOf(v)) { out ->
+            ArogyaAiExtras.parseCard(out, v).takeIf { it.isNotEmpty() } }
+        Log.i(TAG, "AROGYA_CARD_TEXT using=vision_on_request fields=${o?.size ?: 0}")
+        if (o.isNullOrEmpty()) null else ArogyaCardReading(v, o) to (ArogyaPhotoVision.LABEL + " · " + by)
     }
 
     /**

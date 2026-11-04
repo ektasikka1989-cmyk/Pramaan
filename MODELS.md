@@ -37,6 +37,7 @@ It is **not needed** for the demo: the drug-kit count uses **SAM 3.1** online, o
 | Model | Used for |
 |---|---|
 | Muse Spark 1.3 | Answers and form filling when **Cloud first** is on |
+| Muse Spark 1.3 (vision) | Reading photos of slips, registers, MCP cards and medicine strips (Cloud first, or when the phone's reading is incomplete). Aadhaar is blacked out on the phone before sending |
 | Muse Voice Transcribe | Voice notes |
 | SAM 3.1 | Drug-kit counting from a photo |
 

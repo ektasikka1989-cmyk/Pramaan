@@ -209,7 +209,12 @@ fun ArogyaRegisterTable(
 fun AiResultChip(provider: String, online: Boolean, ms: Long, hindi: Boolean) {
     fun tr(en: String, hi: String) = if (hindi) hi else en
     val secs = if (ms < 1000) tr("<1 s", "<1 से.") else tr("${ms / 1000} s", "${ms / 1000} से.")
-    AssistChip(onClick = {}, label = { Text("✨ ${provider.take(34)} · " + (if (online) tr("☁ online", "☁ ऑनलाइन") else tr("📴 offline", "📴 ऑफ़लाइन")) + " · $secs", style = MaterialTheme.typography.labelSmall) })
+    // Tap → a small box naming each model behind this answer (ArogyaAiUsedUi); any other tap closes it.
+    var open by remember { mutableStateOf(false) }
+    Box {
+        AssistChip(onClick = { open = !open }, label = { Text("✨ ${provider.take(34)} · " + (if (online) tr("☁ online", "☁ ऑनलाइन") else tr("📴 offline", "📴 ऑफ़लाइन")) + " · $secs", style = MaterialTheme.typography.labelSmall) })
+        if (open) AiStepsPopup(provider, hindi, ms, online) { open = false }
+    }
 }
 
 @Composable

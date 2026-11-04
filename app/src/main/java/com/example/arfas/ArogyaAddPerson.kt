@@ -206,6 +206,8 @@ object ArogyaPersonDup {
 object ArogyaPersonExtract {
     fun prompt(ocr: String): String = """Read this card or page and copy the person's details EXACTLY as printed.
 Only fill a line when the value is printed below; otherwise leave it blank. Never guess.
+If the values are in a table row with no headings, tell them apart by their form: a 10-digit number is the PHONE, a date is the LMP,
+a number like H-051 is the HOUSEHOLD, a short number is the AGE; the first person's name is NAME and the second is RELATIVE.
 Reply with exactly these lines, nothing else:
 NAME:
 RELATIVE:
