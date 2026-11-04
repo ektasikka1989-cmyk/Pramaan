@@ -1,243 +1,149 @@
-<p align="center">
-  <img src="tools/icon/pramaan_icon_1024.png" alt="Pramaan" width="132">
-</p>
+<p align="center"><img src="tools/icon/pramaan_icon_1024.png" alt="Pramaan icon" width="120"></p>
 
 <h1 align="center">Pramaan</h1>
-<p align="center"><b>An offline AI co-worker for India's ASHA community health workers.</b><br>
-One spoken visit note fills the official government forms, the Mother and Child Protection card and the registers —<br>
-on an ordinary Android phone, in Hindi or English, <b>with or without internet</b>.</p>
+
+<p align="center"><strong>An offline-first AI co-worker for India's ASHA community health workers.</strong><br>
+Ask an official SOP. See the exact source and page. Turn a home visit into accountable follow-up — even without a mobile signal.</p>
 
 <p align="center">
-  <img alt="Android" src="https://img.shields.io/badge/Android-7.0%2B%20arm64-3DDC84">
-  <img alt="Offline first" src="https://img.shields.io/badge/works-offline-1B8E3E">
-  <img alt="Llama 3.2 on device" src="https://img.shields.io/badge/Meta-Llama%203.2%20on%20device-0467DF">
-  <img alt="Muse Spark" src="https://img.shields.io/badge/Meta-Muse%20Spark%20%C2%B7%20Muse%20Voice%20%C2%B7%20SAM%203.1-0467DF">
-  <img alt="Licence MIT" src="https://img.shields.io/badge/licence-MIT-lightgrey">
+  <img alt="Android" src="https://img.shields.io/badge/Android-arm64-3DDC84">
+  <img alt="Offline first" src="https://img.shields.io/badge/offline--first-yes-168A45">
+  <img alt="Meta" src="https://img.shields.io/badge/Meta-Llama%203.2%20%7C%20Muse%20Spark%20%7C%20Muse%20Voice%20%7C%20SAM%203.1-0969DA">
+  <img alt="Licence" src="https://img.shields.io/badge/code-MIT-lightgrey">
 </p>
 
-| | |
+> **Hackathon prototype — fictional records only.** Pramaan supports trained frontline workers; it is not a diagnostic device, does not replace clinical judgment, and is not approved for live patient records. The demo people and records are synthetic.
+
+| Explore | Link or status |
 |---|---|
-| 🎬 **Demo video (3 min)** | **DEMO_VIDEO_LINK** |
-| 📱 **Download the app** | [**Pramaan v1.0 APK**](https://github.com/ektasikka1989-cmyk/Pramaan/releases/latest) (~700 MB — [why it is large](#why-the-apk-is-700-mb)) · [install in 3 steps](#try-it-in-10-minutes) |
-| 🧠 **Models** | [MODELS.md](MODELS.md) · on-phone Meta models: [Pramaan_Meta_Models](https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models) (3.3 GB, downloaded by the in-app setup) |
-| 🏆 **Hackathon** | Meta Global AI Developer Hackathon 2026 · theme **Build for Your World** · [Pramaan at a glance](#pramaan-at-a-glance) |
-| 👤 **Author** | Ekta Sikka |
+| 🎬 **Three-minute demo** | **Coming soon — video in production** |
+| 📱 **Android APK** | **Release pending final installation test** — [Releases](https://github.com/ektasikka1989-cmyk/Pramaan/releases) |
+| 📚 **Models and setup** | [MODELS.md](MODELS.md) · [Hugging Face model pack](https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models) (availability/download to be verified) |
+| 🔒 **Data handling** | [PRIVACY.md](PRIVACY.md) |
+| 🏆 **Entry** | Meta Global AI Developer Hackathon 2026 · Build for Your World · Ekta Sikka |
 
-> **Scope.** Pramaan is a job aid for trained government health workers, not medical advice for patients. Answers are
-> retrieved from official government guides and cited to the page; danger signs and schedules are fixed rules from
-> those guides; the ASHA approves every AI value before it is saved. All people in the demo are fictional.
+## The problem: one frontline worker, hundreds of decisions
 
----
+India has roughly **ten lakh ASHAs** working at the last mile of community healthcare. The commonly cited planning norm is approximately **one ASHA per 1,000 rural residents**, although actual workloads vary. For families depending on her, a missed immunisation follow-up, an unrecorded pregnancy visit or a delayed referral can matter. Across lakhs of workers, small improvements in everyday work could benefit **many lakhs of people**; this is the potential reach, **not a measured outcome** of Pramaan.
 
-## Contents
-[The problem](#the-problem) · [What Pramaan does](#what-pramaan-does) · [The three demo workflows](#the-three-demo-workflows) · [At a glance](#pramaan-at-a-glance) ·
-[Meta models](#how-meta-models-power-pramaan) ·
-[How it works](#how-it-works) · [Offline vs online](#what-works-offline-and-what-the-cloud-adds) ·
-[Safety and privacy](#safety-privacy-and-clinical-responsibility) · [Try it](#try-it-in-10-minutes) ·
-[Technical depth](#technical-depth) · [Built during the hackathon](#what-was-built-during-the-hackathon-26-oct--4-nov-2026) ·
-[Build from source](#build-from-source) · [Honest status](#honest-status-and-limits) · [Licence](#licence-and-credits)
+Her challenge is not simply answering a medical question:
 
----
+1. **Guidelines keep growing and changing.** ASHAs work with hundreds of pages of training modules, SOPs, programme instructions and updates, often in different languages. Finding the applicable paragraph during a visit is difficult; checking whether an action agrees with it is harder.
+2. **Work is fragmented.** A single home visit can involve an MCP card, HBNC/HBYC or ANC form, village and immunisation registers, stock entries, a referral and the next visit date. Duplicate writing makes missed entries and follow-ups more likely.
+3. **The family needs an explanation.** The worker must convert technical guidance into understandable Hindi or another local language, while making clear when a clinician or ANM is needed.
+4. **Handoffs need evidence and accountability.** An ANM or PHC needs a usable summary of what was observed, done, referred and left pending — not a disconnected pile of notes. A record of completed and due actions helps the worker review her own work too.
+5. **Connectivity cannot be assumed.** In a village without a signal, a cloud-only chatbot cannot reliably support a visit.
 
-## The problem
-India's community health system rests on about **one million ASHAs** (Accredited Social Health Activists). Each one
-looks after roughly **1,000 people** in her village: every pregnancy, every newborn, every sick child.
+**Pramaan's answer:** a source-citing **Ask SOP** assistant connected to a visit workflow, rather than a general chatbot. It helps the ASHA find guidance, inspect the evidence, capture a visit, review suggested entries, update records, track pending work, and prepare a summary for the ANM or PHC. The worker remains responsible for confirmation and escalation.
 
-For every home visit she must fill **a paper form, the family's MCP card, several registers and a drug-kit record** —
-by hand, often where there is **no mobile signal**. The answers she needs ("which danger signs need urgent referral?",
-"how do I make ORS at home?") are spread across **hundreds of pages of official training modules**. Paperwork takes
-time away from care, and a missed danger sign or a skipped vaccine has real consequences.
+## The signature feature: Ask SOP — guidance with proof
 
-Generic chatbots do not help her: they need internet, they do not know the government's forms, and they can make up
-medical answers.
+Ask a question in **Hindi, English or Hinglish** — for example, *“What newborn danger signs require urgent referral?”* Pramaan searches its locally stored government-guide knowledge base and presents:
 
-## What Pramaan does
-| | |
-|---|---|
-| 🗣 **Speak once, every record updates** | One voice note in Hindi or English fills the **official** visit form (MCP card ANC / PNC / newborn, HBNC Annexure 9, HBYC, sick child, family planning). The same save updates the MCP card, the registers, the drug-kit stock and the next due date. Every value shows the words it came from. |
-| 📚 **Ask the official guides** | Answers come only from government ASHA modules stored on the phone, with the **document and page**, a one-tap PDF and a "check online" option. Hindi, English and Hinglish questions. |
-| 📷 **Read paper records** | Photograph a registration slip, a register page, the MCP card or a medicine strip: the details are read (on the phone, or by Meta Muse Spark online) and shown for the ASHA to confirm. Messy real-world photos are handled: tables without headings, names on two lines, tilted shots, OCR mistakes flagged ("Mobile has 9 digits — check it"), wrong documents rejected. |
-| 🚨 **Danger signs by fixed rules** | Newborn, pregnancy, mother and sick-child danger signs come from the official guides as fixed rules — never from AI — and trigger a referral and a WhatsApp message to the ANM. |
-| 💊 **Registers and drug kit** | Village, pregnancy (ANC), immunization and couple registers; stock register with low-stock alerts, refill requests, medicine-strip scanning and SAM 3.1 counting; monthly report and incentive estimate. |
-| 🔒 **Her data stays hers** | Encrypted on the phone, with an encrypted backup to her own Google Drive. No government server, no third-party backend. |
+- a concise, task-relevant response;
+- the **source document, specific page and supporting passage** so the ASHA can check what the guidance actually says;
+- access to the underlying PDF when available, plus follow-up questions;
+- an optional **Check online** route for eligible cloud use, clearly distinguished from the offline source answer.
 
-## The three demo workflows
-Home → **Demo** runs three complete, real ASHA visits. Every screen first shows its **aim**, then does the work live,
-and after each action lists **what changed, with a button to open the real card, register or summary**.
+This is more than a citation pasted beneath an AI reply: the intended workflow is **ask → inspect source → decide with professional judgment → record action → review follow-up**. A citation makes verification possible; it **does not guarantee that an answer is clinically correct**. Current local content must be updated when official guidance changes.
 
-| Workflow | What happens |
-|---|---|
-| **1 · New pregnancy** (Sarita, 10 weeks) | Registration slip photo → added to the village and pregnancy registers (EDD by rule) → the right form opens (MCP card, ANC visit 1) → **one voice note fills 20 rows**: weight, height, pulse, BP, Hb, urine albumin and sugar, blood group, HIV test, Td-1, delivery hospital, complaints → danger check: none → ask the guides (pregnancy danger signs) → explanation for the family in Hindi → ASHA confirms → MCP card (pages 3–6), ANC register, stock (pregnancy test kit) and next due date update together |
-| **2 · Newborn day-7 visit** (Baby of Neha) | MCP card photo: birth vaccines read with the ANM's dates → HBNC form Day 7 from a voice note → **danger sign: fever and poor feeding → refer** → WhatsApp to the ANM → ask the guides (cord care) → family advice → save: HBNC form, MCP card page 7 (linked), growth chart, referral, the mother's medicines from the kit |
-| **3 · Sick child** (Rohan, diarrhoea) | Voice note → sick-child form → no danger sign, treat at home → ask the guides (ORS at home) → advice for the mother → ORS and zinc leave the kit → zinc runs out → refill request to the ANM → new strip scanned into stock (or the kit counted with SAM 3.1) |
+## From one visit to an accountable workflow
 
-## Pramaan at a glance
-| | What it means | See it |
+| At the doorstep | What Pramaan helps do | What stays traceable |
 |---|---|---|
-| 🌍 **Real-world impact** | A daily burden for about a million frontline health workers, solved where they work: offline, on an ordinary phone, in Hindi. Pramaan fills the **real government formats** instead of inventing new ones, and danger signs never depend on AI | [The problem](#the-problem) · Workflow 2 (referral) · [`docs/forms_verification.md`](docs/forms_verification.md) |
-| 🧠 **Four Meta models, one workflow** | Llama 3.2 on the phone for every AI step offline; Muse Spark (text and vision) for better answers and photo reading online; Muse Voice for Hindi/English notes; SAM 3.1 to count drug-kit items. One switch moves every AI action between phone and cloud, and every answer is tagged with the model that produced it | [Meta models](#how-meta-models-power-pramaan) · tap any ✨ tag in the app |
-| 🎬 **A complete, working product** | Three end-to-end home visits; each screen shows its aim, runs the AI live and links to the real records it changed — offline (airplane mode) and online | Demo video · Home → Demo |
-| ⚙️ **Engineering depth** | llama.cpp on Android, on-device RAG with page citations, grounded form filling with a fixed-rule backup, table reading from OCR positions, Aadhaar redaction before any upload, a streaming model installer, 52 host test suites | [Technical depth](#technical-depth) · [`tools/host-tests/`](tools/host-tests) |
-| 🏡 **Built for our world** | Designed from first-hand knowledge of the ASHA's day: her forms, her registers, her village without signal | [The problem](#the-problem) |
+| **Plan** | See due ANC, HBNC, HBYC, immunisation and missed visits | Person, visit type, due date, pending tasks |
+| **Capture** | Speak a Hindi/English note; read a slip or MCP card photo; suggest fields for the relevant form | Proposed values and their supporting note or extracted text |
+| **Verify** | Ask SOP with document/page citation; review fixed-rule danger-sign prompts | Source reference, worker review, referral decision |
+| **Explain** | Prepare family-friendly instructions in accessible language | Guidance the worker chooses to communicate |
+| **Record** | Confirm and save to linked visit forms, digital MCP-card sections, registers and drug-kit stock | Completed entries, quantities and next due date |
+| **Coordinate** | Prepare a referral or visit summary for an **ANM/PHC**, including a WhatsApp message where applicable | A shareable handoff; **sending is user-controlled**, not automatic government-system integration |
+| **Follow up** | Review upcoming visits, unresolved referrals, stock shortages, refill requests and monthly summaries | What is done, due, or still needs attention |
 
-## How Meta models power Pramaan
-| Meta model | Where | What it does in the visit | Why this model | Code |
-|---|---|---|---|---|
-| **Llama 3.2 3B Instruct** (open weights, Q4_K_M) | **On the phone**, llama.cpp | Guide answers, voice note → official form, family explanation, ANM message, daily practice, reading slips when the rules need help — **all offline** | Small enough to run on a 6 GB phone, strong in Hindi and English, and lets the whole visit work with no signal | `LocalModelManager.kt`, `LlamaCppCore.kt`, `src/main/cpp/` |
-| **Muse Spark 1.3** | Meta Model API | Better guide answers (grounded on the same passages), form filling, explanations, messages — when **Cloud first** is on, with an automatic fallback to the phone | Highest-quality answers when there is signal, checked by the same grounding rules as the phone's answers | `ArogyaVisitAi.route()`, `PocketRagEngine.kt`, `ArogyaModelClient.kt` |
-| **Muse Spark 1.3 — vision** | Meta Model API | Reads whole photos like a person (handwriting, any layout) for slips, registers, MCP cards and medicine strips; also on demand via **"Read online"** when the phone's reading is incomplete. **Aadhaar is blacked out on the phone before sending** | Real paper records are messy; a vision model reads what OCR cannot | `ArogyaPhotoVision.kt`, `ArogyaPhotoText.kt` |
-| **Muse Voice Transcribe** | Meta Model API | Hindi / English (and mixed) voice notes | Code-switched speech is how ASHAs actually talk | `ArogyaCloud.transcribe` → `MetaModelApi.kt` |
-| **SAM 3.1** | Meta Model API | Counts drug-kit items (e.g. ORS sachets) from one photo; the ASHA confirms the count | Counting by segmentation instead of by hand | `SamCountDialog` in `ArogyaCloudUi.kt`, `ArogyaDemoTour.kt` |
+Pramaan includes document-based adaptations and application-specific fields. It is **not an officially endorsed government record system**. See the [form-by-form comparison](docs/forms_verification.md).
 
-**One setting, every AI action.** *Local first* uses the phone and the cloud only if the phone cannot; *Cloud first*
-uses Meta's cloud models and falls back to the phone with no signal, a slow network (25 s limit) or a failed check.
-The fallback is never silent: the answer's tag says, for example, *"✗ Muse Spark — tried, not used: no internet →
-✨ Llama 3.2 on the phone"*.
+<!-- SCREENSHOTS: Add verified, redacted images from the real app under docs/screenshots/. Suggested: dashboard, Ask SOP with citation, voice-to-form review, MCP/register update, referral summary, airplane-mode result. -->
 
-## How it works
-```mermaid
-flowchart LR
-    A["🗣 Voice note<br/>(Hindi / English)"] --> B{"Speech to text<br/>Muse Voice ☁ / Whisper 📴"}
-    P["📷 Slip / card photo"] --> Q{"Read the photo<br/>ML Kit + rules 📴 / Muse Spark vision ☁"}
-    B --> C{"Fill the official form<br/>Muse Spark ☁ / Llama 3.2 📴"}
-    C --> D["Grounding check<br/>evidence + numbers in her words<br/>+ fixed-rule backup"]
-    D --> E["Danger signs<br/>fixed government rules"]
-    E --> F["ASHA reviews and confirms ✓"]
-    Q --> F
-    F --> G["One save"]
-    G --> H["Official form"]
-    G --> I["MCP card"]
-    G --> J["Registers"]
-    G --> K["Drug-kit stock"]
-    G --> L["Next due date / referral"]
-```
+## Three connected demonstration journeys
+
+The built-in **Home → Demo** presents fictional end-to-end examples. Each journey should be tested on the released APK before being described as fully verified on-device.
+
+| Scenario | Journey and outcome |
+|---|---|
+| **Pregnancy — Sarita, 10 weeks** | Read a registration slip → create village/pregnancy entries → capture ANC observations by voice → review suggested MCP/ANC fields → **Ask SOP** about pregnancy danger signs with a cited page → prepare a family explanation → confirm the record and next visit. |
+| **Newborn — Baby of Neha, day 7** | Read the MCP card → capture an HBNC visit → flag reported fever/poor feeding for urgent assessment → consult the cited newborn guide → prepare an ANM referral message → review linked HBNC, MCP and follow-up entries. |
+| **Sick child — Rohan, diarrhoea** | Capture symptoms → check danger signs and the relevant SOP → explain ORS guidance from the source → record worker-confirmed ORS/zinc stock usage where appropriate → trigger low-stock/refill workflow. |
+
+Other supported workflow areas include family planning, routine immunisation tracking, child growth records, village and pregnancy registers, repeat/missed visits, paper-to-digital OCR, medicine-strip scanning, stock counting, monthly reports, incentive estimates and daily practice. Feature behaviour and limitations are documented in the [handover](docs/HANDOVER.md) and [known gaps](docs/GAP_ANALYSIS.md).
+
+## Meta models make this practical
+
+Pramaan combines **on-device Meta Llama** with the **new Meta Model API models**, using each for a different part of the ASHA's work.
+
+| Model | Role | Connectivity |
+|---|---|---|
+| **Llama 3.2 3B Instruct (quantised)** | Locally grounded answers over retrieved SOP passages, draft form fields, family explanations and referral text | **On phone**, after one-time model installation |
+| **Muse Spark 1.3** | Optional cloud reasoning and writing over the same retrieved evidence; also a vision route for difficult photographed documents | **Online**, with a working Meta Model API key |
+| **Muse Voice Transcribe** | Optional Hindi/English or mixed-language speech transcription | **Online**, with a working key |
+| **SAM 3.1** | Optional object segmentation/counting for photographed drug-kit items, subject to worker confirmation | **Online**, with a working key |
+
+The app also uses **Whisper** for local speech recognition, **ML Kit** for local OCR, and local search/re-ranking models to retrieve SOP passages. These are supporting components, not all Meta models. **Local first** and **Cloud first** selection, fallback indicators and actual cloud availability must be verified in the installed build. Offline capability refers to functionality **after the required local model/guide setup**; it is not a claim that every feature works before setup.
 
 ```mermaid
-flowchart LR
-    Q["Question"] --> R["On-phone search<br/>multilingual-e5 + mMiniLM re-ranker<br/>over the official guides"]
-    R --> S{"Answer from the passages<br/>Muse Spark ☁ / Llama 3.2 📴"}
-    S --> T["Proof checks<br/>numbers and terms must be in the passages"]
-    T --> U["Answer + document + page + PDF"]
+flowchart TD
+    A["Visit note or SOP question"] --> B["Local search, speech and OCR"]
+    B --> C["Llama 3.2 on-device or optional Muse cloud models"]
+    C --> D["Cited answer or proposed fields"]
+    D --> E["ASHA checks source and confirms"]
+    E --> F["Record, follow-up and ANM/PHC handoff"]
 ```
 
-**Agentic, multi-step, with a human in the loop.** One note becomes: the right official form for that person and
-visit → values with evidence → danger rules → referral and ANM message → card, registers, stock and next visit — with
-grounding checks between steps and the ASHA's approval before anything is written.
+## Why offline changes the situation
 
-## What works offline and what the cloud adds
-| Feature | 📴 Offline (phone only) | ☁ Online (with a Meta key) |
-|---|---|---|
-| Visit forms from a voice note | ✅ Whisper + Llama 3.2 + fixed-rule backup | Muse Voice + Muse Spark |
-| Answers from the official guides, with page | ✅ Llama 3.2 over on-phone search | Muse Spark on the same passages; online cross-check |
-| Reading slips, cards, medicine strips | ✅ ML Kit + table rules + Llama 3.2 | Muse Spark vision reads the whole photo |
-| Danger signs, schedules, stock, incentives | ✅ fixed government rules | same (never AI) |
-| Registers, MCP card, PDF, WhatsApp text | ✅ | same |
-| Drug-kit counting | by hand | SAM 3.1 |
+In a no-signal area, the worker should still be able to **find locally installed guidance and citations, capture the visit, review records, see due work and prepare the next action**. This does not eliminate the need for clinical referral or connectivity when a message must be sent. Offline records are not silently synchronised with any government portal.
 
-## Safety, privacy and clinical responsibility
-- **Grounded AI.** A form value is kept only if its evidence is in the ASHA's own words (or the document's text) and its numbers appear in that evidence. Guide answers must be supported by the retrieved passages. Nothing is invented: what could not be read is shown as "not captured".
-- **The ASHA decides.** Every AI value is shown with its evidence and approved before it is saved. Doubtful values are flagged, never silently fixed.
-- **Fixed rules for anything clinical-critical.** Danger signs, visit schedules, EDD and incentives come from the official guides as rules, not AI.
-- **Clinically correct timing.** For example, the first-trimester visit records Td-1 and a pregnancy test, and does not give IFA or calcium before the second trimester, as the MCP card says.
-- **Privacy by design.** Data is encrypted on the phone (AES-GCM, Android Keystore). Text sent to the cloud has names, relatives, village, phone, RCH ID and household removed. Photos go online only with Cloud first or when the ASHA presses "Read online", and **Aadhaar numbers are blacked out on the phone first**. Aadhaar is stored encrypted and shown masked (XXXX XXXX 1234).
-- **No backend.** No government or third-party server; backup is an encrypted file in her own Google Drive. API keys are entered by the user, stored encrypted, and never in this repository.
+## A platform that could also serve ANMs
 
-## Try it in 10 minutes
-**Phone:** Android 7.0+ (arm64), **6 GB RAM recommended**, about **7 GB free** during setup (about 4.5 GB after).
+The same architecture — **role-specific knowledge base + cited guidance + forms + schedules + accountable handoffs** — could be adapted for **Auxiliary Nurse Midwives (ANMs)** and other frontline roles. An ANM version would need **more than swapping PDFs**: its own validated knowledge base, scope-of-practice rules, workflows, permissions, forms, training and clinical/privacy review. This is a **future extension**, not a completed ANM deployment.
 
-1. **Install** [Pramaan-v1.0-hackathon.apk](https://github.com/ektasikka1989-cmyk/Pramaan/releases/latest) (allow "install unknown apps").
-2. **Open Pramaan — the setup wizard does the rest** (3 steps, each can be skipped, English or Hindi):
-   1. **Offline AI models** — downloads the Meta models from Hugging Face (3.3 GB; Wi-Fi recommended; continues in the background; resumes after a dropped signal) and installs them. Already have the zip? Choose it from the phone.
-   2. **Health guide** — installed from inside the app.
-   3. **Meta AI key (optional)** — "Create a free key" opens [dev.meta.ai](https://dev.meta.ai/); paste it and tap **Test and save**.
+## Safety, privacy and responsible use
 
-   The last screen says plainly what works with what you installed. A yellow strip on Home offers **Finish setup** for any skipped step.
-3. **Open Demo** and pick a workflow. Try it once in **airplane mode** and once with **Cloud first** — tap the ✨ tag on any answer to see which model produced it.
+- **Human review:** AI-generated form values are suggestions. The ASHA must verify source text, captured observations and actions before saving.
+- **Clinical boundaries:** Rule-based danger-sign prompts can miss information not captured in a note. They do not replace examination, judgement or urgent referral protocols.
+- **Source boundaries:** Retrieved government material may be old or incomplete; cited pages allow inspection but do not establish current approval.
+- **Fictional-data prototype:** Do not enter identifiable real patient information in this hackathon build.
+- **Cloud disclosure:** If enabled, Meta Model API may receive selected text, audio, images and retrieved passages. Identifier filtering and photo redaction are risk-reduction mechanisms, **not guarantees of anonymity**. See [PRIVACY.md](PRIVACY.md).
+- **No official integration claimed:** ANM/PHC handoff is a worker-controlled summary/message, not direct write access to RCH or government systems.
 
-Test photos (slip, MCP card, medicine strips, ORS sachets) and the values each workflow expects: [`docs/TEST_PHOTO_PROMPTS.md`](docs/TEST_PHOTO_PROMPTS.md).
+## Try the prototype
 
-### Why the APK is ~700 MB
-Pramaan is built to work **with no internet from the first minute**, so the APK carries its offline assets:
-offline speech recognition (**Whisper**), the multilingual **search and re-ranking models** that find the right page in
-the guides (English, Hindi, Hinglish), the **official guide database** with its embeddings, document templates, and
-the native AI runtimes (llama.cpp, ONNX Runtime, ML Kit). Only the large Meta language model (3.3 GB) is downloaded
-separately by the setup wizard, so it can be fetched on Wi-Fi.
+1. **Release:** Once published, download the APK from [GitHub Releases](https://github.com/ektasikka1989-cmyk/Pramaan/releases). No tested public APK is linked here yet.
+2. **Device:** Android arm64; approximately 6 GB RAM recommended. Allow sufficient storage and Wi-Fi for the multi-GB model pack; consult [MODELS.md](MODELS.md).
+3. **Setup:** Install the offline model pack and guide database through the in-app setup flow. A Meta Model API key is optional for online model features; availability and billing are determined by Meta.
+4. **Demo:** Open **Home → Demo** with fictional data. First test installed local guidance and an Ask SOP citation in airplane mode; then test any configured cloud pathway separately.
+5. **Proof:** Check the cited PDF/page, confirm changes in the linked record and inspect the pending visit/referral/stock summary.
 
-## Technical depth
-- **On-device LLM:** Llama 3.2 3B (Q4_K_M) through a llama.cpp JNI bridge with streaming, warm-up, cancellation and a context budget per feature (`LocalModelManager.kt`, `LlamaCppCore.kt`, `src/main/cpp/`).
-- **On-device RAG with citations:** multilingual-e5-small embeddings + mMiniLMv2 cross-encoder re-ranking over a SQLite database built from official documents; answers carry document, page and a PDF link; numeric and term "proof" checks; 100 verified answers as a fallback layer.
-- **One router for every AI action** (`ArogyaVisitAi.route()`): Local first / Cloud first, 25 s cloud deadline, network-loss detection, automatic phone fallback, and a recorded reason for every fallback.
-- **Grounded form filling** (`ArogyaFormSpecs.kt`): only the form rows relevant to the note are sent, partial replies are rescued, and fixed rules fill vitals, medicines and danger signs (English and Hindi, clause-level negation) even with no model at all.
-- **Reading real paper** (`ArogyaTableOcr.kt`): ML Kit word boxes → cells → rows → columns, headings in any wording or none at all, tilt-tolerant row fitting, merged-cell splitting, fuzzy category words, OCR digit fixes — tested against real OCR of a real photo.
-- **Privacy before upload** (`ArogyaPhotoText.kt`): Aadhaar regions located from OCR boxes and blacked out on the bitmap before any cloud call.
-- **Official documents as code:** the MCP card and visit forms rendered in their printed layouts, with linked saves (an HBNC Day-7 visit also fills MCP card page 7 for baby and mother).
-- **Setup wizard:** Android DownloadManager (background, resume, Wi-Fi only), free-space checks, and a streaming zip installer that writes each model straight to its place.
-- **Tests:** 52 pure-Kotlin host test suites (about 1,270 checks), including `AshaJourneyTest` (all three workflows end to end) and `RealLifeTest` (repeat visits, missed visits, danger signs said only in words, empty kit, backup and restore). See [`tools/host-tests/`](tools/host-tests).
+For sample input images and expectations, see [synthetic test-photo prompts](docs/TEST_PHOTO_PROMPTS.md). Performance measurements and remaining gaps are in [benchmark notes](docs/benchmark/final.md) and [GAP_ANALYSIS.md](docs/GAP_ANALYSIS.md).
 
-## What was built during the hackathon (26 Oct – 4 Nov 2026)
-**Existed before the event** (the author's own earlier work): the on-device LLM runtime (llama.cpp bridge and model
-manager) and the RAG retrieval engine (guide search over a local database).
+## Architecture, testing and source
 
-**Built during the event — the whole Pramaan app on top of them:**
-- the ASHA workflow: visit planning from official schedules, the guided visit and the three demo workflows;
-- voice note → official forms (MCP card ANC / PNC / baby care / immunization, HBNC Annexure 9, HBYC, sick child, family planning) with evidence and a fixed-rule backup;
-- the official MCP card renderer and PDF output in the printed layouts;
-- registers (village, pregnancy, immunization, couples, vital events), drug-kit stock register, refill requests, monthly report and incentive estimates;
-- danger-sign rules, referral and the WhatsApp message to the ANM; family explanation; daily practice;
-- photo features: people from slips and register pages, MCP card reading, medicine-strip scan, SAM 3.1 kit count; Muse Spark vision with Aadhaar redaction; "Read online"; wrong-document warnings;
-- the single Local first / Cloud first router, Meta Model API integration (Muse Spark text and vision, Muse Voice Transcribe, SAM 3.1), model tags on every answer, identifier scrubbing, encrypted storage and Drive backup;
-- the first-run setup wizard (Hugging Face downloads, Meta key), the Pramaan icon;
-- RAG changes for Pramaan: citations to document and page with one-tap PDF, follow-up questions, Hindi/Hinglish queries, the verified-answers layer, proof checks and online cross-check;
-- the guide database built from official documents, and the host test suites.
-
-The git history starts on 1 Nov 2026: the first commit is a snapshot of the work from 26–31 Oct, and every later step
-is its own commit. [`docs/batch_reports/`](docs/batch_reports) records each batch of work, what changed and how it was tested.
-
-## Build from source
-Requirements: Android Studio (compileSdk 36), JDK 17+, Android SDK 36, **NDK 26.1.10909125**, CMake (SDK Manager).
+- Android application with llama.cpp on-device inference, Whisper speech-to-text, ML Kit OCR, SQLite-based guide retrieval, multilingual embeddings/re-ranking, rule-backed forms and optional Meta Model API calls.
+- The repository includes [form verification](docs/forms_verification.md), [verified-QA material](docs/verified_qa/), [host tests](tools/host-tests/) and a [developer handover](docs/HANDOVER.md). Host-test results do **not** prove complete Android or clinical validation.
+- The supplied source may require separately licensed, large local assets to produce an equivalent APK; see [MODELS.md](MODELS.md).
 
 ```bash
 git clone https://github.com/ektasikka1989-cmyk/Pramaan.git
 cd Pramaan
-./gradlew :app:assembleDebug        # Windows: gradlew.bat :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assembleDebug
 ```
 
-The large offline assets are **not in git** (GitHub's 100 MB file limit and their own licences); the released APK
-contains them. To build an equivalent APK, place them under `app/src/main/assets/` — see [MODELS.md](MODELS.md):
-`semantic/` (multilingual-e5-small, ONNX), `reranker/` (mMiniLMv2, ONNX), `voice/stt/whisper/model.bin` (Whisper).
-The guide database, document templates and growth tables are in the repository.
+Requirements and detailed build guidance: Android Studio, Android SDK 36, JDK 17, NDK 26.1.10909125 and CMake; see the [handover](docs/HANDOVER.md). Build success should be confirmed in the target environment.
 
-**Tests** (no device needed): [`tools/host-tests/README.md`](tools/host-tests/README.md).
+## What is new for the hackathon
 
-### Repository layout
-```
-app/src/main/java/com/example/arfas/
-  Arogya*.kt            Pramaan's own code: visit flow, forms, registers, demo, AI routing, setup
-                        (an earlier internal name is kept in file names on purpose)
-  …                     the on-device AI platform: llama.cpp bridge, RAG, Whisper, OCR, Meta Model API client
-app/src/main/cpp/       llama.cpp JNI bridge
-whisper/, third_party/  whisper.cpp module (MIT)
-app/src/main/assets/    guide database, document templates, growth tables
-docs/                   product and code guide (HANDOVER), forms evidence, verified Q&A, benchmarks, reports
-tools/                  host tests, icon script, demo photo generator, benchmark scripts
-```
-Developer guide: [`docs/HANDOVER.md`](docs/HANDOVER.md) · documentation index: [`docs/README.md`](docs/README.md).
+The author's prior work included the local inference and retrieval foundations. During the 26 October–4 November 2026 hackathon period, Pramaan was built around those foundations with ASHA-oriented visit planning; linked forms/MCP/registers; the Ask SOP citation experience; speech and photo capture; danger-sign and follow-up rules; stock/referral/report workflows; the Local/Cloud routing layer; Meta model integrations; setup and tests. [Development batch reports](docs/batch_reports/) document the work. The first public Git commit is a later snapshot, not proof by itself of the original development date.
 
-## Official sources
-- MCP Card (MoHFW / MoWCD), Handbook for ASHA Facilitators (Annexure 9 home-visit form), HBNC and HBYC guidelines, ASHA training modules — form evidence in [`docs/forms/`](docs/forms) and [`docs/forms_verification.md`](docs/forms_verification.md).
-- Each guide answer cites its document and page. 100 verified questions and answers with a doctor review sheet: [`docs/verified_qa/`](docs/verified_qa).
+## Sources, credits and status
 
-## Honest status and limits
-- Developed and tested on one arm64 Android phone during the hackathon; logic covered by the host tests.
-- Llama 3.2 3B needs a phone with about 6 GB RAM; answers on the phone take seconds, not milliseconds.
-- Handwriting that is hard to read offline is flagged for the ASHA to type or to read online with Muse Spark.
-- Benchmarks and what is not yet measured: [`docs/benchmark/final.md`](docs/benchmark/final.md). Known gaps: [`docs/GAP_ANALYSIS.md`](docs/GAP_ANALYSIS.md).
-- **Next:** a pilot with ASHAs and their ANM, more state-specific registers, a smaller APK variant, and integration hooks for the government's RCH portal export format.
+Content is drawn from ASHA/NHM/MoHFW and related official publications; see [forms evidence](docs/forms_verification.md) and the source information supplied in the guide database. The documentation may not be the latest version for every programme or state. Pramaan is not affiliated with or endorsed by MoHFW, NHM, or Meta.
 
-## Licence and credits
-- Pramaan's code: **MIT** — [`LICENSE`](LICENSE).
-- **Built with Llama.** Llama 3.2 is licensed under the [Llama 3.2 Community License](https://www.llama.com/llama3_2/license/), Copyright © Meta Platforms, Inc. All Rights Reserved.
-- Meta Muse Spark, Muse Voice Transcribe and SAM 3.1 are used through the Meta Model API with the user's own key.
-- whisper.cpp / Whisper: MIT · ONNX Runtime: MIT · Sherpa-ONNX: Apache-2.0 · multilingual-e5-small: MIT · mMiniLMv2 re-ranker: Apache-2.0 · Google ML Kit: Google's terms.
-- Official guides and forms: Government of India (MoHFW / NHM / NHSRC); cited, not modified.
+Pramaan application code: [MIT License](LICENSE), subject to third-party notices. Llama 3.2 has a separate [Meta Llama Community License](https://www.llama.com/llama3_2/license/). Other components and model weights retain their respective licences; see [MODELS.md](MODELS.md). **Current status:** prototype; expanded field, accessibility, clinical and privacy validation are future work.
