@@ -91,7 +91,7 @@ Additional retrieved evidence is visible in the [second-source screenshot](docs/
 |---|---|
 | <img src="docs/screenshots/09-meta-tools.jpg" alt="AI technologies used by workflow" width="320"> | <img src="docs/screenshots/10-workflow-timing.jpg" alt="Illustrative time comparisons" width="320"> |
 
-The in-app manual timings are **estimates**, not controlled measurements of time saved. App timings are example runs on one device; they are not performance guarantees.
+The in-app manual timings are **estimates**, not controlled measurements of time saved. App response times were measured on a test device and are not performance guarantees. The ≈43-minute potential saving is illustrative: no field study has validated this productivity claim, and actual results depend on the task, worker and device.
 
 ## From one visit to an accountable workflow
 
@@ -144,6 +144,8 @@ The app also uses **Whisper** for local speech recognition, **ML Kit** for local
 | **SAM 3.1** | Meta Model API | Counts drug-kit items from a photo; the ASHA confirms the count | `SamCountDialog` (`ArogyaCloudUi.kt`) |
 
 **One setting for every AI step.** *Local first* uses the phone and the cloud only if the phone cannot answer; photos and audio never go online by themselves. *Cloud first* uses Meta's models and falls back to the phone with no signal, after 25 seconds, or if an answer fails its checks. The fallback is shown on the answer's label, for example *"Muse Spark — not used: no internet → Llama 3.2 on the phone"*.
+
+**Availability.** Offline: Meta Llama 3.2 3B runs on-device after the one-time model installation — local AI needs no cloud account. Online: Muse Spark 1.3, Muse Voice Transcribe and SAM 3.1 are optional integrations requiring supported API access, internet connectivity and service availability.
 
 ### Feature-to-AI model map: offline and online
 
@@ -202,7 +204,7 @@ The same architecture — **role-specific knowledge base + cited guidance + form
 
 ## Try the prototype
 
-**Phone:** Android 7.0+ (arm64), about **6 GB RAM** recommended, about **7 GB free** during setup (about 4.5 GB after).
+**Requirements:** Android 7.0+ (arm64); APK ≈ 700 MB; offline model pack ≈ 3.3 GB, installed once; Wi-Fi recommended; at least **7 GB free storage** during setup; about **6 GB RAM** recommended. Download and installation time varies with device and network.
 
 1. **Install the APK:** download the latest APK from [GitHub Releases](https://github.com/ektasikka1989-cmyk/Pramaan/releases), open it on the phone and allow installation ("install unknown apps"). Verify the installed build on-device before relying on it.
 2. **Setup:** Install the offline model pack and guide database through the in-app setup flow (model pack: the **primary Cloudflare R2 link** is tried first, the **Hugging Face standby link** only if it fails — see above). A Meta Model API key is optional for online model features; availability and billing are determined by Meta. The setup wizard has three steps, each of which can be skipped: offline AI models (~3.3 GB, Wi-Fi recommended, or choose a ZIP already on the phone), health guide (installed from inside the app), and Meta API key ("Create a key" opens [dev.meta.ai](https://dev.meta.ai/); paste and tap **Test and save**). After installation, grant microphone access for voice input and test speech playback — **Android does not require a separate speaker permission**.
