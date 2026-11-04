@@ -886,7 +886,8 @@ fun ArogyaDemoTour(ai: ArogyaVisitAi?, queue: ArogyaVisitQueue, visits: List<Aro
                             store.update { reg -> reg.copy(beneficiaries = reg.beneficiaries.map { if (it.id == b.id) after else it }) }
                             cardApplied = true
                             if (vaccinesAdded.isNotEmpty()) updates = updates + tr("✓ MCP card immunization: ", "✓ MCP कार्ड टीकाकरण: ") + vaccinesAdded.joinToString()
-                            addOpens("card", tr("MCP card", "MCP कार्ड") to "card:${b.id}", tr("Immunization register", "टीकाकरण रजिस्टर") to "imm:${b.id}")
+                            // The immunization register lists only doses due this month, so the card itself is the proof here.
+                            addOpens("card", tr("MCP card · immunization page", "MCP कार्ड · टीकाकरण पेज") to "card:${b.id}")
                         }, vaccinesAdded = vaccinesAdded, weightAdded = weightAdded,
                         onTakePhoto = { takePhoto(it) }, onChoosePhoto = { choosePhoto(it) },
                         medScan = medScan, medEngine = medEngine, medMs = medMs, medOcrLen = medOcrLen, medMatched = medMatched,

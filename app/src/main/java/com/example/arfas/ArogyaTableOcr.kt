@@ -30,6 +30,9 @@ object ArogyaTableOcr {
         return out.map { r -> r.sortedBy { it.left } }
     }
 
+    /** The page as text, one table row per line ("Birth  OPV-0  31/10/2026"), so a value and its date stay together. */
+    fun rowText(lines: List<Line>): String = rows(lines).joinToString("\n") { r -> r.joinToString("  ") { it.text.trim() } }
+
     private fun norm(s: String) = s.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), "")
 
     /** Canonical key for one header cell ("Husband/Father" → relative, "House No." → household), or "". */

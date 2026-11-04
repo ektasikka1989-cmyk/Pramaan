@@ -412,3 +412,13 @@ Root causes (found in the code; to confirm on the phone with `logs.bat`):
   - the refill text comes from `refillRequest`;
   - the MCP button names the right person; the broken "diary" deep link is removed.
 - Tests: 49/50 suites pass (GoldMatch needs the gitignored asset). New FormFillTest (17): all three notes in EN + HI with no model, partial-reply rescue, AI wins over rules, no invention, decimals kept. DemoTourTest is now 70 checks (screen lists, owner sentences, danger by rules). A syntax-only compile of the six screen files shows no syntax errors; the remaining errors are missing Android libraries. **Compose code is not compiled yet.**
+
+### DUI7. ASHA journey audit + fixes (BUILD PENDING)
+- New `AshaJourneyTest` (51 checks) runs all three workflows end to end through the app's own code (details in `docs/ASHA_JOURNEY_AUDIT.md`).
+- Fixed:
+  - medicine-scan batch read as "No";
+  - medicine-scan name picked from a dosage line, and IFA matched to zinc via "tablets";
+  - card vaccines/weights without a readable date recorded as today;
+  - the card reader now uses table rows rebuilt from ML Kit positions (`AROGYA_CARD_TEXT`);
+  - the immunization-register button on the card screen replaced by the card's immunization page.
+- 50/51 suites pass (GoldMatch: gitignored asset). Syntax check clean.

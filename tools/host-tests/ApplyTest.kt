@@ -10,7 +10,7 @@ fun main() {
     val out = ArogyaCardApply.apply(b, listOf(ArogyaCardField("birth_date", "Date of birth", "2026-09-12", "e"), ArogyaCardField("birth_weight", "Birth weight", "2.6 kg", "e"),
         ArogyaCardField("vaccine", "Vaccine", "BCG — 2026-09-12", "e"), ArogyaCardField("vaccine", "Vaccine", "Penta-1", "e"), ArogyaCardField("weight", "Weight", "3.1 kg on 2026-10-24", "e")))
     a(out.dob == "2026-09-12" && out.birthWeightKg == 2.6, "DOB and birth weight applied")
-    a(out.mcp.vaccines["BCG"] == "2026-09-12" && out.mcp.vaccines.containsKey("PENTA1"), "vaccines applied to MCP card")
+    a(out.mcp.vaccines["BCG"] == "2026-09-12" && !out.mcp.vaccines.containsKey("PENTA1"), "dated vaccine applied; undated one never gets today's date")
     a(out.mcp.weights.any { it.date == "2026-10-24" && it.kg == 3.1 }, "weight applied with date")
     a(ArogyaAiCatalog.features.count { it.metaModel } >= 8 && ArogyaAiCatalog.features.any { !it.metaModel && it.model.contains("ML Kit") }, "catalog labels Meta and non-Meta models")
     println(if (af == 0) "ALL $ap PASS" else "$af FAILED, $ap passed")

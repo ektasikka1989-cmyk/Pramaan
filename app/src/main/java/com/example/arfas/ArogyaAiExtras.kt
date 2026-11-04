@@ -83,7 +83,16 @@ data class MedScan(val name: String = "", val batch: String = "", val expiry: St
  * in the OCR text, so the ASHA only ever confirms what the photo actually says.
  */
 object ArogyaMedScan {
-    private val BATCH = Regex("""(?i)\b(?:batch|b\.?\s*no\.?|lot)\b\.?\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-/]{1,19})""")
+    // "Batch No. ZN2611A", "B. No. 1234", "Lot No: X12", "Batch: AB12": the code itself must contain a digit.
+    private val BATCH = Regex("""(?i)\b(?:batch\s*(?:no|number)?|b\.?\s*no|lot\s*(?:no)?)\b\.?\s*[:\-]?\s*((?=[A-Z\-/]*\d)[A-Z0-9][A-Z0-9\-/]{1,19})""")
+    /** Lines made only of these words describe the dosage form, not the medicine ("DISPERSIBLE TABLETS IP"). */
+    private val DOSAGE = setOf("tablet", "tablets", "tabs", "tab", "dispersible", "ip", "bp", "usp", "capsule", "capsules", "caps", "syrup", "oral", "suspension",
+        "mg", "ml", "film", "coated", "uncoated", "strip", "strips", "each", "contains", "for", "use", "only", "govt", "government", "supply", "hospital", "not", "sale")
+    /** Kit item by the medicine's own words (name on the strip → the drug-kit item). */
+    private val ALIASES = listOf("syrup" to "IFA syrup (child)", "iron" to "IFA tablets (adult)", "folic" to "IFA tablets (adult)", "ifa" to "IFA tablets (adult)",
+        "zinc" to "Zinc tablets", "paracetamol" to "Paracetamol", "pcm" to "Paracetamol", "ors" to "ORS", "rehydration" to "ORS", "calcium" to "Calcium tablets",
+        "albendazole" to "Albendazole", "cotrimoxazole" to "Cotrimoxazole", "condom" to "Condoms", "nirodh" to "Condoms", "levonorgestrel" to "Emergency contraceptive pill",
+        "mala" to "Oral contraceptive pills", "chloroquine" to "Chloroquine / ACT", "artesunate" to "Chloroquine / ACT", "napkin" to "Sanitary napkins")
     private val EXPIRY = Regex("""(?i)\b(?:exp(?:iry|\.?date)?|expiry date|use (?:by|before))\b\.?\s*[:\-]?\s*(\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{1,2}|[A-Z]{3,9}\s+\d{2,4}|\d{1,2}\s+[A-Z]{3,9}\s+\d{2,4})""")
     private const val UNITS = "(tablets?|tabs?|capsules?|caps?|sachets?|packets?|strips?|bottles?|vials?|pieces?|pcs?|ml)"
     private val QTY = Regex("""(?i)\b(\d{1,5})\s*$UNITS\b""")
@@ -115,6 +124,7 @@ object ArogyaMedScan {
         // Name: the longest plausible printed line (caps product line), skipping label lines.
         val name = text.lines().map { it.trim().trim(',', '.', ':', ';', '-', '|') }
             .filter { it.length >= 4 && !NOISE.containsMatchIn(it) && it.any { c -> c.isLetter() } }
+            .filterNot { l -> Regex("[a-z]+").findAll(l.lowercase()).map { it.value }.toList().let { w -> w.isNotEmpty() && w.all { it in DOSAGE } } }
             .maxWithOrNull(compareBy({ capsScore(it) }, { it.length })).orEmpty().take(80)
         return MedScan(name, batch, expiry, qty)
     }
@@ -176,7 +186,10 @@ object ArogyaMedScan {
     fun matchItem(name: String, items: List<String>): String {
         if (name.isBlank()) return ""
         items.firstOrNull { it.equals(name, ignoreCase = true) }?.let { return it }
-        val words = name.split(Regex("\\s+")).filter { it.length >= 4 }
+        // The medicine's own words first (IRON & FOLIC ACID → IFA tablets); dosage words like "tablets" never decide.
+        val low = name.lowercase()
+        ALIASES.firstOrNull { (w, item) -> Regex("(?<![a-z])$w(?![a-z])").containsMatchIn(low) && item in items }?.let { return it.second }
+        val words = name.split(Regex("\\s+")).filter { it.length >= 4 && it.lowercase().trim('(', ')', ',', '.') !in DOSAGE }
         return items.firstOrNull { item -> words.any { w -> item.contains(w, ignoreCase = true) } }
             ?: items.firstOrNull { name.contains(it, ignoreCase = true) }.orEmpty()
     }
@@ -361,7 +374,8 @@ object ArogyaAiExtras {
                 val nameOk = lineWith(ocr, name) ?: lineWith(ocr, name.take(3)) ?: continue
                 // The date counts only when it is on the same card line as this vaccine.
                 val dateLine = if (date.isNotBlank()) dateEvidence(ocr, date, onLineWith = name) else null
-                val shown = if (dateLine != null && isoDate(date).isNotBlank()) "$name — ${isoDate(date)}" else name
+                // No readable date on the vaccine's own line → shown as such and never applied (no date is invented).
+                val shown = if (dateLine != null && isoDate(date).isNotBlank()) "$name — ${isoDate(date)}" else "$name — date not readable"
                 out += ArogyaCardField("vaccine", "Vaccine", shown, dateLine ?: nameOk)
             }
         }
@@ -595,13 +609,14 @@ object ArogyaCardApply {
                 "child_name" -> if (x.name.isBlank()) x = x.copy(name = f.value)
                 "vaccine" -> {
                     val code = vaccineCode(f.value.substringBefore(" —"))
-                    val date = f.value.substringAfter(" — ", "").takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) } ?: java.time.LocalDate.now().toString()
-                    if (code != null && x.mcp.vaccines[code] == null) x = x.copy(mcp = x.mcp.copy(vaccines = x.mcp.vaccines + (code to date)))
+                    // Only a date read from the card counts; without one the vaccine is not recorded (never "today").
+                    val date = f.value.substringAfter(" — ", "").takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }
+                    if (code != null && date != null && x.mcp.vaccines[code] == null) x = x.copy(mcp = x.mcp.copy(vaccines = x.mcp.vaccines + (code to date)))
                 }
                 "weight" -> {
                     val kg = ArogyaAiExtras.numbers(f.value).firstOrNull()?.toDoubleOrNull()
-                    val date = Regex("\\d{4}-\\d{2}-\\d{2}").find(f.value)?.value ?: java.time.LocalDate.now().toString()
-                    if (kg != null && x.mcp.weights.none { it.date == date }) x = x.copy(mcp = x.mcp.copy(weights = x.mcp.weights + WeightEntry(date, kg)))
+                    val date = Regex("\\d{4}-\\d{2}-\\d{2}").find(f.value)?.value
+                    if (kg != null && date != null && x.mcp.weights.none { it.date == date }) x = x.copy(mcp = x.mcp.copy(weights = x.mcp.weights + WeightEntry(date, kg)))
                 }
             }
         }

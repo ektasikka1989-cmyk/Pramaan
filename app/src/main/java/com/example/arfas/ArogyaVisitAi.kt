@@ -631,7 +631,21 @@ class ArogyaVisitAi(private val runtime:AndroBaselineRuntime,private val feature
         val staged = mgr.stageUri(uri) ?: error("Could not read this file. Use a clear photo or a PDF.")
         val claimed = mgr.claimPendingAttachmentsForTurn()
         try {
-            val text = listOf(staged.extractedText, staged.localVisualContext).filter { it.isNotBlank() }.joinToString("\n").trim()
+            // A card page is a table: ML Kit's plain text lists it column by column, so a vaccine and its date land on
+            // different lines and the date cannot be trusted. Rebuild the rows from line positions when it is a photo.
+            val rowText = runCatching {
+                val ctx = appContext ?: return@runCatching ""
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                ctx.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+                var sample = 1; while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2400) sample *= 2
+                val raw = ctx.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) }
+                    ?: return@runCatching ""
+                val ocr = MLKitProcessor()
+                try { ArogyaTableOcr.rowText(ocr.recognizeLines(ArogyaPhotoGuard.upright(ctx, uri, raw))) } finally { runCatching { ocr.close() } }
+            }.getOrDefault("")
+            val plain = listOf(staged.extractedText, staged.localVisualContext).filter { it.isNotBlank() }.joinToString("\n").trim()
+            val text = if (rowText.length >= 15) rowText else plain
+            Log.i(TAG, "AROGYA_CARD_TEXT rows=${rowText.lines().size} using=${if (rowText.length >= 15) "rows" else "plain"}")
             check(text.length >= 15) { "No readable text was found. Take a closer photo in good light, card flat." }
             // Only values found in the card's own text are kept. Local-only: a card photo
             // is identifiers by design, and names must never reach a cloud prompt.
