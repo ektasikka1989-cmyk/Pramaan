@@ -149,7 +149,7 @@ Every AI reply, from either engine, is validated before it is offered:
 - The visits queue is a separate encrypted repository.
 - The guide database is `/sdcard/Download/ASHA_Health_Guide.db`.
 - The models were installed through the app's setup.
-- Laptop copies of the models are in `C:\Users\Vaibhav\Pramaan_models`
+- Laptop copies of the models are kept in a local folder on the developer's PC (not in git)
   (Llama-3.2-3B-Instruct-Q4_K_M.gguf, onnx, asha_kb).
 
 ---
