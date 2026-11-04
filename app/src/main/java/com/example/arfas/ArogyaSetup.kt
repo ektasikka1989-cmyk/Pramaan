@@ -31,7 +31,11 @@ object ArogyaSetup {
     fun isDone(c: Context): Boolean = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("done", false)
     fun markDone(c: Context) { c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("done", true).apply() }
 
-    private fun llamaInstalled(c: Context): Boolean {
+    /** Setup wizard status: models (Llama installed), guide, Meta key. Call off the main thread. */
+    fun status(c: Context, guideReady: Boolean): ArogyaSetupPlan.Status =
+        ArogyaSetupPlan.Status(llamaInstalled(c), guideReady, runCatching { GroqKeyStore(c.applicationContext).metaKey().isNotBlank() }.getOrDefault(false))
+
+    fun llamaInstalled(c: Context): Boolean {
         val meta = File(File(c.filesDir, "models"), "meta")
         if (meta.listFiles()?.any { it.isFile && it.name.endsWith(".gguf", true) && it.length() > 0 } == true) return true
         return File(c.filesDir, "models").listFiles()?.any { it.isFile && it.name.startsWith("LLAMA3B_", true) && it.name.endsWith(".gguf", true) } == true

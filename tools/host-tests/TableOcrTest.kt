@@ -180,6 +180,16 @@ fun main() {
         ArogyaAiUsed.online("Muse Spark 1.3 — Meta Model API") && !ArogyaAiUsed.online("On-phone model (offline): Llama-3.2-3B") &&
         ArogyaAiUsed.short("Muse Spark 1.3 • online — not used: no Meta key saved · On-phone model (offline): Llama-3.2-3B") == "✨ Llama 3.2 3B Instruct 📴")
 
+    // ── Setup wizard plan: links, progress words, key checks, what works with what is installed ──
+    val P = ArogyaSetupPlan
+    check("setup-links", P.MODELS_URL.contains("/resolve/main/Pramaan_Meta_Models.zip") && P.GUIDE_URL.contains("/resolve/main/ASHA_Health_Guide_v2.db") && P.KEY_PAGE == "https://dev.meta.ai/")
+    check("setup-progress", P.progressLine(1_400_000_000, 3_260_000_000, 3_100_000, false) == "1.4 GB / 3.3 GB · 3.1 MB/s · about 10 min left", P.progressLine(1_400_000_000, 3_260_000_000, 3_100_000, false))
+    check("setup-key-checks", P.keyProblem("gsk_abc", false)!!.contains("Groq") && P.keyProblem("", false) != null && P.keyProblem("LLM|1234567890|abcdefghijklmnop", false) == null && P.keyProblem("short", false) != null)
+    val none = ArogyaSetupPlan.Status(false, false, false); val offline = ArogyaSetupPlan.Status(true, true, false); val all = ArogyaSetupPlan.Status(true, true, true)
+    check("setup-banner", P.bannerLine(offline, false) == "Setup 2 of 3 done · Meta key not added" && offline.firstOpen == ArogyaSetupPlan.Step.KEY && none.firstOpen == ArogyaSetupPlan.Step.MODELS && all.firstOpen == null)
+    check("setup-summary", P.summary(offline, false).online.contains("answers come from the phone") && P.summary(all, false).headline.startsWith("All set") &&
+        P.summary(none, false).offline.contains("registers") && P.summary(ArogyaSetupPlan.Status(false, true, true), false).headline.contains("internet") && P.summary(all, false).tip.isEmpty())
+
     println("TableOcrTest: $n passed, $fails failed")
     if (fails > 0) kotlin.system.exitProcess(1)
 }

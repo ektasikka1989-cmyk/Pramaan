@@ -184,6 +184,11 @@ fun ArogyaVisitScreen(
     var profileOpen by rememberSaveable { mutableStateOf(false) }
     var moreOpen by remember { mutableStateOf(false) }
     var setupOpen by remember { mutableStateOf(false) }
+    // Setup wizard: which step to open on, and the status for the Home "setup not complete" strip.
+    var setupStart by remember { mutableStateOf<ArogyaSetupPlan.Step?>(null) }
+    var setupStatus by remember { mutableStateOf<ArogyaSetupPlan.Status?>(null) }
+    LaunchedEffect(setupOpen, knowledgeReady) { if (!setupOpen) setupStatus = withContext(Dispatchers.IO) {
+        ArogyaSetup.status(context, knowledgeReady || runCatching { (ai?.guideVersion() ?: -1) >= 1 }.getOrDefault(false)) } }
     LaunchedEffect(loaded) { if(loaded && !ArogyaSetup.isDone(context)) setupOpen=true }
     var welcome by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(loaded) { if(loaded && !ArogyaLang.welcomed(context)) welcome=true }
@@ -472,6 +477,18 @@ fun ArogyaVisitScreen(
                         TextButton(onClick={visitsOpen=true}) { Text(tr("Open visits ›","विज़िट खोलें ›")) }
                     }
                 }
+                // Setup not complete: a yellow strip that opens the wizard on the first unfinished step (never blocks).
+                setupStatus?.takeIf { !it.complete }?.let { st -> item {
+                    Card(colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF4CE)),modifier=Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(tr("⚠ Setup is not complete","⚠ सेटअप पूरा नहीं"),fontWeight=FontWeight.Bold,color=Color(0xFF6B4E00))
+                                Text(ArogyaSetupPlan.bannerLine(st,hindi),style=MaterialTheme.typography.bodySmall,color=Color(0xFF6B4E00))
+                            }
+                            TextButton(onClick={ setupStart=st.firstOpen; setupOpen=true }) { Text(tr("Finish setup ›","सेटअप पूरा करें ›")) }
+                        }
+                    }
+                } }
                 // 1. Today — what to do now
                 item { ArogyaTodayCard(hindi,dueNow,LocalDate.now()) { hubOpen="due" } }
                 item { ArogyaNextStrip(hindi,dueNow) { hubOpen="due" } }
@@ -508,7 +525,7 @@ fun ArogyaVisitScreen(
                                     onClick={moreOpen=false;openPractice()})
                                 if(ai!=null) DropdownMenuItem(text={ Text(tr("📖 Official guides","📖 आधिकारिक गाइड")) },
                                     onClick={moreOpen=false;guideFromSop=false;guideOpen=true})
-                                DropdownMenuItem(text={ Text(tr("⚙ Setup wizard","⚙ सेटअप")) },onClick={moreOpen=false;setupOpen=true})
+                                DropdownMenuItem(text={ Text(tr("⚙ Setup wizard","⚙ सेटअप")) },onClick={moreOpen=false;setupStart=null;setupOpen=true})
                             }
                         }
                     }
@@ -1268,7 +1285,7 @@ fun ArogyaVisitScreen(
     },onClose={guideOpen=false})
     if(welcome) ArogyaWelcome(hindi) { ArogyaLang.setWelcomed(context); welcome=false }
     if(setupOpen) ArogyaSetupWizard(hindi,ai,knowledgeReady,reg.beneficiaries.any {it.demo},
-        onImportKnowledge={ onImportKnowledge(it) },onLoadSample={ loadSample() },onRefreshKnowledge={ onRefreshKnowledge() },onDone={ setupOpen=false })
+        onImportKnowledge={ onImportKnowledge(it) },onLoadSample={ loadSample() },onRefreshKnowledge={ onRefreshKnowledge() },onDone={ setupOpen=false },startAt=setupStart)
     if(demoOpen) ArogyaDemoTour(ai,queue,visits,hindi,tts=if(ttsReady) tts else null,onLoadSample={ loadSample() },onClose={ demoOpen=false; tts.stop(); modeTick++ },
         onDeepLink={ target -> demoOpen=false; tts.stop(); modeTick++; if(target.startsWith("guided:")) guidedFor=reg.beneficiaries.firstOrNull { it.id==target.removePrefix("guided:") } else hubOpen=target })
     if(profileOpen) {
