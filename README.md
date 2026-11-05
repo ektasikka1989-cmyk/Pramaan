@@ -19,7 +19,7 @@ Ask an official SOP. See the exact source and page. Turn a home visit into accou
 
 | Explore | Link or status |
 |---|---|
-| 🎬 **Three-minute demo** | [▶ Watch Pramaan in Action — 3-Minute Demo](https://www.youtube.com/shorts/ZJPV7phtfXA) |
+| 🎬 **Three-minute demo** | [▶ Watch Pramaan in Action — 3-Minute Demo](https://youtube.com/shorts/Su5WsNUSMm4) |
 | 📱 **Android APK** | [GitHub Releases — download APK](https://github.com/ektasikka1989-cmyk/Pramaan/releases) (~700 MB) · [install and test](#try-the-prototype) |
 | 📚 **Models and setup** | [MODELS.md](MODELS.md) · **[Model pack, primary link](https://pub-c8d63c87f3ff45c6919a4bdeb91cb247.r2.dev/Pramaan_Meta_Models.zip)** · [Model pack, standby link](https://huggingface.co/datasets/EktaSikka/Pramaan_Meta_Models/resolve/main/Pramaan_Meta_Models.zip?download=true) (approximately 3.3 GB) |
 | 🔒 **Data handling** | [PRIVACY.md](PRIVACY.md) — what is stored, what leaves the phone and when |
